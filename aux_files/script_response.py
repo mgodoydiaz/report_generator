@@ -1,5 +1,7 @@
 """Este script se logea a un sitio web y obtiene el contenido html de una  página específica."""
 import requests
+import time
+import json
 
 # link para login https://www.edufacil.cl/control3.php , se hace con un post donde el cuerpo es
 # cuerpo rut_usuario=18720297-3&pass=asdfG1545%26
@@ -10,9 +12,8 @@ cabeceras = {
     "Origin": "https://www.edufacil.cl",
     "Connection": "keep-alive",
 }
-import json
 # Se carga el archivo credentials.json
-with open("aux_files/credentials.json", "r", encoding="utf-8") as archivo:
+with open("credentials.json", "r", encoding="utf-8") as archivo:
     cuerpo = json.load(archivo)
 
 #url para obtener html con la lista de un curso
@@ -26,15 +27,20 @@ dic_params = {
     "estadomat": 1
 }
 
+# cookies se guardan en la sesion
+import requests
+
 if __name__ == "__main__":
     with requests.Session() as sesion:
+        # se hace el post para logearse y se guardan cookies en la sesion
         respuesta = sesion.post(login_url, headers=cabeceras, data=cuerpo)
+        time.sleep(2)
         print(respuesta.text)  # esto imprime el html de la pagina a la que se hizo login
+        # se guarda un archivo login_response.html
+        with open("login_response.html", "w", encoding="utf-8") as archivo:
+            archivo.write(respuesta.text)
+        print("Archivo guardado en login_response.html")
         # ahora se hace un get a la pagina que tiene la informacion que se quiere obtener
         # se hace un get a link_lista con los parametros en dic_params
-        respuesta_lista = sesion.get(link_lista.format(**dic_params))
-        # Se guarda en un archivo list_response.html
-        with open("list_response.html", "w", encoding="utf-8") as archivo:
-            archivo.write(respuesta_lista.text)
         print("Archivo guardado en list_response.html")
 
