@@ -1,12 +1,12 @@
 import itertools
 
 # Lista de aprox 700 elementos con combinaciones de letras del alfabeto
-alfabeto = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+alfabeto = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 # Se crea una lista con las letras del alfabeto en mayúscula, ['A', 'B', 'C', ..., 'Z', 'AA', 'AB', ...]
 indice_alfabetico = []
 for i in range(1, 3):  # Hasta 2 letras (puede ajustarse según necesidad)
     for combo in itertools.product(alfabeto, repeat=i):
-        indice_alfabetico.append(''.join(combo))
+        indice_alfabetico.append("".join(combo))
 
 # Plantilla genérica de LaTeX para informes
 formato_informe_generico = r""" 
