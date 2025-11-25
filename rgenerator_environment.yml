@@ -4,9 +4,7 @@ channels:
   - defaults
 
 dependencies:
-  - python
-  - camelot-py
-  - pymupdf        # reemplaza fitz
+  - camelot-py   
   - matplotlib
   - numpy
   - pandas
@@ -15,3 +13,6 @@ dependencies:
   - tqdm
   - xlrd
   - pip
+  - pip:
+      - openpyxl
+      - fitz
