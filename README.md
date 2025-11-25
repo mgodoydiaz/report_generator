@@ -1,28 +1,41 @@
-# 📊 Informe Generator · Fundación PHP
+# 📊 Report Generator · Fundación PHP
 
-Este repositorio contiene una aplicación que facilita la **creación automatizada de informes de resultados de pruebas académicas** para la Fundación **People Help People**.
+Este repositorio contiene una aplicación que facilita la creación automatizada de informes de resultados de pruebas académicas para la Fundación People Help People.
 
 ## ✨ Propósito
 
-El proyecto busca:
-- Apoyar a la fundación en la generación rápida y estandarizada de reportes.
-- Integrar resultados de pruebas en tablas y gráficos.
-- Reducir el trabajo manual al transformar datos en **informes PDF profesionales** listos para entregar a los establecimientos educacionales.
-
-## 🛠️ Tecnologías utilizadas
-
-- [React](https://react.dev/) con [Vite](https://vitejs.dev/) para la interfaz de usuario.  
-- [Tailwind CSS](https://tailwindcss.com/)  para estilos.  
-- [Python](https://www.python.org/) + LaTeX para la compilación de informes en PDF.  
+El proyecto busca apoyar a la fundación en la generación rápida y estandarizada de reportes, integrando resultados de pruebas en tablas y gráficos, y reduciendo el trabajo manual al transformar datos en informes PDF listos para entregar a los establecimientos educacionales.
 
 ## 📂 Estructura del proyecto
 
-- `src/` → código fuente en React.  
-- `public/` → archivos estáticos (logos, imágenes).  
-- `InformeFormPrototype.jsx` → formulario que permite definir variables y secciones del informe.  
-- `crear_informe.py` → script que integra la plantilla LaTeX y compila el PDF.  
+- `backend/` contiene la librería principal para ETL y generación de informes  
+- `scripts/` contiene los programas ejecutables desde consola  
+- `public/` contiene recursos estáticos como logos  
+- `latex_templates/` almacena plantillas usadas para compilar los informes  
+- `src/` corresponde al frontend prototipo original que será reescrito
 
-## 🚀 Características principales
+## ▶️ Instalación y uso
+
+### 1. Crear el environment con conda
+
+```bash
+conda env create -f environment.yml
+conda activate rgenerator
+```
+
+### 2. Ejecutar ETL desde consola
+
+```bash
+python scripts/run_etl.py --input ruta_input --output ruta_output
+```
+
+### 3. Generar informe PDF desde consola
+
+```bash
+python scripts/generate_report.py --schema ruta_esquema.json --data ruta_datos.csv --tipo informe_tipo --output ruta_informe.pdf
+```
+
+## 🚀 Características principales --legacy-- 
 
 - Formulario web para definir:
   - Variables del documento (logos, títulos, pie de página, autor, etc.).
