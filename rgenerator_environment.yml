@@ -1,0 +1,17 @@
+name: rgenerator
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python
+  - camelot-py
+  - pymupdf        # reemplaza fitz
+  - matplotlib
+  - numpy
+  - pandas
+  - pillow
+  - requests
+  - tqdm
+  - xlrd
+  - pip
