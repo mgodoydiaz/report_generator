@@ -1,24 +1,26 @@
 # Codex Review
 
 ## Critical Issues
-- `backend/main.py:26`: `from reports import informe` raises `ModuleNotFoundError` because `backend/reports` does not contain an `informe.py`. The CLI entry point cannot execute the `report` command until an implementation exists.
-- `backend/etl/consolidar_dia.py:17`: Functions such as `reconocer_cursos`, `region_darkness`, `extract_bold_alternatives`, `get_correct_percent`, `reemplazar_nivel_logro`, `calcular_nivel_logro`, `obtener_nivel`, and `extraer_establecimiento_y_curso` are re-exported in `backend/etl/__init__.py` but no definitions exist anywhere in the repository. Importing this module immediately fails and prevents the ETL path from running.
-- `backend/etl/consolidar_dia.py:101`: `df_intermedio.at[:, 8] = establecimiento` (and the similar assignment on the next line) is invalid usage of `DataFrame.at`. The accessor only accepts scalar row/column labels; passing a slice raises `InvalidIndexError`. This stops PDF consolidation before any results are produced.
+- `backend/rgenerator/etl/__init__.py:9-25` re-exporta funciones (`reconocer_cursos`, `region_darkness`, `extract_bold_alternatives`, etc.) que no existen en ninguna parte del repositorio. Cualquier `import rgenerator.etl` levanta `ImportError`, impidiendo usar la librería ETL que se supone es el núcleo del backend.
+- `backend/rgenerator/scripts/run_etl.py` y `backend/rgenerator/scripts/generate_report.py` están vacíos (0 bytes). El README documenta comandos para correr estos scripts, pero hoy no contienen lógica, flags ni invocaciones a la librería, por lo que la experiencia de consola prometida en la raíz es inexistente.
+- `backend/rgenerator/reports/__init__.py` está vacío y no hay módulos dentro del paquete `reports`. El objetivo declarado es generar reportes académicos, pero no existe ningún API de generación de LaTeX/PDF en el paquete actual (solo queda código legacy bajo `legacy/`), por lo que no se puede producir ningún informe desde el backend activo.
+- `backend/rgenerator/etl/consolidar_dia.py:101-103` usa `df_intermedio.at[:, 8] = establecimiento` y `df_intermedio.at[:, 9] = curso`. `.at` solo acepta índices escalares; pasar un slice levanta `InvalidIndexError` antes de consolidar los datos. Se debe usar `.loc[:, 8]` (o renombrar columnas) para escribir los valores.
 
 ## High Priority Improvements
-- `backend/etl/consolidar_dia.py:69`: When `dic_pages_por_curso` lacks an entry for the derived `curso`, `pages` becomes `None` and both `camelot.read_pdf(..., pages=pages)` and the subsequent `pages.split('-')` fail. Add a guard that either builds a default page range or raises a clear error with context.
-- `backend/etl/consolidar_dia.py:87`: The code assumes Camelot returns numeric column keys (0–7) so assignments like `df_intermedio.at[j, 7] = rc` succeed. In practice Camelot often names columns as strings (`"0"`, `"1"`, …), which means these lookups miss the intended column and leave the `% respuestas` column untouched. Normalise the column names (e.g., `df_intermedio.columns = range(df_intermedio.shape[1])`) before iterating.
-- `backend/etl/consolidar_dia.py:135`: `consolidar` defaults `dic_pages_por_curso` to `{}`, which silently masks missing mappings and feeds `pages=None` downstream. Consider failing fast (e.g., `if curso not in dic_pages_por_curso: raise KeyError`) so operators know to supply the correct ranges.
+- `backend/rgenerator/etl/consolidar_dia.py:69-84` obtiene `pages = dic_pages_por_curso.get(curso)` pero el argumento tiene `None` como valor por defecto. Si no se entrega un diccionario completo, `camelot.read_pdf(..., pages=None)` y `pages.split('-')` fallan con `TypeError`. Valida la entrada y entrega errores claros (o deriva las páginas desde el PDF).
+- `backend/rgenerator/tooling/plot_tools.py:131` y `backend/rgenerator/tooling/plot_tools.py:480` definen dos veces la misma función `valor_promedio_agrupado_por`. La segunda definición pisa silenciosamente a la primera, haciendo difícil mantener y documentar la API; conviene unificar en una sola implementación parametrizable.
+- `backend/rgenerator/etl/` en general sigue dependiendo de funciones que solo existen en `legacy/backend/simce_things`. Mientras no se porten (p. ej. reconocimiento de curso, cálculo de nivel de logro, extracción de respuestas desde PDFs), la nueva librería no puede completar ningún flujo DIA/SIMCE.
 
 ## Security & Operational Risks
-- `aux_files/credentials.json`: Stores production credentials in plain text and is tracked in Git. Replace with environment variables or a secrets manager, and add the file to `.gitignore` to avoid accidental leaks.
-- `aux_files/script_response.py`: Logs full HTML responses (which can contain user data) to disk without sanitisation. Limit the data captured or scrub sensitive fields before writing to prevent data leaks.
+- `aux_files/credentials.json` contiene credenciales reales (`rut_usuario` y contraseña) versionadas en texto plano. Este archivo debe moverse a variables de entorno o a un gestor de secretos y agregarse a `.gitignore` para evitar filtraciones.
+- `aux_files/script_response.py` escribe respuestas completas de login/consulta (`login_response.html`, `list_response.html`) en disco sin sanitizar datos personales. Si se ejecuta contra sitios con información sensible queda registro local con RUTs, alumnos y cookies de sesión.
 
-## Frontend Observations
-- `frontend/src/pages/GenerarInforme.jsx`: Duplicates almost all logic from `frontend/src/InformeFormPrototype.jsx`. Consolidate shared logic into reusable hooks/components to reduce divergence and maintenance effort.
-- `frontend/src/pages/GenerarInforme.jsx`: Uses `crypto.randomUUID()`, which is unsupported on older Safari builds. If legacy browser support is required, bundle a lightweight UUID polyfill or fall back to `crypto.getRandomValues`.
+## Observaciones Adicionales
+- A pesar de la carpeta `legacy/`, no existe una guía ni pruebas automatizadas que indiquen qué partes ya fueron migradas a `backend/rgenerator`. La ausencia de tests hace difícil validar futuras contribuciones.
+- No hay definición de paquetes (`pyproject.toml` o `setup.cfg`) ni instrucciones para instalar la librería `rgenerator` como módulo reutilizable; hoy solo es código suelto dentro del repo.
 
 ## Suggested Next Steps
-1. Implement (or restore) the missing ETL helper functions and the report generation module so both CLI commands execute end to end.
-2. Add regression tests for `procesar_xls`/`procesar_pdf` covering typical DIA inputs to lock in the data shapes and edge cases.
-3. Introduce environment-driven configuration for secrets, file paths, and LaTeX templates to simplify deployment to other environments.
+1. Portar (o reescribir) las funciones faltantes del ETL y exponer una API estable detrás de `rgenerator.etl`, agregando pruebas unitarias mínimas para XLS/PDF.
+2. Implementar los scripts CLI (`run_etl.py`, `generate_report.py`) con `argparse` y llamadas reales al paquete, incluyendo manejo de errores y documentación de parámetros en el README.
+3. Recrear el subpaquete `reports` con herramientas de render (tablas, gráficos, plantillas LaTeX) y tests que verifiquen la generación de un informe de ejemplo.
+4. Eliminar credenciales en texto plano y documentar la configuración necesaria mediante variables de entorno o archivos `.env` ignorados por Git.
