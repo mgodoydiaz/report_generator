@@ -21,3 +21,6 @@
 - `logro_promedio_por_nivel` es un caso particular de `tooling.plot_tools.grafico_barras_promedio_por` pasando `agrupar_por="Nivel"`.
 - `boxplot_logro_por_curso` coincide con `tooling.plot_tools.boxplot_valor_por_curso` usando `columna_valor="Logro"`.
 No es necesario crear funciones nuevas; solo documentar estos usos parametrizados.
+
+**Pregunta 7:** Dentro de `rgenerator`, crea/edita los `__init__.py` necesarios para exponer las funciones y constantes de `tooling`.  
+**Respuesta 7:** Añadí `backend/rgenerator/__init__.py` para registrar el paquete y extendí `backend/rgenerator/tooling/__init__.py` con importaciones explícitas de `etl_tools`, `plot_tools`, `report_tools` y `constants`, de modo que utilidades como `grafico_barras_promedio_por` o `formato_informe_generico` puedan importarse directamente desde `rgenerator.tooling`.
