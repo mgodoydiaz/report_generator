@@ -2,7 +2,10 @@
 input_dir = "data/input"
 output_dir = "data/output"
 tmp_dir = "data/tmp"
+schemas_dir = "backend/schemas"
 
 [etl]
 default_encoding = "utf-8"
 fail_on_missing_columns = true
+
+[reports]

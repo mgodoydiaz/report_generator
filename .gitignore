@@ -40,6 +40,6 @@ __pycache__/
 modulo.zip
 
 # Carpetas de trabajo
-data/input/*
+#data/input/*
 data/output/*
 data/tmp/*

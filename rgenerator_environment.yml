@@ -16,7 +16,6 @@ dependencies:
   - pip
   - pytest
   - pytest-cov
-  - tomllib
   - pip:
       - openpyxl
       - pymupdf
