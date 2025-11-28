@@ -1,11 +1,11 @@
 name: rgenerator
 channels:
-  - conda-forge
   - defaults
+  - conda-forge
 
 dependencies:
-  - python
-  - camelot-py   
+  - python=3.11
+  - camelot-py
   - matplotlib
   - numpy
   - pandas
@@ -16,6 +16,7 @@ dependencies:
   - pip
   - pytest
   - pytest-cov
+  - tomllib
   - pip:
       - openpyxl
-      - fitz
+      - pymupdf
