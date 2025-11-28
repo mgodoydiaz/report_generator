@@ -25,3 +25,16 @@ dist-ssr
 
 # Credenciales 
 aux_files/credentials.json
+
+# egg
+*.egg
+*.egg-info
+
+# Se omiten builds de conda
+build/
+
+__pycache__/
+*.pyc
+
+# Agregaados por Miguel
+modulo.zip

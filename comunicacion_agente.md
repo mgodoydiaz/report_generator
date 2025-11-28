@@ -24,3 +24,15 @@ No es necesario crear funciones nuevas; solo documentar estos usos parametrizado
 
 **Pregunta 7:** Dentro de `rgenerator`, crea/edita los `__init__.py` necesarios para exponer las funciones y constantes de `tooling`.  
 **Respuesta 7:** Añadí `backend/rgenerator/__init__.py` para registrar el paquete y extendí `backend/rgenerator/tooling/__init__.py` con importaciones explícitas de `etl_tools`, `plot_tools`, `report_tools` y `constants`, de modo que utilidades como `grafico_barras_promedio_por` o `formato_informe_generico` puedan importarse directamente desde `rgenerator.tooling`.
+
+**Pregunta 8:** Crea una carpeta de testing con pytest para comprobar las importaciones.  
+**Respuesta 8:** Preparé `tests/` con `conftest.py` (inyecta `backend/` al `sys.path`) y `test_rgenerator_imports.py`, que verifica que `import rgenerator` funciona y que `rgenerator.tooling` expone las funciones/constantes clave.
+
+**Pregunta 9:** Crea `pyproject.toml` y `setup.py` para poder instalar la librería localmente en modo editable.  
+**Respuesta 9:** Añadí `pyproject.toml` (especifica `setuptools`/`wheel` como build backend) y `setup.py`, que define metadata del paquete, dependencias principales y la ubicación del código (`backend/`). Con esto se puede ejecutar `pip install -e .` para usar `rgenerator` como librería instalada.
+
+**Pregunta 10:** Deja la versión del paquete como una constante interna.  
+**Respuesta 10:** Creé `backend/rgenerator/_version.py` con `__version__`, actualicé `backend/rgenerator/__init__.py` para exportarlo y ajusté `setup.py` para leer ese valor, de modo que la versión viva en un único lugar.
+
+**Pregunta 11:** Crea un script `.py` para correr los tests y configura coverage.  
+**Respuesta 11:** Añadí `run_tests.py` (ejecuta `pytest` con `--cov=backend/rgenerator --cov-report=term-missing`) y `.coveragerc` para centralizar la configuración de cobertura (source `backend/rgenerator`, omite scripts/tests, muestra líneas faltantes).

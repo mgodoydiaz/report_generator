@@ -1,0 +1,17 @@
+[project]
+name = "rgenerator"
+version = "0.1.0"
+description = "Librería de ETL y reportería académica"
+authors = [{name = "Miguel Godoy", email = "magodoydiaz@gmail.com"}]
+requires-python = ">=3.9"
+
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = { "" = "backend" }
+
+[tool.setuptools.packages.find]
+where = ["backend"]
+include = ["rgenerator", "rgenerator.*"]
