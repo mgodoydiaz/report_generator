@@ -38,3 +38,8 @@ __pycache__/
 
 # Agregaados por Miguel
 modulo.zip
+
+# Carpetas de trabajo
+data/input/*
+data/output/*
+data/tmp/*
