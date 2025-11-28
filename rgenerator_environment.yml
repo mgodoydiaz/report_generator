@@ -4,6 +4,7 @@ channels:
   - defaults
 
 dependencies:
+  - python
   - camelot-py   
   - matplotlib
   - numpy
@@ -13,6 +14,8 @@ dependencies:
   - tqdm
   - xlrd
   - pip
+  - pytest
+  - pytest-cov
   - pip:
       - openpyxl
       - fitz

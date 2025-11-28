@@ -3,6 +3,7 @@ rgenerator
 Librería para ejecutar ETL y generar reportes académicos.
 """
 
-from . import etl, tooling, reports  # noqa: F401
+from . import etl, reports, tooling  # noqa: F401
+from ._version import __version__  # noqa: F401
 
-__all__ = ["etl", "tooling", "reports"]
+__all__ = ["etl", "tooling", "reports", "__version__"]
