@@ -2,58 +2,15 @@
 
 import os
 import argparse
+import pandas as pd # Posiblemente haya que quitarla
 
-import pandas as pd  # por si quieres hacer ajustes extra
-
-# Si este archivo está en la misma carpeta que las funciones, puedes usarlas directo.
-# Si las tienes en otro módulo, importa así:
-# from rgenerator.etl.simce_etl import (
-#     crear_df_resultados_estudiantes,
-#     crear_df_resultados_preguntas,
-#     guardar_dataframe_como_excel,
-# )
-
-# Aquí pegas tus funciones o las importas
 from rgenerator.etl.simce_etl import (
     crear_df_resultados_estudiantes,
     crear_df_resultados_preguntas,
     guardar_dataframe_como_excel,
 )
 
-
-def cargar_config_desde_txt(ruta_txt: str) -> dict:
-    """
-    Lee un archivo .txt tipo:
-        tipo_etl = estudiantes
-        directorio_archivos = simce/lectura
-        mes = Marzo
-        numero_prueba = 1
-        asignatura = Lenguaje
-        columnas_relevantes = RBD,Curso,Letra,Run,Nombre,Puntaje,Nivel
-        nombre_salida = resultados_estudiantes_simce.xlsx
-    Retorna un dict con las claves y valores.
-    """
-    config = {}
-    with open(ruta_txt, encoding="utf-8") as f:
-        for linea in f:
-            linea = linea.strip()
-            if not linea or linea.startswith("#"):
-                continue
-            if "=" not in linea:
-                continue
-            clave, valor = linea.split("=", 1)
-            config[clave.strip()] = valor.strip()
-    return config
-
-
-def parsear_lista_desde_config(config: dict, clave: str) -> list:
-    """
-    Convierte una línea "a,b,c" en ["a", "b", "c"].
-    """
-    valor = config.get(clave, "")
-    if not valor:
-        return []
-    return [item.strip() for item in valor.split(",")]
+from rgenerator.tooling.config_tools import cargar_config_desde_txt, parsear_lista_desde_config
 
 
 def main():
@@ -84,6 +41,7 @@ def main():
         mes = config["mes"]
         numero_prueba = int(config["numero_prueba"])
         asignatura = config["asignatura"]
+        linea_header = int(config["linea_header"])
         columnas_relevantes = parsear_lista_desde_config(config, "columnas_relevantes")
 
         df_res = crear_df_resultados_estudiantes(
@@ -91,6 +49,7 @@ def main():
             mes=mes,
             numero_prueba=numero_prueba,
             columnas_relevantes=columnas_relevantes,
+            linea_header=linea_header,
             asignatura=asignatura,
         )
 
