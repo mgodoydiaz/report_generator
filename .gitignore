@@ -28,6 +28,7 @@ aux_files/credentials.json
 
 # egg
 *.egg
+
 *.egg-info
 
 # Se omiten builds de conda
@@ -43,3 +44,7 @@ modulo.zip
 #data/input/*
 data/output/*
 data/tmp/*
+
+# Codex and rovodev things
+codex-review.md 
+comunicacion_agente.md

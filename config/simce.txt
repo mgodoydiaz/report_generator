@@ -1,0 +1,10 @@
+# Tipo de ETL: estudiantes o preguntas
+tipo_etl = estudiantes
+
+directorio_archivos = simce/lectura_2b
+mes = Marzo
+numero_prueba = 1
+asignatura = Lenguaje
+
+columnas_relevantes = RBD,Curso,Letra,RUN,Nombre,Puntaje,Nivel_Logro
+nombre_salida = simce_lectura_2b_estudiantes.xlsx
