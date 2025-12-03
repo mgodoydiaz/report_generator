@@ -16,7 +16,12 @@ dependencies:
   - pip
   - pytest
   - pytest-cov
+  - git
   - pip:
       - openpyxl
       - pymupdf
-      - -e ./backend/rgenerator
+      # Aqui debería instalarse rgenerator de alguna forma
+      # ####
+      # Lo siguiente viene solo para la rama main, en caso de devtest
+      # instalar manualmente
+      #- git+https://github.com/username/rgenerator.git
