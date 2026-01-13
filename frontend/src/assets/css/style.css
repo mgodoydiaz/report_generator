@@ -1,0 +1,31 @@
+:root {
+    --app-bg: #f5f1e8;
+    --app-accent: #0f4c81;
+    --app-accent-2: #f26b5b;
+}
+
+body {
+    background: radial-gradient(circle at 10% 10%, #fff4e2 0%, #f5f1e8 40%, #e9f2ff 100%);
+    color: #132039;
+}
+
+.hero-card {
+    background: #fff;
+    border: 2px solid #162744;
+    box-shadow: 8px 8px 0 #162744;
+}
+
+.section-card {
+    border: 1px solid #d7dbe6;
+    border-radius: 18px;
+    padding: 24px;
+    background: #ffffff;
+}
+
+.section-card h2 {
+    color: var(--app-accent);
+}
+
+.nav-pills .nav-link.active {
+    background: var(--app-accent);
+}

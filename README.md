@@ -26,7 +26,7 @@ conda activate rgenerator
 ### 2. Ejecutar ETL desde consola
 
 ```bash
-python scripts/run_etl.py --input ruta_input --output ruta_output
+python .\scripts\run_etl.py .\config\simce_estudiantes_lenguaje.txt
 ```
 
 ### 3. Generar informe PDF desde consola
