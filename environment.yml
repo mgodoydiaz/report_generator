@@ -18,6 +18,7 @@ dependencies:
   - pytest-cov
   - miktex
   - git
+  - streamlit
   - pip:
       - openpyxl
       - pymupdf

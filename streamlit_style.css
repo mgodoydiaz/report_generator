@@ -1,0 +1,156 @@
+﻿:root {
+    --app-bg: #f3f4f8;
+    --app-surface: #ffffff;
+    --app-accent: #0f4c81;
+    --app-accent-2: #f26b5b;
+    --app-ink: #0f172a;
+}
+
+html, body, [class*="css"]  {
+    font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+}
+
+.stApp {
+    background: radial-gradient(circle at top left, #fef3d7 0%, #f3f4f8 45%, #eaf0ff 100%);
+    color: var(--app-ink);
+}
+
+section.hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 24px;
+    padding: 28px;
+    border-radius: 20px;
+    background: var(--app-surface);
+    border: 2px solid #162744;
+    box-shadow: 10px 10px 0 #162744;
+    margin-bottom: 24px;
+}
+
+section.hero.hero-slim {
+    padding: 20px 28px;
+}
+
+.hero h1 {
+    font-size: 2.2rem;
+    margin-bottom: 8px;
+    color: var(--app-accent);
+}
+
+.hero-sub {
+    color: #4b5563;
+    margin-bottom: 0;
+    max-width: 560px;
+}
+
+.eyebrow {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.75rem;
+    color: #5c6b82;
+    margin-bottom: 10px;
+}
+
+.hero-panel {
+    display: grid;
+    gap: 12px;
+    min-width: 260px;
+}
+
+.kpi {
+    background: #f9fafc;
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid #dde2ee;
+}
+
+.kpi-label {
+    display: block;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #6b7280;
+}
+
+.kpi-value {
+    display: block;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: var(--app-accent);
+}
+
+.section-title {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 12px 0 16px;
+    color: var(--app-ink);
+}
+
+.section-subtitle {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin: 16px 0 12px;
+    color: #1f2937;
+}
+
+.page-title {
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--app-accent);
+    margin-bottom: 6px;
+}
+
+.page-sub {
+    color: #6b7280;
+}
+
+.feature-card,
+.info-card {
+    background: var(--app-surface);
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid #dde2ee;
+    box-shadow: 6px 6px 0 #162744;
+    min-height: 150px;
+}
+
+.feature-card h3 {
+    margin-bottom: 8px;
+}
+
+.feature-foot {
+    font-size: 0.85rem;
+    color: #6b7280;
+}
+
+.info-card h4 {
+    margin-bottom: 8px;
+}
+
+.stButton > button {
+    background: var(--app-accent);
+    color: #ffffff;
+    border-radius: 10px;
+    border: none;
+}
+
+.stButton > button:hover {
+    background: #0b3a63;
+    color: #ffffff;
+}
+
+[data-testid="stMetric"] {
+    background: var(--app-surface);
+    padding: 16px;
+    border-radius: 14px;
+    border: 1px solid #dde2ee;
+    box-shadow: 4px 4px 0 #162744;
+}
+
+@media (max-width: 900px) {
+    section.hero {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
