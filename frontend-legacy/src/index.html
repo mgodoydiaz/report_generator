@@ -10,6 +10,7 @@
     <link href="assets/css/style.css" rel="stylesheet">
 </head>
 <body>
+    <!-- Barra de navegación superior (Mobile toggler & Brand) -->
     <nav class="navbar navbar-expand-lg navbar-light bg-light border-bottom">
         <div class="container-fluid">
             <a class="navbar-brand fw-bold" href="#home">Menu</a>
@@ -19,7 +20,9 @@
         </div>
     </nav>
 
+    <!-- Contenedor principal del Layout (Sidebar + Contenido) -->
     <div class="d-lg-flex">
+        <!-- Sidebar / Menú lateral (Offcanvas en mobile) -->
         <div class="offcanvas-lg offcanvas-start" tabindex="-1" id="mainMenu" aria-labelledby="mainMenuLabel">
             <div class="offcanvas-header">
                 <h5 class="offcanvas-title" id="mainMenuLabel">Menu</h5>
@@ -39,6 +42,7 @@
             </div>
         </div>
 
+        <!-- Área principal de contenido -->
         <main class="container py-5 layout-main">
         <section id="home" class="hero-card p-4 p-md-5 mb-5">
             <div class="d-flex align-items-center gap-3 flex-wrap">
