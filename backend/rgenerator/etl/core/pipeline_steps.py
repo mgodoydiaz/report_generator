@@ -15,14 +15,23 @@ from rgenerator.tooling.config_tools import cargar_config_desde_json, parsear_li
 
 class InitRun(Step):
     """
-    Step inicial para configurar el contexto de la corrida. Parámetros recomendados son:
-    {
-    "evaluation": "simce", 
-    "base_dir": Path, 
-    "year": 2025,
-    "asignatura": "Lenguaje", 
-    "numero_prueba": 5
-    }
+    Inicializa el contexto y directorios de la corrida.
+    
+    Parametros:
+        evaluation (obligatorio): Nombre de la evaluacion.
+        base_dir (obligatorio): Ruta base donde se crea la carpeta de trabajo.
+        year (obligatorio): Anio de la evaluacion.
+        asignatura (obligatorio): Asignatura asociada.
+        numero_prueba (obligatorio): Numero de prueba.
+    
+    Output:
+        - ctx.params poblado con los parametros base.
+        - ctx.work_dir, ctx.inputs_dir, ctx.aux_dir, ctx.outputs_dir creados.
+        - ctx.status actualizado a "RUNNING".
+    
+    Ejemplo:
+        InitRun(evaluation="simce", base_dir=Path("data"), year=2025,
+                asignatura="Lenguaje", numero_prueba=5)
     """
     def __init__(self, **kwargs):
         super().__init__(name="InitRun")
@@ -66,12 +75,27 @@ class InitRun(Step):
 
 
 class LoadConfig(Step):
+    """
+    Carga configuracion desde JSON y normaliza parametros.
+    
+    Parametros:
+        config_path (obligatorio): Ruta al archivo JSON.
+        list_keys (opcional): Claves a tratar como listas. Por defecto
+            ["columnas_relevantes", "columnas_relevantes_habilidades"].
+    
+    Output:
+        - ctx.params con valores normalizados (tipo_etl, nombre_salida, etc.).
+        - ctx.outputs["excel_salida"] si existe ctx.outputs_dir.
+    
+    Ejemplo:
+        LoadConfig("config/simce_estudiantes_lenguaje.json")
+    """
     def __init__(
         self,
         config_path: Path | str,
         list_keys: list[str] | None = None,
     ):
-        super().__init__(name="load_config")
+        super().__init__(name="LoadConfig")
         self.config_path = Path(config_path)
         self.list_keys = list_keys or [
             "columnas_relevantes",
@@ -123,7 +147,18 @@ class LoadConfig(Step):
 
 class DiscoverInputs(Step):
     """
-    Escanea un directorio y clasifica archivos según un diccionario de reglas.
+    Escanea un directorio y clasifica archivos segun reglas.
+    
+    Parametros:
+        rules (obligatorio): Diccionario con criterios por tipo.
+            Opcionales: "extension", "contains", "exclude_prefix".
+    
+    Output:
+        - ctx.inputs[tipo] con rutas clasificadas.
+    
+    Ejemplo:
+        DiscoverInputs(rules={"estudiantes": {"extension": ".xlsx",
+                      "contains": "Resultados"}})
     """
     def __init__(self, rules: dict):
         super().__init__(name="DiscoverInputs")
@@ -181,11 +216,17 @@ class DiscoverInputs(Step):
 
 class RunExcelETL(Step):
     """
-    Step GENÉRICO para cargar, normalizar headers y consolidar archivos Excel.
+    Consolida archivos Excel y guarda el resultado en artifacts.
     
-    Espera en ctx.params:
-        - header_row: int o dict {"archivo.xlsx": 5, "default": 0}
-        - column_mapping: dict { "ColumnaFea": "ColumnaBonita" }
+    Parametros:
+        input_key (obligatorio): Clave en ctx.inputs con archivos a procesar.
+        output_key (obligatorio): Clave en ctx.artifacts para el DataFrame.
+    
+    Output:
+        - ctx.artifacts[output_key] con DataFrame consolidado (o vacio).
+    
+    Ejemplo:
+        RunExcelETL(input_key="estudiantes", output_key="df_estudiantes_raw")
     """
     def __init__(self, input_key: str, output_key: str):
         super().__init__(
@@ -266,12 +307,22 @@ class RunExcelETL(Step):
 
 class EnrichWithContext(Step):
     """
-    Step GENÉRICO para enriquecer y limpiar DataFrames.
+    Enriquecer y limpiar DataFrames con parametros del contexto.
     
-    Realiza 3 acciones en orden:
-    1. Inyecta columnas constantes desde ctx.params (ej: Asignatura, Año).
-    2. Ejecuta una función de limpieza personalizada (ej: limpiar_columnas).
-    3. Filtra el DataFrame final para dejar solo las columnas relevantes.
+    Parametros:
+        input_key (obligatorio): Clave del artifact de entrada.
+        output_key (obligatorio): Clave del artifact de salida.
+        context_mapping (obligatorio): Mapa {"ColumnaNueva": "param_key"}.
+        columns_param_key (opcional): Clave con columnas a mantener.
+        cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
+    
+    Output:
+        - ctx.artifacts[output_key] con DataFrame enriquecido.
+    
+    Ejemplo:
+        EnrichWithContext("df_raw", "df_clean",
+                          {"Asignatura": "asignatura"},
+                          columns_param_key="columnas_relevantes")
     """
     def __init__(
         self, 
@@ -282,13 +333,12 @@ class EnrichWithContext(Step):
         cleaning_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
     ):
         """
-        Args:
-            input_key: Clave del artifact de entrada (ej: 'df_estudiantes_raw').
-            output_key: Clave del artifact de salida (ej: 'df_estudiantes_clean').
-            context_mapping: Diccionario {"Nombre Columna Nueva": "Clave en ctx.params"}.
-                             Ej: {"Asignatura": "asignatura", "Mes": "mes"}
-            columns_param_key: Clave en ctx.params que contiene la LISTA de columnas a mantener.
-            cleaning_func: Función Python que recibe un DF y devuelve un DF limpio.
+        Parametros:
+            input_key (obligatorio): Clave del artifact de entrada.
+            output_key (obligatorio): Clave del artifact de salida.
+            context_mapping (obligatorio): Mapa {"ColumnaNueva": "param_key"}.
+            columns_param_key (opcional): Clave con columnas a mantener.
+            cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
         """
         super().__init__(
             name=f"Enrich_{output_key}",
