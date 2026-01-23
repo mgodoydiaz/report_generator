@@ -24,7 +24,7 @@ def _build_context(base_dir: Path) -> RunContext:
 def run_pipeline_estudiantes() -> RunContext:
     repo_root = _repo_root()
     base_dir = Path(__file__).resolve().parent / "input_test"
-    config_path = repo_root / "config" / "simce_estudiantes_lenguaje.txt"
+    config_path = repo_root / "config" / "simce_estudiantes_lenguaje.json"
 
     ctx = _build_context(base_dir)
 

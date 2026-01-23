@@ -9,7 +9,7 @@ from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step
-from rgenerator.tooling.config_tools import cargar_config_desde_txt, parsear_lista_desde_config
+from rgenerator.tooling.config_tools import cargar_config_desde_json, parsear_lista_desde_config
 
 ##### Steps definidos para SIMCE 
 
@@ -88,11 +88,11 @@ class LoadConfig(Step):
         if not self.config_path.exists():
             raise FileNotFoundError(f"No se encontró config: {self.config_path}")
 
-        config = cargar_config_desde_txt(str(self.config_path))
+        config = cargar_config_desde_json(str(self.config_path))
 
         # Normaliza defaults
-        tipo_etl = config.get("tipo_etl", "estudiantes").strip().lower()
-        nombre_salida = config.get("nombre_salida", "salida_etl.xlsx").strip()
+        tipo_etl = str(config.get("tipo_etl", "estudiantes")).strip().lower()
+        nombre_salida = str(config.get("nombre_salida", "salida_etl.xlsx")).strip()
 
         # Asegura params en el contexto
         if not hasattr(ctx, "params") or ctx.params is None:
@@ -106,7 +106,11 @@ class LoadConfig(Step):
         # Parsea listas declaradas en el txt si existen
         for key in self.list_keys:
             if key in config:
-                ctx.params[key] = parsear_lista_desde_config(config, key)
+                valor = config.get(key)
+                if isinstance(valor, list):
+                    ctx.params[key] = valor
+                else:
+                    ctx.params[key] = parsear_lista_desde_config(config, key)
 
         # Copia el resto tal cual, sin pisar lo ya normalizado
         for k, v in config.items():

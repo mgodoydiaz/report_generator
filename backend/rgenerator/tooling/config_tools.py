@@ -1,4 +1,7 @@
 
+import json
+
+
 def cargar_config_desde_txt(ruta_txt: str) -> dict:
     """
     Lee un archivo .txt tipo:
@@ -22,6 +25,13 @@ def cargar_config_desde_txt(ruta_txt: str) -> dict:
             clave, valor = linea.split("=", 1)
             config[clave.strip()] = valor.strip()
     return config
+
+def cargar_config_desde_json(ruta_json: str) -> dict:
+    """
+    Lee un archivo .json y retorna un dict con las claves y valores.
+    """
+    with open(ruta_json, encoding="utf-8") as f:
+        return json.load(f)
 
 def parsear_lista_desde_config(config: dict, clave: str) -> list:
     """

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pandas as pd
 
@@ -45,15 +46,18 @@ def test_init_run_creates_context_dirs(tmp_path: Path) -> None:
 
 
 def test_load_config_parses_lists(tmp_path: Path) -> None:
-    config_text = "\n".join(
-        [
-            "tipo_etl = estudiantes",
-            "nombre_salida = salida.xlsx",
-            "columnas_relevantes = Nombre,RUT,Curso",
-        ]
+    config_path = tmp_path / "config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "tipo_etl": "estudiantes",
+                "nombre_salida": "salida.xlsx",
+                "columnas_relevantes": ["Nombre", "RUT", "Curso"],
+            },
+            ensure_ascii=True,
+        ),
+        encoding="utf-8",
     )
-    config_path = tmp_path / "config.txt"
-    config_path.write_text(config_text, encoding="utf-8")
 
     ctx = _make_context(tmp_path)
     ctx.outputs_dir = tmp_path / "outputs"

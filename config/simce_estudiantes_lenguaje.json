@@ -1,0 +1,22 @@
+{
+  "tipo_etl": "estudiantes",
+  "directorio_archivos": "Lenguaje\\inputs",
+  "mes": "Noviembre",
+  "numero_prueba": 5,
+  "asignatura": "Lenguaje",
+  "linea_header": 23,
+  "columnas_relevantes": [
+    "Nombre",
+    "RUT",
+    "Curso",
+    "B",
+    "M",
+    "O",
+    "Puntaje",
+    "Rend",
+    "SIMCE",
+    "Nota",
+    "Logro"
+  ],
+  "nombre_salida": "simce_2025_estudiantes.xlsx"
+}
