@@ -12,6 +12,7 @@ class RunContext:
     evaluation: str
     run_id: str
     base_dir: Path
+    params: Dict[str, Any] = field(default_factory=dict)
 
     # Archivos de entrada por rol (ej: estudiantes, preguntas, resultados, reporte_preguntas, etc.)
     inputs: Dict[str, List[Path]] = field(default_factory=dict)

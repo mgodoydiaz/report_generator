@@ -42,6 +42,34 @@ class Step:
         """
         raise NotImplementedError("Implementa run() en tu Step concreto")
 
+    def _snapshot_artifacts(self, ctx: "RunContext") -> Dict[str, int]:
+        if not hasattr(ctx, "artifacts") or ctx.artifacts is None:
+            return {}
+        return {k: id(v) for k, v in ctx.artifacts.items()}
+
+    def _log_artifacts_delta(self, ctx: "RunContext", before: Dict[str, int]) -> None:
+        if not hasattr(ctx, "artifacts") or ctx.artifacts is None:
+            print(f"[{self.name}] Artifacts no disponibles.")
+            return
+
+        after = {k: id(v) for k, v in ctx.artifacts.items()}
+        added = sorted(set(after) - set(before))
+        removed = sorted(set(before) - set(after))
+        changed = sorted(k for k in set(after) & set(before) if after[k] != before[k])
+
+        if not added and not removed and not changed:
+            print(f"[{self.name}] Artifacts sin cambios.")
+            return
+
+        parts = []
+        if added:
+            parts.append(f"agregados={added}")
+        if removed:
+            parts.append(f"removidos={removed}")
+        if changed:
+            parts.append(f"actualizados={changed}")
+        print(f"[{self.name}] Artifacts: " + "; ".join(parts))
+
 
 
 
