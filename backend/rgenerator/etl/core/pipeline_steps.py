@@ -15,29 +15,25 @@ from rgenerator.tooling.config_tools import cargar_config_desde_json, parsear_li
 
 class InitRun(Step):
     """
-    Step inicial para configurar el contexto de la corrida.
+    Step inicial para configurar el contexto de la corrida. Parámetros recomendados son:
+    {
+    "evaluation": "simce", 
+    "base_dir": Path, 
+    "year": 2025,
+    "asignatura": "Lenguaje", 
+    "numero_prueba": 5
+    }
     """
-    def __init__(
-            self,
-            evaluation: str,
-            base_dir: Path,
-            year: int,
-            asignatura: str,
-            numero_prueba: int,
-    ):
+    def __init__(self, **kwargs):
         super().__init__(name="InitRun")
-        self.evaluation = evaluation
-        self.base_dir = base_dir
-        self.year = year
-        self.asignatura = asignatura
-        self.numero_prueba = numero_prueba
+        self.params = kwargs
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def run(self, context):
         before = self._snapshot_artifacts(context)
 
         # Identidad del run o task
-        context.evaluation = self.evaluation
+        context.evaluation = self.params.get("evaluation", "unknown_evaluation")
         context.run_id = self.timestamp
 
 
@@ -45,20 +41,19 @@ class InitRun(Step):
         # Agregar un id unico a la corrida, run o task, gestionar algun tipo de software como sidekiq, celery, airflow, etc.
         # context.run_id = # get_unique_id_somehow()
 
-        # parametros base
-        context.params = {
-            "year": self.year,
-            "asignatura": self.asignatura,
-            "numero_prueba": self.numero_prueba,
-        }
+        # Se migran los parametros del InitRun al contexto en params
+        if not hasattr(context, "params") or context.params is None:
+            context.params = {}
+        for k, v in self.params.items():
+            context.params[k] = v       
 
         # carpetas estandar
         ########################################
         # ATENCION A CAMBIO
         # ESTO DEBERIA CAMBIAR POR ALGUNA BASE DE DATOS
 
-        context.base_dir = self.base_dir
-        context.work_dir = self.base_dir / context.evaluation / context.run_id
+        context.base_dir = self.params.get("base_dir")
+        context.work_dir = context.base_dir / context.evaluation / context.run_id
         context.inputs_dir = context.base_dir / "inputs"
         context.aux_dir = context.work_dir / "aux_files"
         context.outputs_dir = context.work_dir / "outputs"

@@ -19,6 +19,7 @@ dependencies:
   - miktex
   - git
   - streamlit
+  - ipykernel
   - pip:
       - openpyxl
       - pymupdf

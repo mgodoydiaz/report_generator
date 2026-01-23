@@ -7,7 +7,22 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class RunContext:
-    """Contexto compartido entre steps."""
+    """Contexto compartido entre steps.
+    
+    Parameters:
+    ---------------
+    evaluation: str
+        Nombre de la evaluación (ej: 'simce', 'psu', etc.)
+    
+    run_id: str
+        Identificador único de la corrida (ej: timestamp, UUID, etc.)
+
+    base_dir: Path
+        Directorio base donde se encuentran inputs, outputs, etc.
+
+    params: Dict[str, Any]
+        Parámetros generales de la corrida (configuración, opciones, etc.) 
+        """
 
     evaluation: str
     run_id: str
