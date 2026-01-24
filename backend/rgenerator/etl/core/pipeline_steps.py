@@ -18,11 +18,14 @@ class InitRun(Step):
     Inicializa el contexto y directorios de la corrida.
     
     Parametros:
-        evaluation (obligatorio): Nombre de la evaluacion.
-        base_dir (obligatorio): Ruta base donde se crea la carpeta de trabajo.
-        year (obligatorio): Anio de la evaluacion.
-        asignatura (obligatorio): Asignatura asociada.
-        numero_prueba (obligatorio): Numero de prueba.
+        Se reciben via kwargs. Claves esperadas para esta clase:
+            - evaluation: Nombre de la evaluacion.
+            - base_dir: Ruta base donde se crea la carpeta de trabajo.
+            - anio / year: Anio de la evaluacion (se copia a ctx.params).
+            - asignatura: Asignatura asociada.
+            - mes: Mes asociado a la evaluacion.
+            - numero_prueba: Numero de prueba.
+        Cualquier otra clave se copia tal cual a ctx.params.
     
     Output:
         - ctx.params poblado con los parametros base.
@@ -30,8 +33,14 @@ class InitRun(Step):
         - ctx.status actualizado a "RUNNING".
     
     Ejemplo:
-        InitRun(evaluation="simce", base_dir=Path("data"), year=2025,
-                asignatura="Lenguaje", numero_prueba=5)
+        InitRun(
+            evaluation="simce",
+            base_dir=Path("data"),
+            anio=2025,
+            asignatura="Lenguaje",
+            mes="Noviembre",
+            numero_prueba=5,
+        )
     """
     def __init__(self, **kwargs):
         super().__init__(name="InitRun")
@@ -80,8 +89,6 @@ class LoadConfig(Step):
     
     Parametros:
         config_path (obligatorio): Ruta al archivo JSON.
-        list_keys (opcional): Claves a tratar como listas. Por defecto
-            ["columnas_relevantes", "columnas_relevantes_habilidades"].
     
     Output:
         - ctx.params con valores normalizados (tipo_etl, nombre_salida, etc.).
@@ -93,14 +100,9 @@ class LoadConfig(Step):
     def __init__(
         self,
         config_path: Path | str,
-        list_keys: list[str] | None = None,
     ):
         super().__init__(name="LoadConfig")
         self.config_path = Path(config_path)
-        self.list_keys = list_keys or [
-            "columnas_relevantes",
-            "columnas_relevantes_habilidades",
-        ]
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)

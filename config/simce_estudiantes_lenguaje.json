@@ -1,4 +1,5 @@
 {
+  "evaluation": "simce_lenguaje",
   "files_dir": "Lenguaje\\inputs",
   "files":{
     "type_1":[],
