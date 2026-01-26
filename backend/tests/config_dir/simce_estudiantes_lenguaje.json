@@ -1,10 +1,4 @@
 {
-  "files_dir": "Lenguaje\\inputs",
-  "files":{
-    "type_1":[],
-    "type_2":[],
-    "type_3":[]
-  },
   "header_row": 23,
   "select_columns": [
     "Nombre",

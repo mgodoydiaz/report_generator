@@ -9,7 +9,7 @@ from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step
-from rgenerator.tooling.config_tools import cargar_config_desde_json, parsear_lista_desde_config
+from rgenerator.tooling.config_tools import cargar_config_desde_json
 
 ##### Steps definidos para SIMCE 
 
@@ -72,13 +72,16 @@ class InitRun(Step):
         
         # base_dir puede existir dentro del contexto y en self.params venir vacío
         context.base_dir = Path(self.params.get("base_dir", context.base_dir))
-        context.work_dir = context.base_dir / context.evaluation / context.run_id
-        context.inputs_dir = context.base_dir / "inputs"
+        context.inputs_dir = Path(self.params.get("inputs_dir", context.base_dir / "inputs"))
+        
+        """
         context.aux_dir = context.work_dir / "aux_files"
         context.outputs_dir = context.work_dir / "outputs"
-
+        context.work_dir = context.base_dir / context.evaluation / context.run_id
         for d in [context.work_dir, context.inputs_dir, context.aux_dir, context.outputs_dir]:
             d.mkdir(parents=True, exist_ok=True)
+        """
+        ########################################
 
         context.status = "RUNNING"
         self._log_artifacts_delta(context, before)
@@ -92,7 +95,7 @@ class LoadConfig(Step):
         config_path (obligatorio): Ruta al archivo JSON.
     
     Output:
-        - ctx.params con valores normalizados (tipo_etl, nombre_salida, etc.).
+        - ctx.params con valores normalizados (nombre_salida, etc.).
         - ctx.outputs["excel_salida"] si existe ctx.outputs_dir.
     
     Ejemplo:
@@ -113,7 +116,6 @@ class LoadConfig(Step):
         config = cargar_config_desde_json(str(self.config_path))
 
         # Normaliza defaults
-        tipo_etl = str(config.get("tipo_etl", "estudiantes")).strip().lower()
         nombre_salida = str(config.get("nombre_salida", "salida_etl.xlsx")).strip()
 
         # Asegura params en el contexto
@@ -122,7 +124,6 @@ class LoadConfig(Step):
 
         # Guarda config cruda y params normalizados
         ctx.params["config_path"] = str(self.config_path)
-        ctx.params["tipo_etl"] = tipo_etl
         ctx.params["nombre_salida"] = nombre_salida
 
         # Copia el resto tal cual, sin pisar lo ya normalizado
@@ -241,12 +242,14 @@ class RunExcelETL(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        # Obtenemos la config de headers (puede venir del txt cargado en LoadConfig)
+        # Obtenemos la config de headers (puede venir del json cargado en LoadConfig)
         # Default global es 0 si no se especifica nada
         raw_header_config = ctx.params.get("header_row", 0)
-        
+
+        # Se obtienen los nombres de las columnas a mantener o seleccionar
+        select_columns = ctx.params.get("select_columns", [])
         # Obtenemos el mapeo de columnas (renames)
-        column_mapping = ctx.params.get("column_mapping", {})
+        column_mapping = ctx.params.get("rename_columns", {})
 
         # --- PASO 2: Normalizar la configuración del header ---
         # Si el usuario pasó un solo entero, lo convertimos a la estructura de diccionario
@@ -275,7 +278,11 @@ class RunExcelETL(Step):
                 # header=header_row le dice a pandas dónde leer los títulos
                 temp_df = pd.read_excel(ruta_archivo, header=header_row)
 
-                # 3.3: Renombrar columnas (Estandarización)
+                #3.3: Select columns 
+                if select_columns:
+                    temp_df = temp_df[[col for col in select_columns if col in temp_df.columns]]
+
+                # 3.4: Renombrar columnas (Estandarización)
                 # Esto es vital para que el concat posterior funcione bien
                 if column_mapping:
                     # rename solo cambia las que encuentra, ignora las que no existen
@@ -316,22 +323,20 @@ class EnrichWithContext(Step):
     Ejemplo:
         EnrichWithContext("df_raw", "df_clean",
                           {"Asignatura": "asignatura"},
-                          columns_param_key="columnas_relevantes")
+                          columns_param_key="select_columns")
     """
     def __init__(
         self, 
         input_key: str, 
         output_key: str,
-        context_mapping: Dict[str, str],
-        columns_param_key: str = "columnas_relevantes",
+        context_mapping: Dict[str, str] = {},
         cleaning_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
     ):
         """
         Parametros:
             input_key (obligatorio): Clave del artifact de entrada.
             output_key (obligatorio): Clave del artifact de salida.
-            context_mapping (obligatorio): Mapa {"ColumnaNueva": "param_key"}.
-            columns_param_key (opcional): Clave con columnas a mantener.
+            context_mapping (opcional): Mapa {"ColumnaNueva": "param_key"}.
             cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
         """
         super().__init__(
@@ -342,7 +347,6 @@ class EnrichWithContext(Step):
         self.input_key = input_key
         self.output_key = output_key
         self.context_mapping = context_mapping
-        self.columns_param_key = columns_param_key
         self.cleaning_func = cleaning_func
 
     def run(self, ctx):
@@ -350,6 +354,10 @@ class EnrichWithContext(Step):
         # 1. Cargar DataFrame entrada
         df = ctx.artifacts.get(self.input_key)
         
+        # Si self.context_mapping es diccionario vacío, se importa del contexto
+        if not self.context_mapping:
+            self.context_mapping = ctx.params.get("enrich_data", {})
+
         if df is None or df.empty:
             self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente.")
             ctx.artifacts[self.output_key] = pd.DataFrame()
@@ -358,31 +366,15 @@ class EnrichWithContext(Step):
 
         # Trabajamos sobre una copia para no alterar el artifact original por error
         df = df.copy()
-
-        # 4. Filtrar Columnas Relevantes
-        # Obtenemos la lista de columnas permitidas desde la config
-        cols_to_keep = ctx.params.get(self.columns_param_key, [])
-        
-        if cols_to_keep:
-            # Intersección: Solo pedimos las que realmente existen en el DF para evitar KeyErrors
-            # (Útil si el Excel traía menos columnas de las esperadas)
-            existing_cols = [c for c in cols_to_keep if c in df.columns]
-            
-            # Advertencia si faltan columnas importantes podría ir aquí
-            if len(existing_cols) < len(cols_to_keep):
-                missing = set(cols_to_keep) - set(existing_cols)
-                self._log(f"[{self.name}] Nota: Se descartaron columnas solicitadas que no existen: {missing}")
-            
-            df = df[existing_cols]
+        print(f"[{self.name}] Context Mapping: {self.context_mapping}")
 
         # 2. Inyectar columnas de contexto (Reemplaza a tu 'agregar_columnas_dataframe')
-        # Itera sobre el mapa: Crea columna "X" con el valor de ctx.params["y"]
-        for col_name, param_key in self.context_mapping.items():
-            valor = ctx.params.get(param_key)
-            if valor is not None:
+        # Itera sobre el mapa: Crea columna "X" con el valor de self.context_mapping["y"]
+        for col_name, valor in self.context_mapping.items():
+            try:
                 df[col_name] = valor
-            else:
-                self._log(f"[{self.name}] Advertencia: Parámetro '{param_key}' no encontrado en contexto.")
+            except Exception as e:
+                self._log(f"[{self.name}] Error al inyectar columna '{col_name}': {e}")
 
         # 3. Aplicar función de limpieza específica (Tu 'limpiar_columnas')
         if self.cleaning_func:
@@ -408,13 +400,18 @@ class ExportConsolidatedExcel(Step):
     Output:
         - Archivo Excel en la ruta especificada.
     """
-    def __init__(self, input_key: str, output_path_param: str):
+    def __init__(
+            self, 
+            input_key: str, 
+            output_name: str ="", 
+):
         super().__init__(
             name="ExportConsolidatedExcel",
             requires=[input_key]
         )
         self.input_key = input_key
-        self.output_path_param = output_path_param
+        self.output_name = output_name
+
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
@@ -424,11 +421,9 @@ class ExportConsolidatedExcel(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        output_path_str = ctx.params.get(self.output_path_param)
-        if not output_path_str:
-            raise ValueError(f"[{self.name}] Error: Parámetro de ruta de salida '{self.output_path_param}' no encontrado.")
-
-        output_path = Path(output_path_str)
+        if not self.output_name:
+            self.output_name = ctx.params.get("nombre_salida", "salida_etl.xlsx")
+        output_path = ctx.base_dir / self.output_name
         try:
             df.to_excel(output_path, index=False)
             self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
