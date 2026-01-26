@@ -396,6 +396,47 @@ class EnrichWithContext(Step):
         print(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
         self._log_artifacts_delta(ctx, before)
 
+class ExportConsolidatedExcel(Step):
+    """
+    Exporta DataFrame consolidado a archivo Excel.
+    
+    Parametros:
+        input_key (obligatorio): Clave del artifact de entrada.
+        output_path_param (obligatorio): Clave en ctx.params con ruta de salida.
+    
+    Output:
+        - Archivo Excel en la ruta especificada.
+    """
+    def __init__(self, input_key: str, output_path_param: str):
+        super().__init__(
+            name="ExportConsolidatedExcel",
+            requires=[input_key]
+        )
+        self.input_key = input_key
+        self.output_path_param = output_path_param
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+        df = ctx.artifacts.get(self.input_key)
+        if df is None or df.empty:
+            print(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente. No se exporta nada.")
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        output_path_str = ctx.params.get(self.output_path_param)
+        if not output_path_str:
+            raise ValueError(f"[{self.name}] Error: Parámetro de ruta de salida '{self.output_path_param}' no encontrado.")
+
+        output_path = Path(output_path_str)
+        try:
+            df.to_excel(output_path, index=False)
+            print(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
+        except Exception as e:
+            raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
+
+        self._log_artifacts_delta(ctx, before)
+        
+
 # Lista de pasos SIMCE (solo para planificar, sin programar todavía)
 SIMCE_STEPS_PLAN = [
     "1) DiscoverInputs: identificar archivos y roles (estudiantes, preguntas, resultados por curso, etc.)",
