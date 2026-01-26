@@ -42,3 +42,19 @@ class RunContext:
     # Estado
     last_step: Optional[str] = None
     status: str = "NEW"  # NEW, RUNNING, NEEDS_REVIEW, DONE, FAILED
+
+    def show_attrs(self, indent: int = 2):
+        space = " " * indent
+        print(f"{self.__class__.__name__}")
+
+        for attr, value in vars(self).items():
+            if isinstance(value, dict):
+                print(f"{space}{attr}:")
+                for k, v in value.items():
+                    print(f"{space*2}{k}: {v}")
+            elif isinstance(value, list):
+                print(f"{space}{attr}:")
+                for i, v in enumerate(value):
+                    print(f"{space*2}[{i}] {v}")
+            else:
+                print(f"{space}{attr}: {value}")
