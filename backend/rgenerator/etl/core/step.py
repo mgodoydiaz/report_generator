@@ -28,6 +28,7 @@ class Step:
 
     # Parámetros del paso (configurable desde tu software más adelante)
     params: Dict[str, Any] = field(default_factory=dict)
+    logs: List[str] = field(default_factory=list)
 
     def validate(self, ctx: "RunContext") -> None:
         """Chequeos simples antes de correr el paso."""
@@ -42,33 +43,53 @@ class Step:
         """
         raise NotImplementedError("Implementa run() en tu Step concreto")
 
+    def _append_log(self, message: str) -> None:
+        if message is None:
+            return
+        if not hasattr(self, "logs") or self.logs is None:
+            self.logs = []
+        if isinstance(self.logs, list):
+            self.logs.append(message)
+        elif isinstance(self.logs, str):
+            if self.logs:
+                self.logs = f"{self.logs}\n{message}"
+            else:
+                self.logs = message
+        else:
+            self.logs = [str(self.logs), message]
+
+    def _log(self, message: str, emit: bool = True) -> None:
+        self._append_log(message)
+        if emit:
+            print(message)
+
     def _snapshot_artifacts(self, ctx: "RunContext") -> Dict[str, int]:
         if not hasattr(ctx, "artifacts") or ctx.artifacts is None:
             return {}
         return {k: id(v) for k, v in ctx.artifacts.items()}
 
     def _log_artifacts_delta(self, ctx: "RunContext", before: Dict[str, int]) -> None:
+        message = None
         if not hasattr(ctx, "artifacts") or ctx.artifacts is None:
-            print(f"[{self.name}] Artifacts no disponibles.")
-            return
+            message = f"[{self.name}] Artifacts no disponibles."
+        else:
+            after = {k: id(v) for k, v in ctx.artifacts.items()}
+            added = sorted(set(after) - set(before))
+            removed = sorted(set(before) - set(after))
+            changed = sorted(k for k in set(after) & set(before) if after[k] != before[k])
 
-        after = {k: id(v) for k, v in ctx.artifacts.items()}
-        added = sorted(set(after) - set(before))
-        removed = sorted(set(before) - set(after))
-        changed = sorted(k for k in set(after) & set(before) if after[k] != before[k])
-
-        if not added and not removed and not changed:
-            print(f"[{self.name}] Artifacts sin cambios.")
-            return
-
-        parts = []
-        if added:
-            parts.append(f"agregados={added}")
-        if removed:
-            parts.append(f"removidos={removed}")
-        if changed:
-            parts.append(f"actualizados={changed}")
-        print(f"[{self.name}] Artifacts: " + "; ".join(parts))
+            if not added and not removed and not changed:
+                message = f"[{self.name}] Artifacts sin cambios."
+            else:
+                parts = []
+                if added:
+                    parts.append(f"agregados={added}")
+                if removed:
+                    parts.append(f"removidos={removed}")
+                if changed:
+                    parts.append(f"actualizados={changed}")
+                message = f"[{self.name}] Artifacts: " + "; ".join(parts)
+        self._append_log(message)
 
     def show_attrs(self, indent: int = 2):
         space = " " * indent

@@ -168,7 +168,7 @@ class DiscoverInputs(Step):
             ctx.inputs[key] = []
 
         if not input_dir.exists():
-            print(f"Advertencia: Directorio {input_dir} no existe.")
+            self._log(f"Advertencia: Directorio {input_dir} no existe.")
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -205,7 +205,7 @@ class DiscoverInputs(Step):
                     ctx.inputs[tipo].append(full_path)
                     files_found += 1
 
-        print(f"DiscoverInputs: Se encontraron {files_found} archivos clasificados en {list(self.rules.keys())}.")
+        self._log(f"DiscoverInputs: Se encontraron {files_found} archivos clasificados en {list(self.rules.keys())}.")
         self._log_artifacts_delta(ctx, before)
 
 class RunExcelETL(Step):
@@ -236,7 +236,7 @@ class RunExcelETL(Step):
         # --- PASO 1: Cargar inputs y parámetros desde el contexto ---
         archivos = ctx.inputs.get(self.input_key, [])
         if not archivos:
-            print(f"Advertencia: No hay archivos en '{self.input_key}' para procesar.")
+            self._log(f"Advertencia: No hay archivos en '{self.input_key}' para procesar.")
             ctx.artifacts[self.output_key] = pd.DataFrame()
             self._log_artifacts_delta(ctx, before)
             return
@@ -260,7 +260,7 @@ class RunExcelETL(Step):
 
         df_list = []
         
-        print(f"[{self.name}] Procesando {len(archivos)} archivos de tipo '{self.input_key}'...")
+        self._log(f"[{self.name}] Procesando {len(archivos)} archivos de tipo '{self.input_key}'...")
 
         # --- PASO 3: Iterar, Leer y Renombrar ---
         for ruta_archivo in archivos:
@@ -287,14 +287,14 @@ class RunExcelETL(Step):
                 df_list.append(temp_df)
                 
             except Exception as e:
-                print(f"Error leyendo archivo {nombre_archivo} con header_row={header_row}: {e}")
+                self._log(f"Error leyendo archivo {nombre_archivo} con header_row={header_row}: {e}")
                 continue
 
         # --- PASO 4: Consolidar y Guardar en Artifacts ---
         if df_list:
             df_consolidado = pd.concat(df_list, ignore_index=True)
             ctx.artifacts[self.output_key] = df_consolidado
-            print(f"[{self.name}] Consolidado generado con {len(df_consolidado)} filas.")
+            self._log(f"[{self.name}] Consolidado generado con {len(df_consolidado)} filas.")
         else:
             ctx.artifacts[self.output_key] = pd.DataFrame()
         self._log_artifacts_delta(ctx, before)
@@ -351,7 +351,7 @@ class EnrichWithContext(Step):
         df = ctx.artifacts.get(self.input_key)
         
         if df is None or df.empty:
-            print(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente.")
+            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente.")
             ctx.artifacts[self.output_key] = pd.DataFrame()
             self._log_artifacts_delta(ctx, before)
             return
@@ -371,7 +371,7 @@ class EnrichWithContext(Step):
             # Advertencia si faltan columnas importantes podría ir aquí
             if len(existing_cols) < len(cols_to_keep):
                 missing = set(cols_to_keep) - set(existing_cols)
-                print(f"[{self.name}] Nota: Se descartaron columnas solicitadas que no existen: {missing}")
+                self._log(f"[{self.name}] Nota: Se descartaron columnas solicitadas que no existen: {missing}")
             
             df = df[existing_cols]
 
@@ -382,7 +382,7 @@ class EnrichWithContext(Step):
             if valor is not None:
                 df[col_name] = valor
             else:
-                print(f"[{self.name}] Advertencia: Parámetro '{param_key}' no encontrado en contexto.")
+                self._log(f"[{self.name}] Advertencia: Parámetro '{param_key}' no encontrado en contexto.")
 
         # 3. Aplicar función de limpieza específica (Tu 'limpiar_columnas')
         if self.cleaning_func:
@@ -394,7 +394,7 @@ class EnrichWithContext(Step):
 
         # 5. Guardar salida
         ctx.artifacts[self.output_key] = df
-        print(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
+        self._log(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
         self._log_artifacts_delta(ctx, before)
 
 class ExportConsolidatedExcel(Step):
@@ -420,7 +420,7 @@ class ExportConsolidatedExcel(Step):
         before = self._snapshot_artifacts(ctx)
         df = ctx.artifacts.get(self.input_key)
         if df is None or df.empty:
-            print(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente. No se exporta nada.")
+            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente. No se exporta nada.")
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -431,7 +431,7 @@ class ExportConsolidatedExcel(Step):
         output_path = Path(output_path_str)
         try:
             df.to_excel(output_path, index=False)
-            print(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
+            self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
         except Exception as e:
             raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
 
