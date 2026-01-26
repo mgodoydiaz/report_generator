@@ -124,15 +124,6 @@ class LoadConfig(Step):
         ctx.params["tipo_etl"] = tipo_etl
         ctx.params["nombre_salida"] = nombre_salida
 
-        # Parsea listas declaradas en el txt si existen
-        for key in self.list_keys:
-            if key in config:
-                valor = config.get(key)
-                if isinstance(valor, list):
-                    ctx.params[key] = valor
-                else:
-                    ctx.params[key] = parsear_lista_desde_config(config, key)
-
         # Copia el resto tal cual, sin pisar lo ya normalizado
         for k, v in config.items():
             if k not in ctx.params:
