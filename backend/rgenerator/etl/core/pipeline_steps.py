@@ -436,7 +436,38 @@ class ExportConsolidatedExcel(Step):
             raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
 
         self._log_artifacts_delta(ctx, before)
+
+class DeleteTempFiles(Step):
+    """
+    Elimina archivos y directorios temporales generados durante la corrida.
+    
+    Parametros:
+        No recibe parametros.
+
+    Output:
+        - Archivos y directorios eliminados.
+    """
+    def __init__(self):
+        super().__init__(name="DeleteTempFiles")
+
+    def run(self, context):
+        import shutil
+        # base_dir puede existir dentro del contexto y en self.params venir vacío
+        self.temp_dirs = [
+            context.aux_dir,
+            context.outputs_dir,
+            context.work_dir
+        ]
         
+        for dir_path in self.temp_dirs:
+            if dir_path.exists() and dir_path.is_dir():
+                try:
+                    shutil.rmtree(dir_path)
+                    self._log(f"[{self.name}] Eliminado directorio temporal: {dir_path}")
+                except Exception as e:
+                    self._log(f"[{self.name}] Error eliminando directorio {dir_path}: {e}")
+            else:
+                self._log(f"[{self.name}] Directorio no existe o no es un directorio: {dir_path}")
 
 # Lista de pasos SIMCE (solo para planificar, sin programar todavía)
 SIMCE_STEPS_PLAN = [
