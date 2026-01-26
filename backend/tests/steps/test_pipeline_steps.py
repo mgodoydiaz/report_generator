@@ -12,6 +12,7 @@ from rgenerator.etl.core.pipeline_steps import (
     DiscoverInputs,
     RunExcelETL,
     EnrichWithContext,
+    ExportConsolidatedExcel,
 )
 
 
@@ -25,19 +26,22 @@ def _make_context(base_dir: Path) -> RunContext:
 
 def test_init_run_creates_context_dirs(tmp_path: Path) -> None:
     ctx = _make_context(tmp_path)
-    step = InitRun(
-        evaluation="simce",
-        base_dir=tmp_path,
-        year=2025,
-        asignatura="Lenguaje",
-        numero_prueba=5,
-    )
+    params = {
+        "evaluation": "simce",
+        "base_dir": tmp_path,
+        "anio": 2025,
+        "asignatura": "Lenguaje",
+        "mes": "Noviembre",
+        "numero_prueba": 5,
+    }
+    step = InitRun(**params)
 
     step.run(ctx)
 
     assert ctx.status == "RUNNING"
-    assert ctx.params["year"] == 2025
+    assert ctx.params["anio"] == 2025
     assert ctx.params["asignatura"] == "Lenguaje"
+    assert ctx.params["mes"] == "Noviembre"
     assert ctx.params["numero_prueba"] == 5
     assert ctx.work_dir.exists()
     assert ctx.inputs_dir.exists()
@@ -45,7 +49,7 @@ def test_init_run_creates_context_dirs(tmp_path: Path) -> None:
     assert ctx.outputs_dir.exists()
 
 
-def test_load_config_parses_lists(tmp_path: Path) -> None:
+def test_load_config_copies_values(tmp_path: Path) -> None:
     config_path = tmp_path / "config.json"
     config_path.write_text(
         json.dumps(
@@ -157,3 +161,73 @@ def test_enrich_with_context_adds_columns_and_filters() -> None:
     assert "Asignatura" in df.columns
     assert "Mes" in df.columns
     assert "Numero_Prueba" in df.columns
+
+
+def test_export_consolidated_excel_creates_file_like_reference(tmp_path: Path) -> None:
+    base_dir = _repo_root() / "backend" / "tests" / "input_test"
+    inputs_dir = base_dir / "inputs" / "Lenguaje" / "inputs"
+    files = sorted(p for p in inputs_dir.glob("Resultados*.xlsx"))
+
+    ctx = _make_context(base_dir)
+    ctx.inputs["estudiantes"] = files
+    ctx.params.update(
+        {
+            "header_row": 23,
+            "column_mapping": {
+                "B": "Buenas",
+                "M": "Malas",
+                "O": "Omitidas",
+            },
+            "columnas_relevantes": [
+                "Nombre",
+                "RUT",
+                "Curso",
+                "Buenas",
+                "Malas",
+                "Omitidas",
+                "Puntaje",
+                "Rend",
+                "SIMCE",
+                "Nota",
+                "Logro",
+            ],
+            "asignatura": "Lenguaje",
+            "mes": "Noviembre",
+            "numero_prueba": 5,
+        }
+    )
+
+    run_excel = RunExcelETL(input_key="estudiantes", output_key="df_estudiantes_raw")
+    run_excel.run(ctx)
+
+    enrich = EnrichWithContext(
+        input_key="df_estudiantes_raw",
+        output_key="df_estudiantes_clean",
+        context_mapping={
+            "Asignatura": "asignatura",
+            "Mes": "mes",
+            "Numero_Prueba": "numero_prueba",
+        },
+        columns_param_key="columnas_relevantes",
+        cleaning_func=None,
+    )
+    enrich.run(ctx)
+
+    output_path = tmp_path / "simce_estudiantes_consolidado.xlsx"
+    ctx.params["output_excel"] = str(output_path)
+    export_step = ExportConsolidatedExcel(
+        input_key="df_estudiantes_clean",
+        output_path_param="output_excel",
+    )
+    export_step.run(ctx)
+
+    assert output_path.exists()
+
+    exported_df = pd.read_excel(output_path)
+    consolidated_df = ctx.artifacts["df_estudiantes_clean"]
+    assert len(exported_df) == len(consolidated_df)
+    assert list(exported_df.columns) == list(consolidated_df.columns)
+
+    reference_path = base_dir / "inputs" / "simce_2025_estudiantes.xlsx"
+    reference_df = pd.read_excel(reference_path)
+    assert set(exported_df.columns).issubset(set(reference_df.columns))
