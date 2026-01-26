@@ -85,22 +85,3 @@ class Step:
                     print(f"{space*2}[{i}] {v}")
             else:
                 print(f"{space}{attr}: {value}")
-
-
-
-
-# Lista de pasos SIMCE (solo para planificar, sin programar todavía)
-SIMCE_STEPS_PLAN = [
-    "1) DiscoverInputs: identificar archivos y roles (estudiantes, preguntas, resultados por curso, etc.)",
-    "2) LoadStudents: leer excels de estudiantes (con skiprows cuando corresponda)",
-    "3) LoadQuestions: leer excels de preguntas (con skiprows cuando corresponda)",
-    "4) NormalizeColumns: estandarizar nombres de columnas y tipos (RUT, Curso, Rend en 0..1, etc.)",
-    "5) EnrichMetadata: agregar Asignatura, Mes, Numero_Prueba desde nombre de archivo o columnas",
-    "6) Validate: validaciones mínimas (columnas obligatorias, valores nulos, rangos)",
-    "7) Consolidate: unir todo en datasets consolidados (estudiantes_consolidado, preguntas_consolidado)",
-    "8) ComputeKPIs: cálculos para tablas y gráficos (resúmenes por curso, por pregunta, por habilidad, etc.)",
-    "9) BuildArtifacts: generar archivos intermedios (excels de tablas, png de gráficos) en aux_files",
-    "10) RenderReport: usar esquema_informe.json para armar variables.tex e informe.tex y compilar PDF",
-    "11) ExportDB: opcional, cargar consolidados y métricas a SQLite/Postgres",
-    "12) Alerts: opcional, generar alertas (bajo logro, preguntas críticas, etc.)",
-]

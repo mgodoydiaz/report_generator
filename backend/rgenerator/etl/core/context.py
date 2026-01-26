@@ -27,7 +27,9 @@ class RunContext:
     evaluation: str = ""
     run_id: str = ""
     base_dir: Path = field(default_factory=lambda: Path("."))
-
+    # In case user adds a string path instead of Path object, convert it
+    if isinstance(base_dir, str):
+        base_dir = Path(base_dir)
     params: Dict[str, Any] = field(default_factory=dict)
 
     # Archivos de entrada por rol (ej: estudiantes, preguntas, resultados, reporte_preguntas, etc.)

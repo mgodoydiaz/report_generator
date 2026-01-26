@@ -69,8 +69,9 @@ class InitRun(Step):
         ########################################
         # ATENCION A CAMBIO
         # ESTO DEBERIA CAMBIAR POR ALGUNA BASE DE DATOS
-
-        context.base_dir = self.params.get("base_dir")
+        
+        # base_dir puede existir dentro del contexto y en self.params venir vacío
+        context.base_dir = Path(self.params.get("base_dir", context.base_dir))
         context.work_dir = context.base_dir / context.evaluation / context.run_id
         context.inputs_dir = context.base_dir / "inputs"
         context.aux_dir = context.work_dir / "aux_files"
