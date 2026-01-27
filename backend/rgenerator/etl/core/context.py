@@ -43,6 +43,7 @@ class RunContext:
 
     # Estado
     last_step: Optional[str] = None
+    last_artifact_key: Optional[str] = None
     status: str = "NEW"  # NEW, RUNNING, NEEDS_REVIEW, DONE, FAILED
 
     def show_attrs(self, indent: int = 2):

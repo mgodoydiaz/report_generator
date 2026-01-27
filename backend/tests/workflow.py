@@ -53,20 +53,17 @@ pipeline_simce_lenguaje.append(step)
 
 # RunExcelETL
 
-step = RunExcelETL("estudiantes", "df_consolidado_estudiantes")
+step = RunExcelETL("estudiantes")
 pipeline_simce_lenguaje.append(step)
 
 # EnrichWithContext
 
-step = EnrichWithContext(
-    "df_consolidado_estudiantes", 
-    "df_enriched_estudiantes"
-    )
+step = EnrichWithContext()
 pipeline_simce_lenguaje.append(step)
 
 # ExportConsolidatedExcel
 
-step = ExportConsolidatedExcel("df_enriched_estudiantes", "consolidado_estudiantes.xlsx")
+step = ExportConsolidatedExcel()
 pipeline_simce_lenguaje.append(step)
 
 for step in pipeline_simce_lenguaje:

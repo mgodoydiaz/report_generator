@@ -28,5 +28,5 @@
     "Mes": "Noviembre",
     "Número_Prueba": 5
   },
-  "outname_consolidated_file": "simce_2025_estudiantes.xlsx"
+  "output_filename": "simce_2025_estudiantes.xlsx"
 }

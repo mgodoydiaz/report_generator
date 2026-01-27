@@ -95,7 +95,7 @@ class LoadConfig(Step):
         config_path (obligatorio): Ruta al archivo JSON.
     
     Output:
-        - ctx.params con valores normalizados (nombre_salida, etc.).
+        - ctx.params con valores normalizados (output_filename, etc.).
         - ctx.outputs["excel_salida"] si existe ctx.outputs_dir.
     
     Ejemplo:
@@ -116,7 +116,7 @@ class LoadConfig(Step):
         config = cargar_config_desde_json(str(self.config_path))
 
         # Normaliza defaults
-        nombre_salida = str(config.get("nombre_salida", "salida_etl.xlsx")).strip()
+        output_filename = str(config.get("output_filename")).strip()
 
         # Asegura params en el contexto
         if not hasattr(ctx, "params") or ctx.params is None:
@@ -124,7 +124,7 @@ class LoadConfig(Step):
 
         # Guarda config cruda y params normalizados
         ctx.params["config_path"] = str(self.config_path)
-        ctx.params["nombre_salida"] = nombre_salida
+        ctx.params["output_filename"] = output_filename
 
         # Copia el resto tal cual, sin pisar lo ya normalizado
         for k, v in config.items():
@@ -133,7 +133,7 @@ class LoadConfig(Step):
 
         # Define ruta de salida estándar de esta corrida
         if hasattr(ctx, "outputs_dir"):
-            ctx.outputs["excel_salida"] = ctx.outputs_dir / nombre_salida
+            ctx.outputs["consolidated_excel"] = ctx.outputs_dir / output_filename
 
         # Deja una marca simple para debug
         ctx.last_step = self.name
@@ -215,7 +215,8 @@ class RunExcelETL(Step):
     
     Parametros:
         input_key (obligatorio): Clave en ctx.inputs con archivos a procesar.
-        output_key (obligatorio): Clave en ctx.artifacts para el DataFrame.
+        output_key (opcional): Clave en ctx.artifacts para el DataFrame.
+            Si no se entrega, se genera como "df_consolidado_{input_key}".
     
     Output:
         - ctx.artifacts[output_key] con DataFrame consolidado (o vacio).
@@ -223,22 +224,42 @@ class RunExcelETL(Step):
     Ejemplo:
         RunExcelETL(input_key="estudiantes", output_key="df_estudiantes_raw")
     """
-    def __init__(self, input_key: str, output_key: str):
+    def __init__(self, input_key: Optional[str] = None, output_key: Optional[str] = None):
+        resolved_output_key = output_key
+        if input_key and not resolved_output_key:
+            resolved_output_key = f"df_consolidado_{input_key}"
         super().__init__(
-            name=f"RunExcelETL_{input_key}",
-            requires=[input_key],   # Ej: espera ctx.inputs['estudiantes']
-            produces=[output_key]   # Ej: produce ctx.artifacts['df_consolidado']
+            name=f"RunExcelETL_{input_key}" if input_key else "RunExcelETL",
+            requires=[input_key] if input_key else [],   # Ej: espera ctx.inputs['estudiantes']
+            produces=[resolved_output_key] if resolved_output_key else []   # Ej: produce ctx.artifacts['df_consolidado']
         )
         self.input_key = input_key
-        self.output_key = output_key
+        self.output_key = resolved_output_key
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
-        # --- PASO 1: Cargar inputs y parámetros desde el contexto ---
-        archivos = ctx.inputs.get(self.input_key, [])
+        # Resolver input_key desde contexto si no fue entregado
+        input_key = self.input_key
+        if not input_key:
+            input_key = ctx.params.get("input_key") or ctx.params.get("default_input_key")
+            if not input_key and hasattr(ctx, "inputs") and len(ctx.inputs) == 1:
+                input_key = next(iter(ctx.inputs.keys()))
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key desde el contexto.")
+        self.input_key = input_key
+
+        # Resolver output_key automaticamente si no fue entregado
+        output_key = self.output_key or f"df_consolidado_{input_key}"
+        self.output_key = output_key
+        self.requires = [input_key]
+        self.produces = [output_key]
+
+        # --- PASO 1: Cargar inputs y parametros desde el contexto ---
+        archivos = ctx.inputs.get(input_key, [])
         if not archivos:
-            self._log(f"Advertencia: No hay archivos en '{self.input_key}' para procesar.")
-            ctx.artifacts[self.output_key] = pd.DataFrame()
+            self._log(f"Advertencia: No hay archivos en '{input_key}' para procesar.")
+            ctx.artifacts[output_key] = pd.DataFrame()
+            ctx.last_artifact_key = output_key
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -251,8 +272,8 @@ class RunExcelETL(Step):
         # Obtenemos el mapeo de columnas (renames)
         column_mapping = ctx.params.get("rename_columns", {})
 
-        # --- PASO 2: Normalizar la configuración del header ---
-        # Si el usuario pasó un solo entero, lo convertimos a la estructura de diccionario
+        # --- PASO 2: Normalizar la configuracion del header ---
+        # Si el usuario paso un solo entero, lo convertimos a la estructura de diccionario
         if isinstance(raw_header_config, int):
             header_conf = {"default": raw_header_config}
         elif isinstance(raw_header_config, dict):
@@ -262,37 +283,32 @@ class RunExcelETL(Step):
             header_conf = {"default": 0}
 
         df_list = []
-        
-        #self._log(f"[{self.name}] Procesando {len(archivos)} archivos de tipo '{self.input_key}'...")
 
         # --- PASO 3: Iterar, Leer y Renombrar ---
         for ruta_archivo in archivos:
             nombre_archivo = os.path.basename(ruta_archivo)
-            
+
             try:
                 # 3.1: Determinar fila del header
-                # Buscamos nombre exacto, si no está, usamos 'default'
+                # Buscamos nombre exacto, si no esta, usamos 'default'
                 header_row = header_conf.get(nombre_archivo, header_conf.get("default", 0))
 
                 # 3.2: Lectura del Excel
-                # header=header_row le dice a pandas dónde leer los títulos
+                # header=header_row le dice a pandas donde leer los titulos
                 temp_df = pd.read_excel(ruta_archivo, header=header_row)
 
-                #3.3: Select columns 
+                # 3.3: Select columns
                 if select_columns:
                     temp_df = temp_df[[col for col in select_columns if col in temp_df.columns]]
 
-                # 3.4: Renombrar columnas (Estandarización)
+                # 3.4: Renombrar columnas (Estandarizacion)
                 # Esto es vital para que el concat posterior funcione bien
                 if column_mapping:
                     # rename solo cambia las que encuentra, ignora las que no existen
                     temp_df.rename(columns=column_mapping, inplace=True)
-                
-                # OPCIONAL (Recomendado): Agregar origen para trazabilidad
-                # temp_df["source_file"] = nombre_archivo
 
                 df_list.append(temp_df)
-                
+
             except Exception as e:
                 self._log(f"Error leyendo archivo {nombre_archivo} con header_row={header_row}: {e}")
                 continue
@@ -300,10 +316,10 @@ class RunExcelETL(Step):
         # --- PASO 4: Consolidar y Guardar en Artifacts ---
         if df_list:
             df_consolidado = pd.concat(df_list, ignore_index=True)
-            ctx.artifacts[self.output_key] = df_consolidado
-            #self._log(f"[{self.name}] Consolidado generado con {len(df_consolidado)} filas.")
+            ctx.artifacts[output_key] = df_consolidado
         else:
-            ctx.artifacts[self.output_key] = pd.DataFrame()
+            ctx.artifacts[output_key] = pd.DataFrame()
+        ctx.last_artifact_key = output_key
         self._log_artifacts_delta(ctx, before)
 
 class EnrichWithContext(Step):
@@ -311,9 +327,9 @@ class EnrichWithContext(Step):
     Enriquecer y limpiar DataFrames con parametros del contexto.
     
     Parametros:
-        input_key (obligatorio): Clave del artifact de entrada.
-        output_key (obligatorio): Clave del artifact de salida.
-        context_mapping (obligatorio): Mapa {"ColumnaNueva": "param_key"}.
+        input_key (opcional): Clave del artifact de entrada.
+        output_key (opcional): Clave del artifact de salida.
+        context_mapping (opcional): Mapa {"ColumnaNueva": "param_key"}.
         columns_param_key (opcional): Clave con columnas a mantener.
         cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
     
@@ -327,32 +343,53 @@ class EnrichWithContext(Step):
     """
     def __init__(
         self, 
-        input_key: str, 
-        output_key: str,
-        context_mapping: Dict[str, str] = {},
+        input_key: Optional[str] = None, 
+        output_key: Optional[str] = None,
+        context_mapping: Optional[Dict[str, str]] = None,
         cleaning_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
     ):
         """
         Parametros:
-            input_key (obligatorio): Clave del artifact de entrada.
-            output_key (obligatorio): Clave del artifact de salida.
+            input_key (opcional): Clave del artifact de entrada.
+            output_key (opcional): Clave del artifact de salida.
             context_mapping (opcional): Mapa {"ColumnaNueva": "param_key"}.
             cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
         """
+        resolved_output_key = output_key
+        if input_key and not resolved_output_key:
+            resolved_output_key = self._derive_output_key(input_key)
         super().__init__(
-            name=f"Enrich_{output_key}",
-            requires=[input_key],
-            produces=[output_key]
+            name=f"Enrich_{resolved_output_key}" if resolved_output_key else "EnrichWithContext",
+            requires=[input_key] if input_key else [],
+            produces=[resolved_output_key] if resolved_output_key else []
         )
         self.input_key = input_key
-        self.output_key = output_key
-        self.context_mapping = context_mapping
+        self.output_key = resolved_output_key
+        self.context_mapping = context_mapping or {}
         self.cleaning_func = cleaning_func
+
+    @staticmethod
+    def _derive_output_key(input_key: str) -> str:
+        base = input_key
+        if base.startswith("df_consolidado_"):
+            base = base[len("df_consolidado_"):]
+        elif base.startswith("df_"):
+            base = base[len("df_"):]
+        return f"df_enriched_{base}"
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
+        # Resolver input/output desde contexto si no fueron entregados
+        input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key desde el contexto.")
+        output_key = self.output_key or self._derive_output_key(input_key)
+        self.input_key = input_key
+        self.output_key = output_key
+        self.requires = [input_key]
+        self.produces = [output_key]
         # 1. Cargar DataFrame entrada
-        df = ctx.artifacts.get(self.input_key)
+        df = ctx.artifacts.get(input_key)
         
         # Si self.context_mapping es diccionario vacío, se importa del contexto
         if not self.context_mapping:
@@ -360,7 +397,8 @@ class EnrichWithContext(Step):
 
         if df is None or df.empty:
             self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente.")
-            ctx.artifacts[self.output_key] = pd.DataFrame()
+            ctx.artifacts[output_key] = pd.DataFrame()
+            ctx.last_artifact_key = output_key
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -384,7 +422,8 @@ class EnrichWithContext(Step):
                 raise ValueError(f"Error ejecutando función de limpieza en {self.name}: {e}")
 
         # 5. Guardar salida
-        ctx.artifacts[self.output_key] = df
+        ctx.artifacts[output_key] = df
+        ctx.last_artifact_key = output_key
         #self._log(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
         self._log_artifacts_delta(ctx, before)
 
@@ -393,39 +432,46 @@ class ExportConsolidatedExcel(Step):
     Exporta DataFrame consolidado a archivo Excel.
     
     Parametros:
-        input_key (obligatorio): Clave del artifact de entrada.
-        output_path_param (obligatorio): Clave en ctx.params con ruta de salida.
+        input_key (opcional): Clave del artifact de entrada.
+        output_filename (opcional): Nombre de archivo en inglÃ©s (usa ctx.params["output_filename"]).
     
     Output:
         - Archivo Excel en la ruta especificada.
     """
     def __init__(
             self, 
-            input_key: str, 
-            output_name: str ="", 
+            input_key: Optional[str] = None, 
+            output_filename: str ="", 
 ):
         super().__init__(
             name="ExportConsolidatedExcel",
-            requires=[input_key]
+            requires=[input_key] if input_key else []
         )
         self.input_key = input_key
-        self.output_name = output_name
+        self.output_filename = output_filename
 
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
-        df = ctx.artifacts.get(self.input_key)
+        input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key desde el contexto.")
+        self.input_key = input_key
+        self.requires = [input_key]
+
+        df = ctx.artifacts.get(input_key)
         if df is None or df.empty:
-            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente. No se exporta nada.")
+            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacio o inexistente. No se exporta nada.")
             self._log_artifacts_delta(ctx, before)
             return
 
-        if not self.output_name:
-            self.output_name = ctx.params.get("nombre_salida", "salida_etl.xlsx")
-        output_path = ctx.base_dir / self.output_name
+        if not self.output_filename:
+            self.output_filename = ctx.params.get("output_filename", "salida_etl.xlsx")
+        output_path = ctx.base_dir / self.output_filename
         try:
             df.to_excel(output_path, index=False)
             #self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
+            ctx.outputs["consolidated_excel"] = output_path
         except Exception as e:
             raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
 
