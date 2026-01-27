@@ -19,18 +19,12 @@ from rgenerator.etl.core.pipeline_steps import (
 # Contexto y Pipeline para Simce Lenguaje
 
 simce_context = RunContext(
-    evaluation="simce", 
-    run_id="test_id", 
     base_dir=Path(".") / "backend" / "tests" 
 )
 pipeline_simce_lenguaje = []
 
 # InitRun
 step = InitRun(
-        run_id="simce_estudiantes_lenguaje",
-        evaluation="simce",
-        year=2025,
-        asignatura="Lenguaje",
         inputs_dir=simce_context.base_dir / "input_test" / "inputs" / "Lenguaje" / "inputs",
     )
 pipeline_simce_lenguaje.append(step)
@@ -77,3 +71,5 @@ pipeline_simce_lenguaje.append(step)
 
 for step in pipeline_simce_lenguaje:
     step.run(simce_context)
+
+simce_context.show_attrs()

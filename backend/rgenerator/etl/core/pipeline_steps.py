@@ -206,7 +206,7 @@ class DiscoverInputs(Step):
                     ctx.inputs[tipo].append(full_path)
                     files_found += 1
 
-        self._log(f"DiscoverInputs: Se encontraron {files_found} archivos clasificados en {list(self.rules.keys())}.")
+        #self._log(f"DiscoverInputs: Se encontraron {files_found} archivos clasificados en {list(self.rules.keys())}.")
         self._log_artifacts_delta(ctx, before)
 
 class RunExcelETL(Step):
@@ -263,7 +263,7 @@ class RunExcelETL(Step):
 
         df_list = []
         
-        self._log(f"[{self.name}] Procesando {len(archivos)} archivos de tipo '{self.input_key}'...")
+        #self._log(f"[{self.name}] Procesando {len(archivos)} archivos de tipo '{self.input_key}'...")
 
         # --- PASO 3: Iterar, Leer y Renombrar ---
         for ruta_archivo in archivos:
@@ -301,7 +301,7 @@ class RunExcelETL(Step):
         if df_list:
             df_consolidado = pd.concat(df_list, ignore_index=True)
             ctx.artifacts[self.output_key] = df_consolidado
-            self._log(f"[{self.name}] Consolidado generado con {len(df_consolidado)} filas.")
+            #self._log(f"[{self.name}] Consolidado generado con {len(df_consolidado)} filas.")
         else:
             ctx.artifacts[self.output_key] = pd.DataFrame()
         self._log_artifacts_delta(ctx, before)
@@ -366,7 +366,6 @@ class EnrichWithContext(Step):
 
         # Trabajamos sobre una copia para no alterar el artifact original por error
         df = df.copy()
-        print(f"[{self.name}] Context Mapping: {self.context_mapping}")
 
         # 2. Inyectar columnas de contexto (Reemplaza a tu 'agregar_columnas_dataframe')
         # Itera sobre el mapa: Crea columna "X" con el valor de self.context_mapping["y"]
@@ -386,7 +385,7 @@ class EnrichWithContext(Step):
 
         # 5. Guardar salida
         ctx.artifacts[self.output_key] = df
-        self._log(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
+        #self._log(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
         self._log_artifacts_delta(ctx, before)
 
 class ExportConsolidatedExcel(Step):
@@ -426,7 +425,7 @@ class ExportConsolidatedExcel(Step):
         output_path = ctx.base_dir / self.output_name
         try:
             df.to_excel(output_path, index=False)
-            self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
+            #self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")
         except Exception as e:
             raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
 
