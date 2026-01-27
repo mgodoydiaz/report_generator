@@ -15,23 +15,21 @@ from rgenerator.tooling.config_tools import cargar_config_desde_json
 
 class InitRun(Step):
     """
-    Inicializa el contexto y directorios de la corrida.
-    
-    Parametros:
-        Se reciben via kwargs. Claves esperadas para esta clase:
-            - evaluation: Nombre de la evaluacion.
-            - base_dir: Ruta base donde se crea la carpeta de trabajo.
-            - anio / year: Anio de la evaluacion (se copia a ctx.params).
-            - asignatura: Asignatura asociada.
-            - mes: Mes asociado a la evaluacion.
-            - numero_prueba: Numero de prueba.
-        Cualquier otra clave se copia tal cual a ctx.params.
-    
-    Output:
-        - ctx.params poblado con los parametros base.
-        - ctx.work_dir, ctx.inputs_dir, ctx.aux_dir, ctx.outputs_dir creados.
-        - ctx.status actualizado a "RUNNING".
-    
+    Inicializa el contexto base de la corrida y copia parametros al contexto.
+
+    Parametros (kwargs):
+        evaluation: nombre de la evaluacion.
+        base_dir: ruta base del trabajo.
+        inputs_dir: ruta de inputs (opcional; por defecto base_dir/inputs).
+        anio/year, asignatura, mes, numero_prueba, etc.
+        Cualquier otra clave se copia a ctx.params.
+
+    Efectos:
+        - define context.evaluation y context.run_id (timestamp).
+        - copia kwargs a context.params.
+        - define context.base_dir e inputs_dir.
+        - actualiza context.status a "RUNNING".
+
     Ejemplo:
         InitRun(
             evaluation="simce",
@@ -43,11 +41,13 @@ class InitRun(Step):
         )
     """
     def __init__(self, **kwargs):
+        """Guarda kwargs en self.params y genera un timestamp de corrida."""
         super().__init__(name="InitRun")
         self.params = kwargs
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     def run(self, context):
+        """Actualiza el RunContext con identidad, parametros y rutas base."""
         before = self._snapshot_artifacts(context)
 
         # Identidad del run o task
@@ -89,15 +89,16 @@ class InitRun(Step):
 
 class LoadConfig(Step):
     """
-    Carga configuracion desde JSON y normaliza parametros.
-    
+    Carga configuracion desde JSON y normaliza parametros en el contexto.
+
     Parametros:
-        config_path (obligatorio): Ruta al archivo JSON.
-    
-    Output:
-        - ctx.params con valores normalizados (output_filename, etc.).
-        - ctx.outputs["excel_salida"] si existe ctx.outputs_dir.
-    
+        config_path (obligatorio): ruta al archivo JSON.
+
+    Efectos:
+        - ctx.params["config_path"] y ctx.params["output_filename"].
+        - copia el resto del JSON a ctx.params sin sobrescribir lo anterior.
+        - si existe ctx.outputs_dir, define ctx.outputs["consolidated_excel"].
+
     Ejemplo:
         LoadConfig("config/simce_estudiantes_lenguaje.json")
     """
@@ -105,10 +106,12 @@ class LoadConfig(Step):
         self,
         config_path: Path | str,
     ):
+        """Normaliza config_path a Path y guarda la ruta."""
         super().__init__(name="LoadConfig")
         self.config_path = Path(config_path)
 
     def run(self, ctx):
+        """Lee el JSON, actualiza ctx.params y prepara la salida estandar."""
         before = self._snapshot_artifacts(ctx)
         if not self.config_path.exists():
             raise FileNotFoundError(f"No se encontró config: {self.config_path}")
@@ -143,23 +146,26 @@ class LoadConfig(Step):
 class DiscoverInputs(Step):
     """
     Escanea un directorio y clasifica archivos segun reglas.
-    
+
     Parametros:
-        rules (obligatorio): Diccionario con criterios por tipo.
-            Opcionales: "extension", "contains", "exclude_prefix".
-    
-    Output:
-        - ctx.inputs[tipo] con rutas clasificadas.
-    
+        rules (obligatorio): dict {tipo: {extension?, contains?, exclude_prefix?}}.
+
+    Efectos:
+        - inicializa ctx.inputs[tipo] como listas vacias.
+        - agrega rutas encontradas en ctx.inputs[tipo].
+        - si el directorio no existe, registra advertencia y termina.
+
     Ejemplo:
         DiscoverInputs(rules={"estudiantes": {"extension": ".xlsx",
                       "contains": "Resultados"}})
     """
     def __init__(self, rules: dict):
+        """Guarda las reglas de clasificacion de archivos."""
         super().__init__(name="DiscoverInputs")
         self.rules = rules
 
     def run(self, ctx):
+        """Escanea ctx.inputs_dir y clasifica archivos en ctx.inputs."""
         before = self._snapshot_artifacts(ctx)
         input_dir = ctx.inputs_dir
         
@@ -212,19 +218,22 @@ class DiscoverInputs(Step):
 class RunExcelETL(Step):
     """
     Consolida archivos Excel y guarda el resultado en artifacts.
-    
+
     Parametros:
-        input_key (obligatorio): Clave en ctx.inputs con archivos a procesar.
-        output_key (opcional): Clave en ctx.artifacts para el DataFrame.
+        input_key (opcional): clave en ctx.inputs con archivos a procesar.
+            Si no se entrega, se intenta resolver desde el contexto.
+        output_key (opcional): clave en ctx.artifacts para el DataFrame.
             Si no se entrega, se genera como "df_consolidado_{input_key}".
-    
-    Output:
+
+    Efectos:
         - ctx.artifacts[output_key] con DataFrame consolidado (o vacio).
-    
+        - ctx.last_artifact_key actualizado con output_key.
+
     Ejemplo:
         RunExcelETL(input_key="estudiantes", output_key="df_estudiantes_raw")
     """
     def __init__(self, input_key: Optional[str] = None, output_key: Optional[str] = None):
+        """Configura claves de entrada/salida y el nombre del step."""
         resolved_output_key = output_key
         if input_key and not resolved_output_key:
             resolved_output_key = f"df_consolidado_{input_key}"
@@ -237,6 +246,7 @@ class RunExcelETL(Step):
         self.output_key = resolved_output_key
 
     def run(self, ctx):
+        """Lee Excels, aplica select/rename y consolida en un DataFrame."""
         before = self._snapshot_artifacts(ctx)
         # Resolver input_key desde contexto si no fue entregado
         input_key = self.input_key
@@ -324,22 +334,24 @@ class RunExcelETL(Step):
 
 class EnrichWithContext(Step):
     """
-    Enriquecer y limpiar DataFrames con parametros del contexto.
-    
+    Enriquece y limpia DataFrames con parametros del contexto.
+
     Parametros:
-        input_key (opcional): Clave del artifact de entrada.
-        output_key (opcional): Clave del artifact de salida.
-        context_mapping (opcional): Mapa {"ColumnaNueva": "param_key"}.
-        columns_param_key (opcional): Clave con columnas a mantener.
-        cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
-    
-    Output:
+        input_key (opcional): clave del artifact de entrada.
+            Si no se entrega, usa ctx.last_artifact_key o ctx.params["default_artifact_key"].
+        output_key (opcional): clave del artifact de salida.
+            Si no se entrega, se deriva desde input_key.
+        context_mapping (opcional): dict {columna_nueva: valor}.
+            Si no se entrega, usa ctx.params["enrich_data"].
+        cleaning_func (opcional): funcion que recibe y devuelve DataFrame.
+
+    Efectos:
         - ctx.artifacts[output_key] con DataFrame enriquecido.
-    
+        - ctx.last_artifact_key actualizado con output_key.
+
     Ejemplo:
         EnrichWithContext("df_raw", "df_clean",
-                          {"Asignatura": "asignatura"},
-                          columns_param_key="select_columns")
+                          {"Asignatura": "Lenguaje"})
     """
     def __init__(
         self, 
@@ -349,11 +361,13 @@ class EnrichWithContext(Step):
         cleaning_func: Optional[Callable[[pd.DataFrame], pd.DataFrame]] = None
     ):
         """
+        Inicializa el step y define reglas de enrichment opcionales.
+
         Parametros:
-            input_key (opcional): Clave del artifact de entrada.
-            output_key (opcional): Clave del artifact de salida.
-            context_mapping (opcional): Mapa {"ColumnaNueva": "param_key"}.
-            cleaning_func (opcional): Funcion que recibe y devuelve DataFrame.
+            input_key (opcional): clave del artifact de entrada.
+            output_key (opcional): clave del artifact de salida.
+            context_mapping (opcional): dict {columna_nueva: valor}.
+            cleaning_func (opcional): funcion que transforma el DataFrame.
         """
         resolved_output_key = output_key
         if input_key and not resolved_output_key:
@@ -378,6 +392,7 @@ class EnrichWithContext(Step):
         return f"df_enriched_{base}"
 
     def run(self, ctx):
+        """Inyecta columnas de contexto y aplica limpieza opcional."""
         before = self._snapshot_artifacts(ctx)
         # Resolver input/output desde contexto si no fueron entregados
         input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
@@ -429,20 +444,24 @@ class EnrichWithContext(Step):
 
 class ExportConsolidatedExcel(Step):
     """
-    Exporta DataFrame consolidado a archivo Excel.
-    
+    Exporta un DataFrame a un archivo Excel.
+
     Parametros:
-        input_key (opcional): Clave del artifact de entrada.
-        output_filename (opcional): Nombre de archivo en inglÃ©s (usa ctx.params["output_filename"]).
-    
-    Output:
-        - Archivo Excel en la ruta especificada.
+        input_key (opcional): clave del artifact de entrada.
+            Si no se entrega, usa ctx.last_artifact_key o ctx.params["default_artifact_key"].
+        output_filename (opcional): nombre del archivo de salida.
+            Si no se entrega, usa ctx.params["output_filename"] o "salida_etl.xlsx".
+
+    Efectos:
+        - escribe el archivo en ctx.base_dir / output_filename.
+        - guarda la ruta en ctx.outputs["consolidated_excel"].
     """
     def __init__(
             self, 
             input_key: Optional[str] = None, 
             output_filename: str ="", 
 ):
+        """Guarda claves de entrada/salida para la exportacion."""
         super().__init__(
             name="ExportConsolidatedExcel",
             requires=[input_key] if input_key else []
@@ -452,6 +471,7 @@ class ExportConsolidatedExcel(Step):
 
 
     def run(self, ctx):
+        """Exporta el DataFrame de entrada a Excel."""
         before = self._snapshot_artifacts(ctx)
         input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
         if not input_key:
@@ -480,17 +500,17 @@ class ExportConsolidatedExcel(Step):
 class DeleteTempFiles(Step):
     """
     Elimina archivos y directorios temporales generados durante la corrida.
-    
-    Parametros:
-        No recibe parametros.
 
-    Output:
-        - Archivos y directorios eliminados.
+    Efectos:
+        - intenta eliminar context.aux_dir, context.outputs_dir y context.work_dir.
+        - registra mensajes por cada directorio.
     """
     def __init__(self):
+        """Inicializa el step sin parametros."""
         super().__init__(name="DeleteTempFiles")
 
     def run(self, context):
+        """Elimina directorios temporales si existen."""
         import shutil
         # base_dir puede existir dentro del contexto y en self.params venir vacío
         self.temp_dirs = [
