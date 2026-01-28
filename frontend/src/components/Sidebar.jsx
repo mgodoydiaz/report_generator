@@ -1,37 +1,49 @@
 ﻿import { NavLink } from "react-router-dom";
 
-const linkClass = ({ isActive }) =>
-  isActive ? "nav-link active" : "nav-link";
-
 export default function Sidebar() {
+  const linkClass = ({ isActive }) =>
+    `flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-all ${isActive
+      ? "bg-indigo-600 text-white shadow-lg shadow-indigo-200"
+      : "text-slate-600 hover:bg-slate-100 hover:text-indigo-600"
+    }`;
+
+  const staticLinkClass = "flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-all";
+
   return (
-    <aside className="sidebar" aria-label="Menu principal">
-      <div className="sidebar-header">
-        <h5 className="sidebar-title">Menu</h5>
+    <aside className="w-64 bg-white border-r border-slate-200 flex flex-col h-screen sticky top-0 shrink-0" aria-label="Menu principal">
+      <div className="p-6">
+        <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-xs">
+            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+          </div>
+          Workflows
+        </h1>
       </div>
-      <div className="nav flex-column nav-pills gap-2">
-        <NavLink className={linkClass} to="/">
+      <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
+        <NavLink to="/" className={linkClass}>
           Inicio
         </NavLink>
-        <NavLink className={linkClass} to="/workflows">
+        <NavLink to="/workflows" className={linkClass}>
           Workflows
         </NavLink>
-        <a className="nav-link" href="#">
+        <a href="#" className={staticLinkClass}>
           Plantillas
         </a>
-        <NavLink className={linkClass} to="/resultados">
+        <NavLink to="/resultados" className={linkClass}>
           Resultados
         </NavLink>
-        <a className="nav-link" href="#">
+        <a href="#" className={staticLinkClass}>
           Valores
         </a>
-        <a className="nav-link" href="#">
+        <a href="#" className={staticLinkClass}>
           Analisis y alertas
         </a>
-        <a className="nav-link" href="#">
+      </nav>
+      <div className="p-4 mt-auto border-t border-slate-100 space-y-1">
+        <a href="#" className={staticLinkClass}>
           Ayuda
         </a>
-        <a className="nav-link" href="#">
+        <a href="#" className={staticLinkClass}>
           Configuracion
         </a>
       </div>

@@ -2,11 +2,11 @@
 
 export default function Layout({ children }) {
   return (
-    <div className="app-shell">
-      <div className="d-lg-flex">
-        <Sidebar />
-        <main className="container py-5 layout-main">{children}</main>
-      </div>
+    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900">
+      <Sidebar />
+      <main className="flex-1 p-8 overflow-x-hidden">
+        {children}
+      </main>
     </div>
   );
 }
