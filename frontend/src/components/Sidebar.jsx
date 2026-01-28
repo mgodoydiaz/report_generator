@@ -13,8 +13,8 @@ export default function Sidebar() {
         <NavLink className={linkClass} to="/">
           Inicio
         </NavLink>
-        <NavLink className={linkClass} to="/evaluaciones">
-          Evaluaciones
+        <NavLink className={linkClass} to="/workflows">
+          Workflows
         </NavLink>
         <a className="nav-link" href="#">
           Plantillas
