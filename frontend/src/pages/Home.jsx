@@ -14,14 +14,7 @@
             <p className="text-lg text-slate-500 font-medium leading-relaxed">
               Bienvenido al sistema de gestión. Utiliza el menú lateral para navegar entre las secciones de workflows, resultados y configuración.
             </p>
-            <div className="mt-8 flex flex-wrap gap-4 justify-center md:justify-start">
-              <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-2xl font-bold transition-all shadow-lg shadow-indigo-100">
-                Comenzar ahora
-              </button>
-              <button className="bg-white border border-slate-200 hover:border-slate-300 text-slate-600 px-6 py-3 rounded-2xl font-bold transition-all">
-                Ver documentación
-              </button>
-            </div>
+
           </div>
         </div>
       </section>
