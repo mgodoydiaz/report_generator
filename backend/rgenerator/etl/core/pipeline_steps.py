@@ -49,6 +49,8 @@ class InitRun(Step):
     def run(self, context):
         """Actualiza el RunContext con identidad, parametros y rutas base."""
         before = self._snapshot_artifacts(context)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
 
         # Identidad del run o task
         context.evaluation = self.params.get("evaluation", "unknown_evaluation")
@@ -84,6 +86,7 @@ class InitRun(Step):
         ########################################
 
         context.status = "RUNNING"
+        context.last_step = self.name
         self._log_artifacts_delta(context, before)
 
 
@@ -113,6 +116,8 @@ class LoadConfig(Step):
     def run(self, ctx):
         """Lee el JSON, actualiza ctx.params y prepara la salida estandar."""
         before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         if not self.config_path.exists():
             raise FileNotFoundError(f"No se encontró config: {self.config_path}")
 
@@ -167,6 +172,8 @@ class DiscoverInputs(Step):
     def run(self, ctx):
         """Escanea ctx.inputs_dir y clasifica archivos en ctx.inputs."""
         before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         input_dir = ctx.inputs_dir
         
         # 1. Inicializar las listas en el contexto según las claves del diccionario
@@ -176,6 +183,7 @@ class DiscoverInputs(Step):
 
         if not input_dir.exists():
             self._log(f"Advertencia: Directorio {input_dir} no existe.")
+            ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -213,6 +221,7 @@ class DiscoverInputs(Step):
                     files_found += 1
 
         #self._log(f"DiscoverInputs: Se encontraron {files_found} archivos clasificados en {list(self.rules.keys())}.")
+        ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
 class RunExcelETL(Step):
@@ -248,6 +257,8 @@ class RunExcelETL(Step):
     def run(self, ctx):
         """Lee Excels, aplica select/rename y consolida en un DataFrame."""
         before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         # Resolver input_key desde contexto si no fue entregado
         input_key = self.input_key
         if not input_key:
@@ -270,6 +281,7 @@ class RunExcelETL(Step):
             self._log(f"Advertencia: No hay archivos en '{input_key}' para procesar.")
             ctx.artifacts[output_key] = pd.DataFrame()
             ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -330,6 +342,7 @@ class RunExcelETL(Step):
         else:
             ctx.artifacts[output_key] = pd.DataFrame()
         ctx.last_artifact_key = output_key
+        ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
 class EnrichWithContext(Step):
@@ -394,6 +407,8 @@ class EnrichWithContext(Step):
     def run(self, ctx):
         """Inyecta columnas de contexto y aplica limpieza opcional."""
         before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         # Resolver input/output desde contexto si no fueron entregados
         input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
         if not input_key:
@@ -411,9 +426,10 @@ class EnrichWithContext(Step):
             self.context_mapping = ctx.params.get("enrich_data", {})
 
         if df is None or df.empty:
-            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacío o inexistente.")
+            self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacio o inexistente.")
             ctx.artifacts[output_key] = pd.DataFrame()
             ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -440,6 +456,7 @@ class EnrichWithContext(Step):
         ctx.artifacts[output_key] = df
         ctx.last_artifact_key = output_key
         #self._log(f"[{self.name}] Finalizado. Filas: {len(df)}. Columnas: {list(df.columns)}")
+        ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
 class ExportConsolidatedExcel(Step):
@@ -473,6 +490,8 @@ class ExportConsolidatedExcel(Step):
     def run(self, ctx):
         """Exporta el DataFrame de entrada a Excel."""
         before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
         if not input_key:
             raise ValueError(f"[{self.name}] No se pudo resolver input_key desde el contexto.")
@@ -482,6 +501,7 @@ class ExportConsolidatedExcel(Step):
         df = ctx.artifacts.get(input_key)
         if df is None or df.empty:
             self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacio o inexistente. No se exporta nada.")
+            ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
 
@@ -495,6 +515,7 @@ class ExportConsolidatedExcel(Step):
         except Exception as e:
             raise IOError(f"[{self.name}] Error exportando DataFrame a Excel: {e}")
 
+        ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
 class DeleteTempFiles(Step):
@@ -511,6 +532,8 @@ class DeleteTempFiles(Step):
 
     def run(self, context):
         """Elimina directorios temporales si existen."""
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
         import shutil
         # base_dir puede existir dentro del contexto y en self.params venir vacío
         self.temp_dirs = [
@@ -528,6 +551,8 @@ class DeleteTempFiles(Step):
                     self._log(f"[{self.name}] Error eliminando directorio {dir_path}: {e}")
             else:
                 self._log(f"[{self.name}] Directorio no existe o no es un directorio: {dir_path}")
+
+        context.last_step = self.name
 
 # Lista de pasos SIMCE (solo para planificar, sin programar todavía)
 SIMCE_STEPS_PLAN = [
