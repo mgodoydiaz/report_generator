@@ -1,4 +1,4 @@
-﻿import { Download, Database, Users, TrendingUp, Award, Calendar } from 'lucide-react';
+﻿import { Download, Database, Users, TrendingUp, Award, Calendar, ChartColumn } from 'lucide-react';
 
 const kpis = [
   { icon: <Users size={20} />, label: "Estudiantes evaluados", value: "684", color: "bg-blue-50 text-blue-600" },
@@ -27,7 +27,10 @@ export default function Resultados() {
         <div className="relative z-10 flex flex-col lg:flex-row justify-between gap-10">
           <div className="max-w-xl">
             <span className="bg-white/10 text-indigo-100 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Reporte General 2025</span>
-            <h1 className="text-4xl font-extrabold mt-4 mb-4 tracking-tight">Resultados Trabajados</h1>
+            <h1 className="text-4xl font-extrabold mt-4 mb-4 tracking-tight flex items-center gap-3">
+              <ChartColumn size={40} className="text-indigo-400" />
+              Resultados Trabajados
+            </h1>
             <p className="text-indigo-100/70 font-medium leading-relaxed mb-8">
               Vista consolidada de indicadores académicos clave con comparativas anuales y gráficos de rendimiento por curso.
             </p>

@@ -1,5 +1,15 @@
 ﻿import { NavLink } from "react-router-dom";
-import { Menu } from "lucide-react";
+import {
+  Menu,
+  House,
+  Workflow,
+  Notebook,
+  ChartColumn,
+  Database,
+  FileWarning,
+  CircleHelp,
+  Settings
+} from "lucide-react";
 
 export default function Sidebar() {
   const linkClass = ({ isActive }) =>
@@ -22,29 +32,37 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
         <NavLink to="/" className={linkClass}>
+          <House size={18} />
           Inicio
         </NavLink>
         <NavLink to="/workflows" className={linkClass}>
+          <Workflow size={18} />
           Workflows
         </NavLink>
         <a href="#" className={staticLinkClass}>
+          <Notebook size={18} />
           Plantillas
         </a>
         <NavLink to="/resultados" className={linkClass}>
+          <ChartColumn size={18} />
           Resultados
         </NavLink>
         <a href="#" className={staticLinkClass}>
+          <Database size={18} />
           Valores
         </a>
         <a href="#" className={staticLinkClass}>
+          <FileWarning size={18} />
           Analisis y alertas
         </a>
       </nav>
       <div className="p-4 mt-auto border-t border-slate-100 space-y-1">
         <a href="#" className={staticLinkClass}>
+          <CircleHelp size={18} />
           Ayuda
         </a>
         <a href="#" className={staticLinkClass}>
+          <Settings size={18} />
           Configuracion
         </a>
       </div>

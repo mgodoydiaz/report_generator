@@ -1,5 +1,5 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Play, Trash2, Plus, Clock, Zap, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw } from 'lucide-react';
+import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw } from 'lucide-react';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 
 export default function Workflows() {
@@ -151,7 +151,7 @@ export default function Workflows() {
         <div>
           <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-3 tracking-tight">
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
-              <Zap size={24} fill="white" />
+              <Workflow size={24} />
             </div>
             Workflows de Datos
           </h1>
