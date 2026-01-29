@@ -139,7 +139,8 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         const finalConfig = {
             workflow_metadata: {
                 name: formData.name,
-                description: formData.description
+                description: formData.description,
+                output: formData.output
             },
             context: contextObj,
             pipeline: pipelineArray
@@ -180,15 +181,27 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                             <Database size={16} /> Metadata
                         </h3>
                         <div className="grid gap-4">
-                            <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Evaluación</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nombre del Workflow"
-                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                />
+                            <div className="grid grid-cols-3 gap-3">
+                                <div className="col-span-2">
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Evaluación</label>
+                                    <input
+                                        type="text"
+                                        placeholder="Nombre del Workflow"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Formato Salida</label>
+                                    <input
+                                        type="text"
+                                        placeholder="XLSX / PDF"
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        value={formData.output}
+                                        onChange={(e) => setFormData({ ...formData, output: e.target.value })}
+                                    />
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descripción</label>

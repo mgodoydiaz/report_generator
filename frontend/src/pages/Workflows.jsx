@@ -55,9 +55,13 @@ export default function Workflows() {
   };
 
   const handleSavePipeline = async (config) => {
-    const id = editingWorkflowId || Date.now(); // fallback simple si es nuevo
+    const isNew = !editingWorkflowId;
+    const url = isNew
+      ? `http://localhost:8000/api/workflows/config`
+      : `http://localhost:8000/api/workflows/${editingWorkflowId}/config`;
+
     try {
-      const response = await fetch(`http://localhost:8000/api/workflows/${id}/config`, {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -67,7 +71,7 @@ export default function Workflows() {
       if (data.status === 'success') {
         alert(data.message);
         setIsDrawerOpen(false);
-        fetchWorkflows(); // Recargar para ver posibles cambios de nombre/desc
+        fetchWorkflows(); // Recargar para ver el nuevo item
       } else {
         throw new Error(data.error || "Error al guardar");
       }
