@@ -1,5 +1,6 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Play, Trash2, Plus, Clock, Zap, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw } from 'lucide-react';
+import NewPipelineDrawer from '../components/NewPipelineDrawer';
 
 export default function Workflows() {
   const [workflows, setWorkflows] = useState([]);
@@ -8,6 +9,7 @@ export default function Workflows() {
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [executingId, setExecutingId] = useState(null);
   const [error, setError] = useState(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   useEffect(() => {
     fetchWorkflows();
@@ -109,7 +111,10 @@ export default function Workflows() {
           >
             <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
           </button>
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2">
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
+          >
             <Plus size={20} strokeWidth={3} />
             Nuevo Pipeline
           </button>
@@ -238,6 +243,10 @@ export default function Workflows() {
           </table>
         </div>
       </div>
+      <NewPipelineDrawer
+        isOpen={isDrawerOpen}
+        onClose={() => setIsDrawerOpen(false)}
+      />
     </div>
   );
 }
