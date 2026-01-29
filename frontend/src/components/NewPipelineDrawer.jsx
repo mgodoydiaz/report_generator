@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus
 } from 'lucide-react';
@@ -17,8 +17,11 @@ const STEP_OPTIONS = [
  * Componente NewPipelineDrawer
  * @param {boolean} isOpen - Controla la visibilidad del panel
  * @param {function} onClose - Función para cerrar el panel
+ * @param {object} initialData - Datos iniciales para editar (opcional)
+ * @param {string} title - Título del panel
+ * @param {function} onSave - Función para procesar los datos al guardar
  */
-const NewPipelineDrawer = ({ isOpen, onClose }) => {
+const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Configurar Nuevo Pipeline", onSave }) => {
     const [formData, setFormData] = useState({
         name: "",
         description: "",
@@ -28,6 +31,42 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
         ],
         pipeline: [{ step: "", params: "" }]
     });
+
+    // Cargar datos iniciales al abrir o cambiar initialData
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                // Transformar contexto de objeto a array de pairs
+                const contextArray = Object.entries(initialData.context || {}).map(([key, value]) => ({
+                    key,
+                    value: String(value)
+                }));
+
+                // Transformar pipeline para pasar params a string JSON
+                const pipelineArray = (initialData.pipeline || []).map(s => ({
+                    step: s.step || "",
+                    params: s.params ? JSON.stringify(s.params, null, 2) : ""
+                }));
+
+                setFormData({
+                    name: initialData.workflow_metadata?.name || "",
+                    description: initialData.workflow_metadata?.description || "",
+                    output: "", // No viene en el JSON pero está en el Excel
+                    context: contextArray.length > 0 ? contextArray : [{ key: "base_dir", value: "./backend/tests" }],
+                    pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", params: "" }]
+                });
+            } else {
+                // Reset format for new pipeline
+                setFormData({
+                    name: "",
+                    description: "",
+                    output: "",
+                    context: [{ key: "base_dir", value: "./backend/tests" }],
+                    pipeline: [{ step: "", params: "" }]
+                });
+            }
+        }
+    }, [isOpen, initialData]);
 
     if (!isOpen) return null;
 
@@ -69,8 +108,50 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
         setFormData({ ...formData, pipeline: newPipeline });
     };
 
+    const handleSave = () => {
+        // Re-transformar datos al formato JSON del archivo
+        const contextObj = {};
+        formData.context.forEach(c => {
+            if (c.key.trim()) {
+                contextObj[c.key] = c.value;
+            }
+        });
+
+        const pipelineArray = formData.pipeline.map(s => {
+            let parsedParams = {};
+            try {
+                if (s.params.trim()) {
+                    parsedParams = JSON.parse(s.params);
+                }
+            } catch (e) {
+                console.error("Error parsing JSON params for step", s.step, e);
+                // Si no es JSON válido, lo enviamos como string o lo dejamos vacío?
+                // Mejor alertar al usuario si no es válido
+                alert(`Error en el JSON del paso "${s.step}": Parámetros inválidos.`);
+                throw e; // Detener el guardado
+            }
+            return {
+                step: s.step,
+                params: parsedParams
+            };
+        });
+
+        const finalConfig = {
+            workflow_metadata: {
+                name: formData.name,
+                description: formData.description
+            },
+            context: contextObj,
+            pipeline: pipelineArray
+        };
+
+        if (onSave) {
+            onSave(finalConfig);
+        }
+    };
+
     return (
-        <div className="fixed inset-0 z-50 overflow-hidden font-sans">
+        <div className="fixed inset-0 z-50 overflow-hidden font-sans text-left">
             {/* Overlay con desenfoque */}
             <div
                 className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm transition-opacity"
@@ -78,14 +159,14 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
             />
 
             {/* Panel Principal */}
-            <div className="absolute inset-y-0 right-0 max-w-xl w-full bg-white shadow-2xl flex flex-col">
+            <div className="absolute inset-y-0 right-0 max-w-xl w-full bg-white shadow-2xl flex flex-col transition-transform duration-300 ease-in-out transform translate-x-0">
                 {/* Cabecera del Menú */}
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-900">Configurar Nuevo Pipeline</h2>
+                        <h2 className="text-lg font-bold text-slate-900">{title}</h2>
                         <p className="text-xs text-slate-500">Define los parámetros técnicos del proceso.</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                    <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors">
                         <X size={20} className="text-slate-500" />
                     </button>
                 </div>
@@ -99,20 +180,26 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
                             <Database size={16} /> Metadata
                         </h3>
                         <div className="grid gap-4">
-                            <input
-                                type="text"
-                                placeholder="Nombre del Workflow"
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-                                value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            />
-                            <textarea
-                                rows="2"
-                                placeholder="Descripción breve..."
-                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
-                                value={formData.description}
-                                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                            />
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Evaluación</label>
+                                <input
+                                    type="text"
+                                    placeholder="Nombre del Workflow"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    value={formData.name}
+                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Descripción</label>
+                                <textarea
+                                    rows="2"
+                                    placeholder="Descripción breve..."
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none"
+                                    value={formData.description}
+                                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                                />
+                            </div>
                         </div>
                     </section>
 
@@ -198,8 +285,8 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
 
                                         <textarea
                                             placeholder='Parámetros (JSON o Texto)'
-                                            rows="2"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500"
+                                            rows="4"
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                                             value={step.params}
                                             onChange={(e) => updateStep(index, 'params', e.target.value)}
                                         />
@@ -211,16 +298,16 @@ const NewPipelineDrawer = ({ isOpen, onClose }) => {
                 </div>
 
                 {/* Acciones del Footer */}
-                <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex items-center gap-3">
+                <div className="p-6 border-t border-slate-100 bg-slate-50/50 flex items-center gap-3 mt-auto">
                     <button
                         onClick={onClose}
-                        className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl font-medium hover:bg-slate-100 transition-colors"
+                        className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-600 rounded-xl font-medium hover:bg-white transition-colors"
                     >
                         Cancelar
                     </button>
                     <button
                         className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all active:scale-95"
-                        onClick={() => console.log("Datos del Pipeline:", formData)}
+                        onClick={handleSave}
                     >
                         Guardar Pipeline
                     </button>

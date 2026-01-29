@@ -10,6 +10,9 @@ export default function Workflows() {
   const [executingId, setExecutingId] = useState(null);
   const [error, setError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [editingWorkflowId, setEditingWorkflowId] = useState(null);
+  const [drawerTitle, setDrawerTitle] = useState("Configurar Nuevo Pipeline");
+  const [drawerData, setDrawerData] = useState(null);
 
   useEffect(() => {
     fetchWorkflows();
@@ -30,6 +33,55 @@ export default function Workflows() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleEditWorkflow = async (workflowId) => {
+    setEditingWorkflowId(workflowId);
+    setDrawerTitle("Configurar Pipeline");
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/config`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      setDrawerData(data);
+      setIsDrawerOpen(true);
+    } catch (err) {
+      console.error(err);
+      alert("No se pudo cargar la configuración del pipeline.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSavePipeline = async (config) => {
+    const id = editingWorkflowId || Date.now(); // fallback simple si es nuevo
+    try {
+      const response = await fetch(`http://localhost:8000/api/workflows/${id}/config`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        alert(data.message);
+        setIsDrawerOpen(false);
+        fetchWorkflows(); // Recargar para ver posibles cambios de nombre/desc
+      } else {
+        throw new Error(data.error || "Error al guardar");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al guardar la configuración: " + err.message);
+    }
+  };
+
+  const handleOpenNewPipeline = () => {
+    setEditingWorkflowId(null);
+    setDrawerTitle("Configurar Nuevo Pipeline");
+    setDrawerData(null);
+    setIsDrawerOpen(true);
   };
 
   const handleRunWorkflow = async (id) => {
@@ -112,7 +164,7 @@ export default function Workflows() {
             <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
           </button>
           <button
-            onClick={() => setIsDrawerOpen(true)}
+            onClick={handleOpenNewPipeline}
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
           >
             <Plus size={20} strokeWidth={3} />
@@ -142,7 +194,7 @@ export default function Workflows() {
       )}
 
       {/* Table Card */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden text-left">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -188,7 +240,7 @@ export default function Workflows() {
                   <td colSpan="5" className="p-12 text-center text-slate-400">
                     <div className="flex flex-col items-center gap-3">
                       <RefreshCcw size={24} className="animate-spin text-indigo-500" />
-                      <p className="font-medium">Cargando datos desde Excel...</p>
+                      <p className="font-medium">Cargando datos...</p>
                     </div>
                   </td>
                 </tr>
@@ -209,8 +261,8 @@ export default function Workflows() {
                     <td className="p-5 text-slate-500 text-sm font-medium">
                       {wf.last_run}
                     </td>
-                    <td className="p-5 text-right">
-                      <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td className="p-5 text-right flex justify-end gap-1">
+                      <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleRunWorkflow(wf.id_evaluation)}
                           disabled={executingId !== null}
@@ -222,7 +274,11 @@ export default function Workflows() {
                             <Play size={18} fill="currentColor" />
                           }
                         </button>
-                        <button className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all" title="Configurar">
+                        <button
+                          onClick={() => handleEditWorkflow(wf.id_evaluation)}
+                          className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
+                          title="Configurar"
+                        >
                           <Settings size={18} />
                         </button>
                         <button className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Eliminar">
@@ -243,9 +299,13 @@ export default function Workflows() {
           </table>
         </div>
       </div>
+      {/* Drawer */}
       <NewPipelineDrawer
         isOpen={isDrawerOpen}
         onClose={() => setIsDrawerOpen(false)}
+        initialData={drawerData}
+        title={drawerTitle}
+        onSave={handleSavePipeline}
       />
     </div>
   );

@@ -69,6 +69,56 @@ async def execute_workflow(workflow_id: int):
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/workflows/{workflow_id}/config")
+async def get_workflow_config(workflow_id: int):
+    try:
+        pipeline_filename = f"pipeline{workflow_id:03d}.json"
+        pipeline_path = BASE_DIR / "data" / "database" / "pipelines" / pipeline_filename
+        
+        if not pipeline_path.exists():
+            # Devolver una estructura vacía si no existe
+            return {
+                "workflow_metadata": {"name": "", "description": ""},
+                "context": {"base_dir": "./backend/tests"},
+                "pipeline": []
+            }
+        
+        import json
+        with open(pipeline_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/workflows/{workflow_id}/config")
+async def save_workflow_config(workflow_id: int, config: dict):
+    try:
+        pipeline_filename = f"pipeline{workflow_id:03d}.json"
+        pipeline_dir = BASE_DIR / "data" / "database" / "pipelines"
+        pipeline_dir.mkdir(parents=True, exist_ok=True)
+        pipeline_path = pipeline_dir / pipeline_filename
+        
+        import json
+        with open(pipeline_path, 'w', encoding='utf-8') as f:
+            json.dump(config, f, indent=4, ensure_ascii=False)
+        
+        # También actualizar el Excel si el nombre o descripción cambiaron
+        try:
+            df = pd.read_excel(EXCEL_PATH)
+            metadata = config.get("workflow_metadata", {})
+            if workflow_id in df['id_evaluation'].values:
+                if metadata.get("name"):
+                    df.loc[df['id_evaluation'] == workflow_id, 'evaluation'] = metadata.get("name")
+                if metadata.get("description"):
+                    df.loc[df['id_evaluation'] == workflow_id, 'description'] = metadata.get("description")
+                df.to_excel(EXCEL_PATH, index=False)
+        except Exception as ex:
+            print(f"Error actualizando Excel tras guardado de config: {ex}")
+
+        return {"status": "success", "message": f"Configuración guardada en {pipeline_filename}"}
+    except Exception as e:
+        return {"error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     # Agregamos reload=True para desarrollo
