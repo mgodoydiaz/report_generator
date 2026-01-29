@@ -6,6 +6,7 @@ export default function Workflows() {
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [executingId, setExecutingId] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -26,6 +27,28 @@ export default function Workflows() {
       setError("No se pudo cargar la base de datos de evaluaciones.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRunWorkflow = async (id) => {
+    setExecutingId(id);
+    try {
+      const response = await fetch(`http://localhost:8000/api/workflows/${id}/run`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+
+      if (data.status === 'success') {
+        alert(`Pipeline ejecutado exitosamente:\n${data.message}`);
+        fetchWorkflows(); // Recargar para ver la nueva fecha
+      } else {
+        throw new Error(data.message || data.error);
+      }
+    } catch (err) {
+      console.error(err);
+      alert(`Error al ejecutar el pipeline: ${err.message}`);
+    } finally {
+      setExecutingId(null);
     }
   };
 
@@ -183,8 +206,16 @@ export default function Workflows() {
                     </td>
                     <td className="p-5 text-right">
                       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button className="p-2 text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Ejecutar ahora">
-                          <Play size={18} fill="currentColor" />
+                        <button
+                          onClick={() => handleRunWorkflow(wf.id_evaluation)}
+                          disabled={executingId !== null}
+                          className={`p-2 rounded-xl transition-all ${executingId === wf.id_evaluation ? "text-indigo-600 bg-indigo-50" : "text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
+                          title="Ejecutar ahora"
+                        >
+                          {executingId === wf.id_evaluation ?
+                            <RefreshCcw size={18} className="animate-spin" /> :
+                            <Play size={18} fill="currentColor" />
+                          }
                         </button>
                         <button className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all" title="Configurar">
                           <Settings size={18} />

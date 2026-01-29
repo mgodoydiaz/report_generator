@@ -1,0 +1,57 @@
+{
+    "workflow_metadata": {
+        "name": "Pipeline Simce Lenguaje",
+        "description": "ETL para procesamiento de informes académicos de Lenguaje"
+    },
+    "context": {
+        "base_dir": "./backend/tests",
+        "environment": "test"
+    },
+    "pipeline": [
+        {
+            "step": "InitRun",
+            "params": {
+                "inputs_dir": "input_test/inputs/Lenguaje/inputs"
+            }
+        },
+        {
+            "step": "LoadConfig",
+            "params": {
+                "config_path": "config_dir/simce_estudiantes_lenguaje.json"
+            }
+        },
+        {
+            "step": "DiscoverInputs",
+            "params": {
+                "rules": {
+                    "estudiantes": {
+                        "extension": ".xlsx",
+                        "contains": "Resultados"
+                    },
+                    "preguntas": {
+                        "extension": ".xlsx",
+                        "contains": "ReportePregunta"
+                    },
+                    "habilidades": {
+                        "extension": ".xlsx",
+                        "contains": "habilidades"
+                    }
+                }
+            }
+        },
+        {
+            "step": "RunExcelETL",
+            "params": {
+                "target": "estudiantes"
+            }
+        },
+        {
+            "step": "EnrichWithContext",
+            "params": {}
+        },
+        {
+            "step": "ExportConsolidatedExcel",
+            "params": {}
+        }
+    ]
+}
