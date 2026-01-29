@@ -4,20 +4,19 @@
         "description": "ETL para procesamiento de informes académicos de Lenguaje"
     },
     "context": {
-        "base_dir": "./backend/tests",
-        "environment": "test"
+        "base_dir": "tests"
     },
     "pipeline": [
         {
             "step": "InitRun",
             "params": {
-                "inputs_dir": "input_test/inputs/Lenguaje/inputs"
+                "inputs_dir": "tests/input_test/inputs/Lenguaje/inputs"
             }
         },
         {
             "step": "LoadConfig",
             "params": {
-                "config_path": "../config/simce_estudiantes_lenguaje.json"
+                "config_path": "./tests/config_dir/simce_estudiantes_lenguaje.json"
             }
         },
         {

@@ -4,6 +4,7 @@ from typing import Dict, Type, List
 from rgenerator.etl.core.context import RunContext
 from rgenerator.etl.core.step import Step
 import rgenerator.etl.core.pipeline_steps as ps
+import os
 
 # Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python
 STEP_MAPPING: Dict[str, Type[Step]] = {
@@ -60,16 +61,17 @@ def run_pipeline(json_path: str | Path):
     try:
         ctx, pipeline = load_pipeline_from_json(json_path)
         
-        print(f"Iniciando ejecución de pipeline: {json_path}")
         for step in pipeline:
-            print(f"Ejecutando paso: {step.__class__.__name__}")
+            print()
+            print("-"*20)
+            print(os.getcwd())
+            print(step.__class__.__name__)
             step.run(ctx)
+            ctx.show_attrs()
             
-        print("Pipeline ejecutado exitosamente.")
         return {"status": "success", "message": "Pipeline ejecutado correctamente", "artifacts": list(ctx.artifacts.keys())}
     
     except Exception as e:
-        print(f"Error ejecutando pipeline: {e}")
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":

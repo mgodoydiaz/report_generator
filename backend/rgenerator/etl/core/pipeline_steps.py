@@ -508,6 +508,7 @@ class ExportConsolidatedExcel(Step):
         if not self.output_filename:
             self.output_filename = ctx.params.get("output_filename", "salida_etl.xlsx")
         output_path = ctx.base_dir / self.output_filename
+        print(output_path)
         try:
             df.to_excel(output_path, index=False)
             #self._log(f"[{self.name}] Exportado DataFrame a Excel en: {output_path}")

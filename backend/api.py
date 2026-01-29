@@ -44,6 +44,7 @@ from rgenerator.tooling.pipeline_tools import run_pipeline
 @app.post("/api/workflows/{workflow_id}/run")
 async def execute_workflow(workflow_id: int):
     try:
+        os.system("cls")
         # Mapeo de IDs a archivos de pipeline (esto podría estar en una DB o en el Excel)
         # Por ahora, mapeamos el id 2 al archivo pipeline002.json
         pipeline_filename = f"pipeline{workflow_id:03d}.json"
