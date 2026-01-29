@@ -46,6 +46,7 @@ modulo.zip
 data/output/*
 data/tmp/*
 
-# Codex and rovodev things
+# Codex, Gemini and rovodev things
 codex-review.md 
 comunicacion_agente.md
+agents/
