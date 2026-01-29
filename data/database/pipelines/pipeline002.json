@@ -1,7 +1,8 @@
 {
     "workflow_metadata": {
-        "name": "Pipeline Simce Lenguaje",
-        "description": "ETL para procesamiento de informes académicos de Lenguaje"
+        "name": "SIMCE Lenguaje",
+        "description": "Workflow SIMCE",
+        "output": "XLSX"
     },
     "context": {
         "base_dir": "tests"

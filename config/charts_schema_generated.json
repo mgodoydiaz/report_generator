@@ -1,0 +1,110 @@
+{
+    "pipeline_name": "Simce Lenguaje 2025",
+    "steps": [],
+    "params": {
+        "charts_schema": [
+            {
+                "type": "grafico_barras_promedio_por",
+                "input_key": "df_estudiantes_prueba",
+                "output_filename": "rendimiento_promedio_por_curso.png",
+                "params": {
+                    "columna_valor": "Rend",
+                    "agrupar_por": "Curso",
+                    "titulo": "Rendimiento Promedio por Curso",
+                    "ylabel": "Rendimiento (%)"
+                }
+            },
+            {
+                "type": "boxplot_valor_por_curso",
+                "input_key": "df_estudiantes_prueba",
+                "output_filename": "distribucion_puntaje_simce_por_curso.png",
+                "params": {
+                    "columna_valor": "SIMCE",
+                    "agrupar_por": "Curso",
+                    "titulo_grafico": "Distribución de Puntaje SIMCE por Curso",
+                    "ylabel": "Puntaje SIMCE",
+                    "formato": "number"
+                }
+            },
+            {
+                "type": "valor_promedio_agrupado_por",
+                "input_key": "df_estudiantes",
+                "output_filename": "evolucion_logro_promedio_por_curso_y_mes.png",
+                "params": {
+                    "columna_valor": "Rend",
+                    "agrupar_principal_por": "Curso",
+                    "agrupar_secundario_por": "Mes",
+                    "titulo_grafico": "Evolución del Logro Promedio por Curso y Mes",
+                    "titulo_leyenda": "Mes",
+                    "y_lims": [
+                        0,
+                        1
+                    ],
+                    "formato": "percent"
+                }
+            },
+            {
+                "type": "valor_promedio_agrupado_por",
+                "input_key": "df_estudiantes",
+                "output_filename": "evolucion_simce_promedio_por_curso_y_mes.png",
+                "params": {
+                    "columna_valor": "SIMCE",
+                    "agrupar_principal_por": "Curso",
+                    "agrupar_secundario_por": "Mes",
+                    "titulo_grafico": "Evolución del SIMCE Promedio por Curso y Mes",
+                    "titulo_leyenda": "Mes",
+                    "formato": "number"
+                }
+            },
+            {
+                "type": "alumnos_por_nivel_cualitativo",
+                "input_key": "df_estudiantes_prueba",
+                "output_filename": "alumnos_por_nivel.png",
+                "params": {
+                    "columna_nivel": "Logro",
+                    "agrupar_por": "Curso",
+                    "titulo_grafico": "Cantidad de Alumnos por Nivel de Logro y Curso",
+                    "titulo_leyenda": "Nivel de Logro",
+                    "ylabel": "Cantidad de Alumnos"
+                }
+            },
+            {
+                "type": "alumnos_por_nivel_curso_y_mes",
+                "input_key": "df_estudiantes",
+                "output_filename": "evolucion_alumnos_por_nivel.png",
+                "params": {
+                    "columna_nivel": "Logro",
+                    "titulo_grafico": "",
+                    "titulo_leyenda": "Nivel de Logro",
+                    "ylabel": "Cantidad de Alumnos"
+                }
+            },
+            {
+                "type": "valor_promedio_agrupado_por",
+                "input_key": "df_preguntas",
+                "output_filename": "logro_promedio_por_habilidad.png",
+                "params": {
+                    "columna_valor": "Logro",
+                    "agrupar_principal_por": "Curso",
+                    "agrupar_secundario_por": "Habilidad",
+                    "titulo_grafico": "Logro Promedio por Habilidad",
+                    "titulo_leyenda": "Habilidad",
+                    "formato": "percent"
+                }
+            },
+            {
+                "type": "valor_promedio_agrupado_por",
+                "input_key": "df_preguntas",
+                "output_filename": "logro_promedio_por_eje.png",
+                "params": {
+                    "columna_valor": "Logro",
+                    "agrupar_principal_por": "Curso",
+                    "agrupar_secundario_por": "Eje temático",
+                    "titulo_grafico": "Logro Promedio por Eje Temático",
+                    "titulo_leyenda": "Eje Temático",
+                    "formato": "percent"
+                }
+            }
+        ]
+    }
+}

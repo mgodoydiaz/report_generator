@@ -10,6 +10,10 @@ from typing import Callable, Optional, Dict, List
 # Importaciones internas de RGenerator
 from .step import Step
 from rgenerator.tooling.config_tools import cargar_config_desde_json
+from rgenerator.tooling import plot_tools, report_tools
+from rgenerator.tooling.report_docx_tools import render_docx_report
+from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
+import shutil
 
 ##### Steps definidos para SIMCE 
 
@@ -554,6 +558,513 @@ class DeleteTempFiles(Step):
                 self._log(f"[{self.name}] Directorio no existe o no es un directorio: {dir_path}")
 
         context.last_step = self.name
+
+
+class GenerateGraphics(Step):
+    """
+    Genera gráficos utilizando herramientas de matplotlib definidas en plot_tools.
+
+    Recibe u obtiene del contexto un esquema de gráficos (lista de definiones) y genera
+    las imágenes correspondientes en el directorio auxiliar.
+
+    Parametros:
+        charts_schema (opcional): lista de diccionarios con la definición de gráficos.
+                                  Si no se entrega, se busca en ctx.params["charts_schema"].
+        
+    Efectos:
+        - Crea archivos .png (u otros) en ctx.aux_dir.
+    """
+    def __init__(self, charts_schema: Optional[List[Dict]] = None):
+        """Inicializa el step."""
+        super().__init__(name="GenerateGraphics")
+        self.charts_schema = charts_schema
+
+    def run(self, ctx):
+        """Genera los gráficos solicitados."""
+        before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
+
+        # 1. Resolver esquema de gráficos
+        schema = self.charts_schema
+        if not schema:
+            schema = ctx.params.get("charts_schema", [])
+        
+        if not schema:
+            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de gráficos (charts_schema).")
+            # No retornamos error, solo no hacemos nada
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 2. Resolver directorio auxiliar
+        # Se intenta usar ctx.aux_dir, si no existe se define por defecto
+        aux_dir = getattr(ctx, "aux_dir", None)
+        if not aux_dir:
+            if hasattr(ctx, "base_dir"):
+                aux_dir = ctx.base_dir / "aux_files"
+            else:
+                aux_dir = Path("aux_files")
+            ctx.aux_dir = aux_dir
+
+        if not aux_dir.exists():
+            aux_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3. Iterar sobre el esquema y generar gráficos
+        charts_generated = 0
+        for chart_def in schema:
+            chart_type = chart_def.get("type")
+            input_key = chart_def.get("input_key")
+            output_filename = chart_def.get("output_filename")
+            params = chart_def.get("params", {})
+
+            # Validar definición mínima
+            if not chart_type or not input_key or not output_filename:
+                self._log(f"[{self.name}] Error: Definición incompleta: {chart_def}")
+                continue
+
+            # Obtener la función desde plot_tools
+            func = getattr(plot_tools, chart_type, None)
+            if not func:
+                self._log(f"[{self.name}] Error: La función '{chart_type}' no existe en plot_tools.")
+                continue
+
+            # Obtener el DataFrame desde artifacts
+            df = ctx.artifacts.get(input_key)
+            if df is None:
+                self._log(f"[{self.name}] Error: El artifact '{input_key}' no existe en el contexto.")
+                continue
+
+            # Preparar argumentos
+            output_path = aux_dir / output_filename
+            kwargs = params.copy()
+            # Inyectamos nombre_grafico
+            kwargs["nombre_grafico"] = str(output_path)
+
+            try:
+                # invocamos la funcion: func(df, **kwargs)
+                func(df, **kwargs)
+                charts_generated += 1
+            except Exception as e:
+                self._log(f"[{self.name}] Error al generar gráfico '{output_filename}': {e}")
+
+        #self._log(f"[{self.name}] Se generaron {charts_generated} gráficos en {aux_dir}")
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
+class GenerateTables(Step):
+    """
+    Genera tablas utilizando funciones de report_tools.
+
+    Recibe u obtiene del contexto un esquema de tablas (lista de definiciones) y genera
+    los archivos Excel correspondientes en el directorio auxiliar.
+
+    Parametros:
+        tables_schema (opcional): lista de diccionarios con la definición de tablas.
+                                  Si no se entrega, se busca en ctx.params["tables_schema"].
+        
+    Efectos:
+        - Crea archivos .xlsx en ctx.aux_dir.
+    """
+    def __init__(self, tables_schema: Optional[List[Dict]] = None):
+        """Inicializa el step."""
+        super().__init__(name="GenerateTables")
+        self.tables_schema = tables_schema
+
+    def run(self, ctx):
+        """Genera las tablas solicitadas."""
+        before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
+
+        # 1. Resolver esquema de tablas
+        schema = self.tables_schema
+        if not schema:
+            schema = ctx.params.get("tables_schema", [])
+        
+        if not schema:
+            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de tablas (tables_schema).")
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 2. Resolver directorio auxiliar
+        aux_dir = getattr(ctx, "aux_dir", None)
+        if not aux_dir:
+            if hasattr(ctx, "base_dir"):
+                aux_dir = ctx.base_dir / "aux_files"
+            else:
+                aux_dir = Path("aux_files")
+            ctx.aux_dir = aux_dir
+
+        if not aux_dir.exists():
+            aux_dir.mkdir(parents=True, exist_ok=True)
+
+        # 3. Iterar sobre el esquema y generar tablas
+        tables_generated = 0
+        for table_def in schema:
+            func_name = table_def.get("type")
+            input_key = table_def.get("input_key")
+            output_filename = table_def.get("output_filename")
+            params = table_def.get("params", {})
+            iterate_by = table_def.get("iterate_by", None) # Optional: columna para iterar
+
+            # Validar definición mínima
+            if not func_name or not input_key or not output_filename:
+                self._log(f"[{self.name}] Error: Definición incompleta: {table_def}")
+                continue
+
+            # Obtener la función desde report_tools
+            func = getattr(report_tools, func_name, None)
+            if not func:
+                self._log(f"[{self.name}] Error: La función '{func_name}' no existe en report_tools.")
+                continue
+
+            # Obtener el DataFrame desde artifacts
+            df_full = ctx.artifacts.get(input_key)
+            if df_full is None:
+                self._log(f"[{self.name}] Error: El artifact '{input_key}' no existe en el contexto.")
+                continue
+
+            # Función helper para procesar un dataframe y guardar
+            def process_and_save(df_k, filename_k, params_k):
+                try:
+                    # report_tools utiliza mayormente kwargs, pero algunos pueden esperar 'parametros'
+                    # Asumimos que params_k se pasa como kwargs.
+                    # Si una función espera explícitamente 'parametros', el usuario debe incluirlo en el json
+                    # Ejemplo json: "params": { "parametros": {"Asignatura": "LENGUAJE"} }
+                    df_res = func(df_k, **params_k) 
+                    output_path = aux_dir / filename_k
+                    df_res.to_excel(output_path, index=False)
+                    return True
+                except Exception as e:
+                    self._log(f"[{self.name}] Error generando tabla '{filename_k}': {e}")
+                    return False
+
+            if iterate_by:
+                # Caso iterativo (ej: generar tabla por cada Curso)
+                if iterate_by not in df_full.columns:
+                     self._log(f"[{self.name}] Error: Columna '{iterate_by}' no existe en DataFrame.")
+                     continue
+                
+                uniques = df_full[iterate_by].unique()
+                for val in uniques:
+                    # Preparamos nombre de archivo
+                    if "{val}" in output_filename:
+                        fname = output_filename.replace("{val}", str(val))
+                    else:
+                        fname = f"{output_filename}_{val}.xlsx"
+
+                    # Preparamos params
+                    iter_params = params.copy()
+                    
+                    # Inyectamos el valor de filtro. 
+                    # IMPORTANTE: Muchas funciones de report_tools (crear_tabla, etc) filtran usando el dict 'parametros'.
+                    if "parametros" not in iter_params: 
+                         iter_params["parametros"] = {}
+                    # Aseguramos que 'parametros' sea dict
+                    if isinstance(iter_params.get("parametros"), dict):
+                        iter_params["parametros"][iterate_by] = val
+                    
+                    # Tambien lo pasamos como kwarg raiz por si la función filtra directamenente (resumen_estadistico_basico)
+                    iter_params[iterate_by] = val
+
+                    if process_and_save(df_full, fname, iter_params):
+                        tables_generated += 1
+            else:
+                # Caso simple: una sola tabla
+                if process_and_save(df_full, output_filename, params):
+                    tables_generated += 1
+
+        #self._log(f"[{self.name}] Se generaron {tables_generated} tablas en {aux_dir}")
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
+class RenderReport(Step):
+    """
+    Genera el informe PDF final utilizando LaTeX.
+
+    Requiere:
+        - Archivos generados en ctx.aux_dir (tablas excel, imágenes).
+        - params["report_schema"]: Diccionario con la estructura del informe.
+          Puede ser cargado previamente o pasado directamente.
+    
+    Efectos:
+        - Genera 'variables.tex', 'contenido.tex' e 'informe.tex' en ctx.aux_dir.
+        - Compila con xelatex.
+        - Resultado final: 'informe.pdf' en ctx.outputs_dir.
+    """
+    def __init__(self, report_schema: Optional[Dict] = None):
+        super().__init__(name="RenderReport")
+        self.report_schema = report_schema
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
+
+        # 1. Obtener schema
+        schema = self.report_schema or ctx.params.get("report_schema")
+        if not schema:
+             # Intento de cargar desde archivo si viene una ruta en params
+             schema_path = ctx.params.get("report_schema_path")
+             if schema_path:
+                 try:
+                     import json
+                     with open(schema_path, "r", encoding="utf-8") as f:
+                        schema = json.load(f)
+                 except Exception as e:
+                     self._log(f"Error cargando json de reporte desde {schema_path}: {e}")
+
+        if not schema:
+            self._log(f"[{self.name}] Error: No se encontró report_schema.")
+            # No fallamos, solo retornamos
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 2. Rutas
+        aux_dir = getattr(ctx, "aux_dir", None)
+        if not aux_dir or not aux_dir.exists():
+             # Fallback
+             if hasattr(ctx, "base_dir"):
+                 aux_dir = ctx.base_dir / "aux_files"
+             else:
+                 aux_dir = Path("aux_files")
+        
+        if not aux_dir.exists():
+            self._log(f"[{self.name}] Error: aux_dir no existe ({aux_dir}).")
+            return
+
+        # Debemos movernos al directorio auxiliar para que latex encuentre las imagenes/tablas
+        # Guardamos CWD original
+        cwd_original = os.getcwd()
+        os.chdir(aux_dir)
+
+        try:
+            # 3. Generar variables.tex
+            new_command_format = "\\newcommand{{\\{}}}{{{}}}\n"
+            with open("variables.tex", "w", encoding="utf-8") as f:
+                f.write("% Variables del informe\n")
+                variables = schema.get("variables_documento", {})
+                
+                # Inyectar variables desde el contexto si hacen falta
+                if "evaluacion" not in variables and hasattr(ctx, "evaluation"):
+                    variables["evaluacion"] = ctx.evaluation
+                # Inyectar params como variables si se desea
+                # for k,v in ctx.params.items(): ... (opcional)
+
+                for key, value in variables.items():
+                    # Sanitize key/value if needed
+                    val_str = str(value).replace("_", "\\_") # Escape básico
+                    f.write(new_command_format.format(key, val_str))
+                f.write("\n")
+
+            # 4. Generar contenido dinámico (secciones)
+            # Combinamos fijas y dinámicas en orden
+            secciones_fijas = schema.get("secciones_fijas", [])
+            secciones_dinamicas = schema.get("secciones_dinamicas", [])
+            
+            # Nota: El script original las escribe secuencialmente. 
+            # Aquí las unimos para procesar en un solo loop y asignar indices.
+            todas_secciones = secciones_fijas + secciones_dinamicas
+            
+            # Lista de índices alfabéticos que usaremos en el informe.tex
+            # Debemos importar indice_alfabetico (ya importado arriba)
+            i_idx = 0
+            lista_indices_tex = []
+            
+            with open("contenido.tex", "w", encoding="utf-8") as f:
+                f.write("% Contenido generado\n")
+                
+                for seccion in todas_secciones:
+                    if i_idx >= len(indice_alfabetico):
+                        break 
+                    
+                    current_idx = indice_alfabetico[i_idx]
+                    lista_indices_tex.append(current_idx)
+                    
+                    titulo = seccion.get("titulo", "")
+                    
+                    # Definimos el comando sectionX
+                    cmd_section = f"\\section*{{{titulo}}}"
+                    if seccion.get("newpage", False):
+                        cmd_section = "\\newpage " + cmd_section
+                    
+                    f.write(new_command_format.format("section" + current_idx, cmd_section))
+
+                    # Contenido (Tabla o Imagen)
+                    tipo = seccion.get("tipo")
+                    contenido_path = seccion.get("contenido") # Ruta relativa a aux_dir o absoluta
+                    
+                    latex_content = ""
+                    if tipo == "tabla":
+                         # Leer excel, generar latex
+                         try:
+                             p = Path(contenido_path)
+                             if not p.is_absolute():
+                                 p = aux_dir / contenido_path
+                             
+                             if p.exists():
+                                 df_t = pd.read_excel(p)
+                                 # Usamos la funcion de report_tools
+                                 latex_content = report_tools.df_a_latex_loop(df_t)
+                             else:
+                                 # Intentar buscar file tal cual (por si generamos en run time)
+                                 if Path(contenido_path).exists():
+                                      df_t = pd.read_excel(contenido_path)
+                                      latex_content = report_tools.df_a_latex_loop(df_t)
+                                 else:
+                                      latex_content = f"Error: Archivo {contenido_path} no encontrado."
+                         except Exception as e:
+                             latex_content = f"Error procesando tabla {contenido_path}: {e}"
+
+                    elif tipo == "imagen":
+                         opts = seccion.get("options", "")
+                         # Para latex, mejor usar nombre de archivo relativo si está en el mismo dir
+                         p = Path(contenido_path)
+                         img_name = p.name
+                         # Asegurarse que la imagen esté ahí. Si está en otro lado, copiarla?
+                         # El script original copiaba imagenes estaticas a tmp/img. 
+                         # Asumimos que GenerateGraphics ya dejó las imagenes en aux_dir.
+                         latex_content = report_tools.img_to_latex(img_name, opts)
+                    
+                    f.write(new_command_format.format("content" + current_idx, latex_content))
+                    i_idx += 1
+
+
+            # 5. Generar informe.tex principal
+            with open("informe.tex", "w", encoding="utf-8") as f:
+                f.write(formato_informe_generico)
+                f.write("\n")
+                f.write("\\input{contenido.tex}\n") 
+                for idx in lista_indices_tex:
+                     f.write(f"\\section{idx}\n")
+                     f.write(f"\\content{idx}\n")
+                     f.write("\n")
+                f.write("\\end{document}")
+            
+            # 6. Compilar
+            self._log(f"[{self.name}] Compilando PDF...")
+            # Detectar si estamos en windows para el comando
+            cmd = "xelatex -interaction=nonstopmode informe.tex"
+            ret = os.system(cmd)
+            
+            if ret == 0:
+                self._log(f"[{self.name}] PDF generado exitosamente.")
+                # Mover a outputs si existe output_dir
+                if hasattr(ctx, "outputs_dir") and ctx.outputs_dir.exists():
+                     target = ctx.outputs_dir / "informe.pdf"
+                elif hasattr(ctx, "outputs"):
+                     # Si outputs es dict pero no hay outputs_dir definido como path
+                     # Usamos base_dir o lo dejamos en aux_dir
+                     target = ctx.base_dir / "informe.pdf"
+                else:
+                     target = Path("informe.pdf").resolve() # en aux_dir
+                
+                src = aux_dir / "informe.pdf"
+                if src.exists():
+                    if src != target:
+                        shutil.copy(src, target)
+                    ctx.outputs["report_pdf"] = target
+            else:
+                self._log(f"[{self.name}] Advertencia: xelatex retornó código {ret}. Revisar logs en {aux_dir}.")
+        
+        except Exception as e:
+            self._log(f"[{self.name}] Excepción durante RenderReport: {e}")
+        finally:
+            # Volver al directorio original
+            os.chdir(cwd_original)
+
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
+
+class GenerateDocxReport(Step):
+    """
+    Genera un informe DOCX (y opcionalmente PDF) usando una plantilla Word y docxtpl.
+    
+    Parametros:
+        template_name (str): Nombre del archivo plantilla en backend/templates (o ruta absoluta).
+        output_filename (str): Nombre del archivo de salida (ej: informe_final.docx).
+        context_key (opcional): Clave en artifacts/params que contiene el diccionario de contexto.
+                                Si no se da, se construye un contexto mezclando params y artifacts.
+        convert_to_pdf (bool): Si True, intenta convertir a PDF usando docx2pdf.
+        
+    Efectos:
+        - Crea archivo .docx en ctx.aux_dir.
+        - Si convert_to_pdf=True, crea .pdf en ctx.outputs_dir.
+    """
+    def __init__(self, template_name: str, output_filename: str, context_key: str = None, convert_to_pdf: bool = True):
+        super().__init__(name="GenerateDocxReport")
+        self.template_name = template_name
+        self.output_filename = output_filename
+        self.context_key = context_key
+        self.convert_to_pdf = convert_to_pdf
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
+            
+        # 1. Resolver Paths
+        # Si template_name es absoluto lo usa
+        p = Path(self.template_name)
+        if p.exists():
+            template_path = p
+        else:
+            # Try to find in backend/templates
+            template_path = Path("backend/templates") / self.template_name
+            if not template_path.exists():
+                 # Try relative to base_dir
+                 if hasattr(ctx, "base_dir"):
+                     template_path = ctx.base_dir / "templates" / self.template_name
+                 
+        if not template_path.exists():
+            self._log(f"[{self.name}] Error: Plantilla no encontrada: {self.template_name}")
+            return
+
+        # 2. Construir Contexto
+        if self.context_key:
+            data_context = ctx.artifacts.get(self.context_key) or ctx.params.get(self.context_key, {})
+        else:
+            # Merge params and artifacts
+            data_context = ctx.params.copy()
+
+        # Asegurar aux_dir
+        aux_dir = getattr(ctx, "aux_dir", None)
+        if not aux_dir:
+             if hasattr(ctx, "base_dir"):
+                 aux_dir = ctx.base_dir / "aux_files"
+             else:
+                 aux_dir = Path("aux_files")
+        
+        if not aux_dir.exists():
+            aux_dir.mkdir(parents=True, exist_ok=True)
+             
+        output_path = aux_dir / self.output_filename
+        
+        # 3. Renderizar
+        try:
+            self._log(f"[{self.name}] Renderizando plantilla {template_path}...")
+            result_path = render_docx_report(template_path, data_context, output_path, auto_convert_pdf=self.convert_to_pdf)
+            self._log(f"[{self.name}] Generado: {result_path}")
+            
+            # Registrar output
+            if str(result_path).endswith(".pdf"):
+                ctx.outputs["report_docx_pdf"] = result_path
+            else:
+                ctx.outputs["report_docx"] = result_path
+                
+        except Exception as e:
+            self._log(f"[{self.name}] Error generando reporte Docx: {e}")
+
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
 
 # Lista de pasos SIMCE (solo para planificar, sin programar todavía)
 SIMCE_STEPS_PLAN = [
