@@ -60,7 +60,7 @@ async def execute_workflow(workflow_id: int):
         if result["status"] == "success":
             try:
                 df = pd.read_excel(EXCEL_PATH)
-                df.loc[df['id_evaluation'] == workflow_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d')
+                df.loc[df['id_evaluation'] == workflow_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
                 df.to_excel(EXCEL_PATH, index=False)
             except Exception as ex:
                 print(f"Error actualizando Excel: {ex}")
