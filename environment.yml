@@ -13,6 +13,8 @@ dependencies:
   - requests
   - tqdm
   - xlrd
+  - fastapi
+  - uvicorn
   - pip
   - pytest
   - pytest-cov

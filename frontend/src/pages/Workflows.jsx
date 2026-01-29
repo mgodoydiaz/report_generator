@@ -1,51 +1,33 @@
-﻿import React, { useState, useMemo } from 'react';
-import { Settings, Play, Trash2, Plus, Clock, Zap, Search, ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
-
-const workflowsData = [
-  {
-    id: 1,
-    nombre: "Pipeline SIMCE Matematicas",
-    descripcion: "Generación automática de reportes PDF y consolidado Excel...",
-    salida: "PDF / XLSX",
-    ultimaEjecucion: "08 Ene 2026"
-  },
-  {
-    id: 2,
-    nombre: "Exportador DIA Lenguaje",
-    descripcion: "ETL Data Lake para análisis de comprensión lectora.",
-    salida: "CSV / Parquet",
-    ultimaEjecucion: "20 Dic 2025"
-  },
-  {
-    id: 3,
-    nombre: "Workflow Calculo Veloz",
-    descripcion: "Cálculo de métricas de velocidad para dashboard.",
-    salida: "JSON / API",
-    ultimaEjecucion: "14 Ene 2026"
-  },
-  {
-    id: 4,
-    nombre: "Procesador Fluidez Lectora",
-    descripcion: "Audio-to-Text y métricas de palabras por minuto.",
-    salida: "PDF / CSV",
-    ultimaEjecucion: "10 Ene 2026"
-  }
-];
-
-const parseSpanishDate = (dateStr) => {
-  const months = {
-    'Ene': 0, 'Feb': 1, 'Mar': 2, 'Abr': 3, 'May': 4, 'Jun': 5,
-    'Jul': 6, 'Ago': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dic': 11
-  };
-  const parts = dateStr.split(' ');
-  if (parts.length !== 3) return new Date(0);
-  const [day, monthStr, year] = parts;
-  return new Date(year, months[monthStr], day);
-};
+﻿import React, { useState, useMemo, useEffect } from 'react';
+import { Settings, Play, Trash2, Plus, Clock, Zap, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw } from 'lucide-react';
 
 export default function Workflows() {
+  const [workflows, setWorkflows] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    fetchWorkflows();
+  }, []);
+
+  const fetchWorkflows = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/workflows');
+      if (!response.ok) throw new Error('Error al conectar con el servidor');
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      setWorkflows(data);
+      setError(null);
+    } catch (err) {
+      console.error(err);
+      setError("No se pudo cargar la base de datos de evaluaciones.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSort = (key) => {
     let direction = 'asc';
@@ -56,9 +38,9 @@ export default function Workflows() {
   };
 
   const sortedAndFilteredWorkflows = useMemo(() => {
-    let items = [...workflowsData].filter(wf =>
-      wf.nombre.toLowerCase().includes(busqueda.toLowerCase()) ||
-      wf.descripcion.toLowerCase().includes(busqueda.toLowerCase())
+    let items = [...workflows].filter(wf =>
+      (wf.evaluation?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
+      (wf.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
     );
 
     if (sortConfig.key !== null) {
@@ -66,18 +48,13 @@ export default function Workflows() {
         let aValue = a[sortConfig.key];
         let bValue = b[sortConfig.key];
 
-        if (sortConfig.key === 'ultimaEjecucion') {
-          aValue = parseSpanishDate(aValue);
-          bValue = parseSpanishDate(bValue);
-        }
-
         if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
         if (aValue > bValue) return sortConfig.direction === 'asc' ? 1 : -1;
         return 0;
       });
     }
     return items;
-  }, [busqueda, sortConfig]);
+  }, [workflows, busqueda, sortConfig]);
 
   const SortIcon = ({ columnKey }) => {
     if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} className="opacity-30" />;
@@ -101,10 +78,19 @@ export default function Workflows() {
             Administración de pipelines de evaluación.
           </p>
         </div>
-        <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2">
-          <Plus size={20} strokeWidth={3} />
-          Nuevo Pipeline
-        </button>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchWorkflows}
+            className="bg-white hover:bg-slate-50 text-slate-600 p-2.5 rounded-xl border border-slate-200 transition-all shadow-sm"
+            title="Refrescar datos"
+          >
+            <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
+          </button>
+          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2">
+            <Plus size={20} strokeWidth={3} />
+            Nuevo Pipeline
+          </button>
+        </div>
       </div>
 
       {/* Search */}
@@ -121,6 +107,12 @@ export default function Workflows() {
         />
       </div>
 
+      {error && (
+        <div className="mb-6 p-4 bg-red-50 border border-red-100 text-red-600 rounded-2xl text-sm font-medium">
+          {error}
+        </div>
+      )}
+
       {/* Table Card */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="overflow-x-auto">
@@ -129,56 +121,65 @@ export default function Workflows() {
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
-                  onClick={() => handleSort('nombre')}
+                  onClick={() => handleSort('evaluation')}
                 >
                   <div className="flex items-center gap-2">
-                    Workflow <SortIcon columnKey="nombre" />
+                    Workflow <SortIcon columnKey="evaluation" />
                   </div>
                 </th>
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
-                  onClick={() => handleSort('descripcion')}
+                  onClick={() => handleSort('description')}
                 >
                   <div className="flex items-center gap-2">
-                    Descripción <SortIcon columnKey="descripcion" />
+                    Descripción <SortIcon columnKey="description" />
                   </div>
                 </th>
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
-                  onClick={() => handleSort('salida')}
+                  onClick={() => handleSort('output')}
                 >
                   <div className="flex items-center gap-2">
-                    Output <SortIcon columnKey="salida" />
+                    Output <SortIcon columnKey="output" />
                   </div>
                 </th>
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
-                  onClick={() => handleSort('ultimaEjecucion')}
+                  onClick={() => handleSort('last_run')}
                 >
                   <div className="flex items-center gap-2">
-                    Última Ejecución <SortIcon columnKey="ultimaEjecucion" />
+                    Última Ejecución <SortIcon columnKey="last_run" />
                   </div>
                 </th>
                 <th className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest text-right">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {sortedAndFilteredWorkflows.length > 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan="5" className="p-12 text-center text-slate-400">
+                    <div className="flex flex-col items-center gap-3">
+                      <RefreshCcw size={24} className="animate-spin text-indigo-500" />
+                      <p className="font-medium">Cargando datos desde Excel...</p>
+                    </div>
+                  </td>
+                </tr>
+              ) : sortedAndFilteredWorkflows.length > 0 ? (
                 sortedAndFilteredWorkflows.map((wf) => (
-                  <tr key={wf.id} className="hover:bg-slate-50/80 transition-colors group">
+                  <tr key={wf.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5">
-                      <div className="font-bold text-slate-700">{wf.nombre}</div>
+                      <div className="font-bold text-slate-700">{wf.evaluation}</div>
                     </td>
                     <td className="p-5 text-slate-500 text-sm">
-                      {wf.descripcion}
+                      {wf.description}
                     </td>
                     <td className="p-5">
                       <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-tighter">
-                        {wf.salida}
+                        {wf.output}
                       </span>
                     </td>
                     <td className="p-5 text-slate-500 text-sm font-medium">
-                      {wf.ultimaEjecucion}
+                      {wf.last_run}
                     </td>
                     <td className="p-5 text-right">
                       <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
