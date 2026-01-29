@@ -17,7 +17,7 @@
         {
             "step": "LoadConfig",
             "params": {
-                "config_path": "config_dir/simce_estudiantes_lenguaje.json"
+                "config_path": "../config/simce_estudiantes_lenguaje.json"
             }
         },
         {
@@ -42,7 +42,7 @@
         {
             "step": "RunExcelETL",
             "params": {
-                "target": "estudiantes"
+                "input_key": "estudiantes"
             }
         },
         {

@@ -35,7 +35,6 @@ async def get_workflows():
             
         # Convertir a lista de diccionarios
         data = df.to_dict(orient="records")
-        print(data)
         return data
     except Exception as e:
         return {"error": str(e)}
