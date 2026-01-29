@@ -1,4 +1,5 @@
 ﻿import { NavLink } from "react-router-dom";
+import { Menu } from "lucide-react";
 
 export default function Sidebar() {
   const linkClass = ({ isActive }) =>
@@ -14,9 +15,9 @@ export default function Sidebar() {
       <div className="p-6">
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2">
           <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-xs">
-            <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="3" fill="none" strokeLinecap="round" strokeLinejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+            <Menu size={18} strokeWidth={3} />
           </div>
-          Workflows
+          Menu
         </h1>
       </div>
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto">
