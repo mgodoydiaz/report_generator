@@ -46,7 +46,7 @@ export default function Sidebar() {
           <Activity size={12} className="text-indigo-500" />
           Operaciones
         </div>
-        <NavLink to="/execution" className={linkClass}>
+        <NavLink to="/ejecucion" className={linkClass}>
           <Play size={18} />
           Ejecución
         </NavLink>
@@ -72,11 +72,11 @@ export default function Sidebar() {
           <Box size={18} />
           Métricas
         </NavLink>
-        <NavLink to="/templates" className={linkClass}>
+        <NavLink to="/plantillas" className={linkClass}>
           <Notebook size={18} />
           Plantillas
         </NavLink>
-        <NavLink to="/workflows" className={linkClass}>
+        <NavLink to="/pipelines" className={linkClass}>
           <Workflow size={18} />
           Procesos
         </NavLink>

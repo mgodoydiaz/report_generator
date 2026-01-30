@@ -1,44 +1,44 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
-import WorkflowExecutionModal from '../components/WorkflowExecutionModal';
+import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
 
-export default function Execution() {
-    const [workflows, setWorkflows] = useState([]);
+export default function Ejecucion() {
+    const [pipelines, setPipelines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
     const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
-    const [activeWorkflow, setActiveWorkflow] = useState(null);
+    const [activePipeline, setActivePipeline] = useState(null);
 
     useEffect(() => {
-        fetchWorkflows();
+        fetchPipelines();
     }, []);
 
-    const fetchWorkflows = async () => {
+    const fetchPipelines = async () => {
         setLoading(true);
         try {
             const response = await fetch(`${API_BASE_URL}/workflows`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
-            setWorkflows(data);
+            setPipelines(data);
         } catch (err) {
-            console.error("Error loading workflows:", err);
+            console.error("Error loading pipelines:", err);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleRunWorkflow = (workflow) => {
-        setActiveWorkflow(workflow);
+    const handleRunPipeline = (pipeline) => {
+        setActivePipeline(pipeline);
         setIsExecutionModalOpen(true);
     };
 
-    const filteredWorkflows = useMemo(() => {
-        return workflows.filter(wf =>
-            (wf.evaluation?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
-            (wf.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
+    const filteredPipelines = useMemo(() => {
+        return pipelines.filter(p =>
+            (p.pipeline?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
+            (p.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
         );
-    }, [workflows, busqueda]);
+    }, [pipelines, busqueda]);
 
     return (
         <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -56,7 +56,7 @@ export default function Execution() {
                     </p>
                 </div>
                 <button
-                    onClick={fetchWorkflows}
+                    onClick={fetchPipelines}
                     className="flex items-center gap-2 px-4 py-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all font-bold text-sm"
                 >
                     <RefreshCcw size={18} className={loading ? "animate-spin" : ""} />
@@ -78,7 +78,7 @@ export default function Execution() {
                 />
             </div>
 
-            {/* Grid de Workflows */}
+            {/* Grid de Pipelines */}
             {loading ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {[1, 2, 3, 4].map(i => (
@@ -87,9 +87,9 @@ export default function Execution() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {filteredWorkflows.map((workflow) => (
+                    {filteredPipelines.map((p) => (
                         <div
-                            key={workflow.id_evaluation}
+                            key={p.id_evaluation}
                             className="group bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
                         >
                             <div className="space-y-4">
@@ -98,29 +98,29 @@ export default function Execution() {
                                         <Activity size={24} />
                                     </div>
                                     <div className="flex items-center gap-2">
-                                        <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(workflow.input)}`}>
-                                            {workflow.input || "EXCEL"}
+                                        <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(p.input)}`}>
+                                            {p.input || "EXCEL"}
                                         </span>
                                         <ArrowRight size={12} className="text-slate-300" />
-                                        <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(workflow.output)}`}>
-                                            {workflow.output}
+                                        <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(p.output)}`}>
+                                            {p.output}
                                         </span>
                                     </div>
                                 </div>
 
                                 <div>
-                                    <h3 className="text-xl font-extrabold text-slate-800 line-clamp-1">{workflow.evaluation}</h3>
+                                    <h3 className="text-xl font-extrabold text-slate-800 line-clamp-1">{p.pipeline}</h3>
                                     <p className="text-slate-500 text-sm mt-1 line-clamp-2 min-h-10 font-medium">
-                                        {workflow.description || "Sin descripción disponible."}
+                                        {p.description || "Sin descripción disponible."}
                                     </p>
                                 </div>
 
                                 <div className="flex items-center gap-4 text-[11px] text-slate-400 font-bold uppercase tracking-tighter">
                                     <div className="flex items-center gap-1">
                                         <Clock size={12} />
-                                        {workflow.last_run ? workflow.last_run : "Sin ejecuciones"}
+                                        {p.last_run ? p.last_run : "Sin ejecuciones"}
                                     </div>
-                                    {workflow.last_run && (
+                                    {p.last_run && (
                                         <div className="flex items-center gap-1 text-emerald-500">
                                             <CheckCircle2 size={12} />
                                             Listo
@@ -130,7 +130,7 @@ export default function Execution() {
                             </div>
 
                             <button
-                                onClick={() => handleRunWorkflow(workflow)}
+                                onClick={() => handleRunPipeline(p)}
                                 className="mt-6 w-full bg-slate-50 group-hover:bg-indigo-600 text-slate-600 group-hover:text-white py-4 rounded-2xl font-black transition-all duration-300 flex items-center justify-center gap-3 shadow-inner group-hover:shadow-lg group-hover:shadow-indigo-200 overflow-hidden relative"
                             >
                                 <Play size={20} fill="currentColor" />
@@ -140,7 +140,7 @@ export default function Execution() {
                         </div>
                     ))}
 
-                    {filteredWorkflows.length === 0 && (
+                    {filteredPipelines.length === 0 && (
                         <div className="col-span-full py-20 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
                             <Search size={48} className="mb-4 opacity-20" />
                             <p className="text-lg font-bold">No se encontraron procesos</p>
@@ -151,14 +151,14 @@ export default function Execution() {
             )}
 
             {/* Modal de Ejecución Reutilizado */}
-            <WorkflowExecutionModal
+            <PipelineExecutionModal
                 isOpen={isExecutionModalOpen}
                 onClose={() => {
                     setIsExecutionModalOpen(false);
-                    fetchWorkflows();
+                    fetchPipelines();
                 }}
-                workflowId={activeWorkflow?.id_evaluation}
-                workflowName={activeWorkflow?.evaluation}
+                pipelineId={activePipeline?.id_evaluation}
+                pipelineName={activePipeline?.pipeline}
             />
         </div>
     );

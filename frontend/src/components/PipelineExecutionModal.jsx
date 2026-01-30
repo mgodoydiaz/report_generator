@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, Upload, FileText } from 'lucide-react';
+import { API_BASE_URL } from '../constants';
 
-const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) => {
+/**
+ * Modal para la ejecución paso a paso de un pipeline.
+ * Permite subir archivos requeridos y visualiza el progreso técnico.
+ */
+const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) => {
     const [status, setStatus] = useState('idle'); // idle, loading, requesting_files, executing, success, error
     const [steps, setSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -11,12 +16,12 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
 
     // Cargar pasos del pipeline al abrir
     useEffect(() => {
-        if (isOpen && workflowId) {
+        if (isOpen && pipelineId) {
             fetchSteps();
         } else {
             resetState();
         }
-    }, [isOpen, workflowId]);
+    }, [isOpen, pipelineId]);
 
     const resetState = () => {
         setStatus('idle');
@@ -30,7 +35,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
     const fetchSteps = async () => {
         setStatus('loading');
         try {
-            const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/config`);
+            const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -81,7 +86,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
                 formData.append('input_key', id);
                 files.forEach(file => formData.append('files', file));
 
-                return fetch(`http://localhost:8000/api/workflows/${workflowId}/upload`, {
+                return fetch(`${API_BASE_URL}/workflows/${pipelineId}/upload`, {
                     method: 'POST',
                     body: formData
                 }).then(res => res.json());
@@ -91,8 +96,6 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
 
             // 2. Iniciar ejecución
             // Simulamos el avance de la barra mientras el backend trabaja
-            // Nota: El backend es síncrono por ahora, así que la barra saltará al final
-            // o podemos hacer un intervalo visual mientras esperamos la respuesta real.
             const progressInterval = setInterval(() => {
                 setCurrentStepIndex(prev => {
                     if (prev < steps.length - 1) return prev + 1;
@@ -100,7 +103,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
                 });
             }, 800);
 
-            const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/run`, {
+            const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/run`, {
                 method: 'POST'
             });
             const result = await response.json();
@@ -126,15 +129,15 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
     const currentStepName = steps[currentStepIndex]?.step || "Finalizando...";
 
     return (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
 
             <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg relative overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0">
                     <div>
-                        <h2 className="text-lg font-bold text-slate-900">Ejecución: {workflowName}</h2>
-                        <p className="text-xs text-slate-500">ID: {workflowId}</p>
+                        <h2 className="text-lg font-bold text-slate-900">Ejecución: {pipelineName}</h2>
+                        <p className="text-xs text-slate-500">ID: {pipelineId}</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors">
                         <X size={20} className="text-slate-500" />
@@ -146,7 +149,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
                     {status === 'loading' && (
                         <div className="flex flex-col items-center justify-center py-12 gap-4">
                             <Loader2 size={40} className="text-indigo-600 animate-spin" />
-                            <p className="text-slate-600 font-medium">Cargando definición del pipeline...</p>
+                            <p className="text-slate-600 font-medium">Cargando definición del proceso...</p>
                         </div>
                     )}
 
@@ -156,7 +159,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
                                 <AlertCircle size={20} className="shrink-0" />
                                 <div className="text-sm">
                                     <p className="font-bold">Archivos Requeridos</p>
-                                    <p>Este workflow necesita que proporciones los siguientes datos antes de comenzar.</p>
+                                    <p>Este proceso necesita que proporciones los siguientes datos antes de comenzar.</p>
                                 </div>
                             </div>
 
@@ -250,7 +253,7 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
                             <div className="space-y-2">
                                 <h3 className="text-2xl font-extrabold text-slate-800">¡Completado!</h3>
                                 <div className="flex flex-col gap-1">
-                                    <p className="text-slate-500 text-sm">El pipeline se ejecutó con éxito.</p>
+                                    <p className="text-slate-500 text-sm">El proceso se ejecutó con éxito.</p>
                                     <div className="flex items-center justify-center gap-4 mt-2">
                                         <div className="bg-indigo-50 px-3 py-1 rounded-full text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-indigo-100">
                                             Pasos: {steps.length}
@@ -312,4 +315,4 @@ const WorkflowExecutionModal = ({ isOpen, onClose, workflowId, workflowName }) =
     );
 };
 
-export default WorkflowExecutionModal;
+export default PipelineExecutionModal;

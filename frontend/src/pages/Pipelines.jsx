@@ -1,34 +1,34 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
-import WorkflowExecutionModal from '../components/WorkflowExecutionModal';
+import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
 
-export default function Workflows() {
-  const [workflows, setWorkflows] = useState([]);
+export default function Pipelines() {
+  const [pipelines, setPipelines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
   const [executingId, setExecutingId] = useState(null);
   const [error, setError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [editingWorkflowId, setEditingWorkflowId] = useState(null);
+  const [editingPipelineId, setEditingPipelineId] = useState(null);
   const [drawerTitle, setDrawerTitle] = useState("Configurar Nuevo Proceso");
   const [editingData, setEditingData] = useState(null);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
-  const [activeWorkflow, setActiveWorkflow] = useState(null);
+  const [activePipeline, setActivePipeline] = useState(null);
 
   useEffect(() => {
-    fetchWorkflows();
+    fetchPipelines();
   }, []);
 
-  const fetchWorkflows = async () => {
+  const fetchPipelines = async () => {
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/workflows`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
-      setWorkflows(data);
+      setPipelines(data);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -36,8 +36,8 @@ export default function Workflows() {
     }
   };
 
-  const handleRunWorkflow = (workflow) => {
-    setActiveWorkflow(workflow);
+  const handleRunPipeline = (pipeline) => {
+    setActivePipeline(pipeline);
     setIsExecutionModalOpen(true);
   };
 
@@ -49,8 +49,8 @@ export default function Workflows() {
     setSortConfig({ key, direction });
   };
 
-  const handleEditWorkflow = async (id) => {
-    setEditingWorkflowId(id);
+  const handleEditPipeline = async (id) => {
+    setEditingPipelineId(id);
     setDrawerTitle("Editar Proceso");
     try {
       const response = await fetch(`${API_BASE_URL}/workflows/${id}/config`);
@@ -63,7 +63,7 @@ export default function Workflows() {
     }
   };
 
-  const handleDuplicateWorkflow = async (id) => {
+  const handleDuplicatePipeline = async (id) => {
     try {
       const response = await fetch(`${API_BASE_URL}/workflows/${id}/config`);
       const configData = await response.json();
@@ -85,23 +85,23 @@ export default function Workflows() {
       const result = await saveResponse.json();
       if (result.error) throw new Error(result.error);
 
-      fetchWorkflows();
+      fetchPipelines();
     } catch (err) {
       alert("Error al duplicar: " + err.message);
     }
   };
 
-  const handleNewWorkflow = () => {
-    setEditingWorkflowId(null);
+  const handleNewPipeline = () => {
+    setEditingPipelineId(null);
     setEditingData(null);
     setDrawerTitle("Configurar Nuevo Proceso");
     setIsDrawerOpen(true);
   };
 
-  const handleSaveWorkflow = async (config) => {
+  const handleSavePipeline = async (config) => {
     try {
-      const url = editingWorkflowId
-        ? `${API_BASE_URL}/workflows/${editingWorkflowId}/config`
+      const url = editingPipelineId
+        ? `${API_BASE_URL}/workflows/${editingPipelineId}/config`
         : `${API_BASE_URL}/workflows/config`;
 
       const response = await fetch(url, {
@@ -114,13 +114,13 @@ export default function Workflows() {
       if (result.error) throw new Error(result.error);
 
       setIsDrawerOpen(false);
-      fetchWorkflows();
+      fetchPipelines();
     } catch (err) {
       alert("Error al guardar: " + err.message);
     }
   };
 
-  const handleDeleteWorkflow = async (id, name) => {
+  const handleDeletePipeline = async (id, name) => {
     if (!confirm(`¿Estás seguro de que deseas eliminar el proceso "${name}"? Esta acción no se puede deshacer.`)) {
       return;
     }
@@ -132,16 +132,16 @@ export default function Workflows() {
       const result = await response.json();
       if (result.error) throw new Error(result.error);
 
-      fetchWorkflows();
+      fetchPipelines();
     } catch (err) {
       alert("Error al eliminar: " + err.message);
     }
   };
 
-  const sortedAndFilteredWorkflows = useMemo(() => {
-    let items = workflows.filter(wf =>
-      wf.evaluation.toLowerCase().includes(busqueda.toLowerCase()) ||
-      wf.description.toLowerCase().includes(busqueda.toLowerCase())
+  const sortedAndFilteredPipelines = useMemo(() => {
+    let items = pipelines.filter(p =>
+      p.pipeline?.toLowerCase().includes(busqueda.toLowerCase()) ||
+      p.description?.toLowerCase().includes(busqueda.toLowerCase())
     );
 
     if (sortConfig.key) {
@@ -156,7 +156,7 @@ export default function Workflows() {
       });
     }
     return items;
-  }, [workflows, busqueda, sortConfig]);
+  }, [pipelines, busqueda, sortConfig]);
 
   const SortIcon = ({ columnKey }) => {
     if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} className="text-slate-300" />;
@@ -180,14 +180,14 @@ export default function Workflows() {
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchWorkflows}
+            onClick={fetchPipelines}
             className="p-3 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"
             title="Recargar"
           >
             <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
           </button>
           <button
-            onClick={handleNewWorkflow}
+            onClick={handleNewPipeline}
             className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 transition-all active:scale-95"
           >
             <Plus size={18} strokeWidth={3} />
@@ -210,7 +210,7 @@ export default function Workflows() {
         </div>
         <div className="h-6 w-px bg-slate-300 mx-2"></div>
         <div className="px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-          {sortedAndFilteredWorkflows.length} Procesos
+          {sortedAndFilteredPipelines.length} Procesos
         </div>
       </div>
 
@@ -222,10 +222,10 @@ export default function Workflows() {
               <tr className="bg-slate-50/50 border-b border-slate-100">
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
-                  onClick={() => handleSort('evaluation')}
+                  onClick={() => handleSort('pipeline')}
                 >
                   <div className="flex items-center gap-2">
-                    Proceso <SortIcon columnKey="evaluation" />
+                    Proceso <SortIcon columnKey="pipeline" />
                   </div>
                 </th>
                 <th
@@ -265,60 +265,60 @@ export default function Workflows() {
                     </div>
                   </td>
                 </tr>
-              ) : sortedAndFilteredWorkflows.length > 0 ? (
-                sortedAndFilteredWorkflows.map((workflow) => (
-                  <tr key={workflow.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
+              ) : sortedAndFilteredPipelines.length > 0 ? (
+                sortedAndFilteredPipelines.map((p) => (
+                  <tr key={p.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5">
                       <div className="font-bold text-slate-700">
-                        {workflow.evaluation}
+                        {p.pipeline}
                       </div>
                     </td>
                     <td className="p-5 text-slate-500 text-sm">
-                      {workflow.description}
+                      {p.description}
                     </td>
                     <td className="p-5">
                       <div className="flex items-center gap-2">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(workflow.input)}`}>
-                          {workflow.input || "EXCEL"}
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(p.input)}`}>
+                          {p.input || "EXCEL"}
                         </span>
                         <ArrowRight size={12} className="text-slate-300" />
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(workflow.output)}`}>
-                          {workflow.output}
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(p.output)}`}>
+                          {p.output}
                         </span>
                       </div>
                     </td>
                     <td className="p-5 text-slate-500 text-sm font-medium">
-                      {workflow.last_run || "Nunca"}
+                      {p.last_run || "Nunca"}
                     </td>
                     <td className="p-5 text-right flex justify-end gap-1">
                       <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => handleRunWorkflow(workflow)}
-                          disabled={executingId === workflow.id_evaluation}
-                          className={`p-2 rounded-xl transition-all ${executingId === workflow.id_evaluation
+                          onClick={() => handleRunPipeline(p)}
+                          disabled={executingId === p.id_evaluation}
+                          className={`p-2 rounded-xl transition-all ${executingId === p.id_evaluation
                             ? 'bg-slate-100 text-slate-400'
                             : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
                             }`}
                           title="Ejecutar"
                         >
-                          <Play size={18} fill={executingId === workflow.id_evaluation ? "none" : "currentColor"} className={executingId === workflow.id_evaluation ? "animate-spin" : ""} />
+                          <Play size={18} fill={executingId === p.id_evaluation ? "none" : "currentColor"} className={executingId === p.id_evaluation ? "animate-spin" : ""} />
                         </button>
                         <button
-                          onClick={() => handleDuplicateWorkflow(workflow.id_evaluation)}
+                          onClick={() => handleDuplicatePipeline(p.id_evaluation)}
                           className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
                           title="Duplicar"
                         >
                           <Copy size={18} />
                         </button>
                         <button
-                          onClick={() => handleEditWorkflow(workflow.id_evaluation)}
+                          onClick={() => handleEditPipeline(p.id_evaluation)}
                           className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
                           title="Configurar"
                         >
                           <Settings size={18} />
                         </button>
                         <button
-                          onClick={() => handleDeleteWorkflow(workflow.id_evaluation, workflow.evaluation)}
+                          onClick={() => handleDeletePipeline(p.id_evaluation, p.pipeline)}
                           className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
                           title="Eliminar"
                         >
@@ -346,18 +346,18 @@ export default function Workflows() {
         onClose={() => setIsDrawerOpen(false)}
         title={drawerTitle}
         initialData={editingData}
-        onSave={handleSaveWorkflow}
+        onSave={handleSavePipeline}
       />
 
       {/* Modal de Ejecución Reutilizado */}
-      <WorkflowExecutionModal
+      <PipelineExecutionModal
         isOpen={isExecutionModalOpen}
         onClose={() => {
           setIsExecutionModalOpen(false);
-          fetchWorkflows();
+          fetchPipelines();
         }}
-        workflowId={activeWorkflow?.id_evaluation}
-        workflowName={activeWorkflow?.evaluation}
+        pipelineId={activePipeline?.id_evaluation}
+        pipelineName={activePipeline?.pipeline}
       />
     </div>
   );

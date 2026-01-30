@@ -19,7 +19,7 @@ app.add_middleware(
 
 # Obtener la ruta del archivo workflows.xlsx
 BASE_DIR = Path(__file__).resolve().parent.parent
-WORKFLOWS_EXCEL_PATH = BASE_DIR / "data" / "database" / "workflows.xlsx"
+WORKFLOWS_EXCEL_PATH = BASE_DIR / "data" / "database" / "pipelines.xlsx"
 TEMPLATES_EXCEL_PATH = BASE_DIR / "data" / "database" / "templates.xlsx"
 TEMPLATES_DIR = BASE_DIR / "data" / "database" / "reports_templates"
 
@@ -99,7 +99,7 @@ async def get_workflow_config(workflow_id: int):
             df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
             row = df[df['id_evaluation'] == workflow_id]
             if not row.empty:
-                excel_metadata["name"] = str(row.iloc[0]['evaluation'])
+                excel_metadata["name"] = str(row.iloc[0]['pipeline'])
                 excel_metadata["description"] = str(row.iloc[0]['description']) if pd.notna(row.iloc[0]['description']) else ""
                 excel_metadata["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
                 excel_metadata["output"] = str(row.iloc[0]['output']) if pd.notna(row.iloc[0]['output']) else "XLSX"
@@ -151,9 +151,9 @@ async def save_workflow_config(workflow_id: int, config: dict):
             is_new = True
             
             # Comprobar si el nombre ya existe
-            new_name = metadata.get("name", "Nuevo Workflow")
-            if new_name in df['evaluation'].values:
-                return {"error": f"Ya existe un workflow llamado '{new_name}'. Por favor elige otro nombre."}
+            new_name = metadata.get("name", "Nuevo Proceso")
+            if new_name in df['pipeline'].values:
+                return {"error": f"Ya existe un proceso llamado '{new_name}'. Por favor elige otro nombre."}
 
             # ID correlativo
             if len(df) > 0:
@@ -175,7 +175,7 @@ async def save_workflow_config(workflow_id: int, config: dict):
             if is_new:
                 new_row = {
                     'id_evaluation': target_id,
-                    'evaluation': metadata.get("name", "Nuevo Workflow"),
+                    'pipeline': metadata.get("name", "Nuevo Proceso"),
                     'description': metadata.get("description", ""),
                     'input': str(metadata.get("input", "EXCEL")).upper(),
                     'output': str(metadata.get("output", "XLSX")).upper(),
@@ -184,7 +184,7 @@ async def save_workflow_config(workflow_id: int, config: dict):
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             else:
                 if metadata.get("name"):
-                    df.loc[df['id_evaluation'] == target_id, 'evaluation'] = metadata.get("name")
+                    df.loc[df['id_evaluation'] == target_id, 'pipeline'] = metadata.get("name")
                 if metadata.get("description"):
                     df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
                 if metadata.get("input"):

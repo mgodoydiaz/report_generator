@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout } from 'lucide-react';
 import NewTemplateDrawer from '../components/NewTemplateDrawer';
 
-export default function Templates() {
+export default function Plantillas() {
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
