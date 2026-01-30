@@ -2,25 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, ChevronUp, ChevronDown
 } from 'lucide-react';
-
-// Opciones para el selector de pasos del pipeline
-const STEP_OPTIONS = [
-    "InitRun",
-    "LoadConfig",
-    "DiscoverInputs",
-    "RequestUserFiles",
-    "RunExcelETL",
-    "EnrichWithContext",
-    "ExportConsolidatedExcel",
-    "GenerateGraphics",
-    "GenerateTables",
-    "RenderReport",
-    "GenerateDocxReport",
-    "DeleteTempFiles"
-];
-
-// Opciones para Entrada y Salida
-const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG"];
+import { STEP_OPTIONS, FORMAT_OPTIONS } from '../constants';
 
 /**
  * Componente NewPipelineDrawer
