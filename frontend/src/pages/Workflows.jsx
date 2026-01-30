@@ -1,5 +1,5 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy } from 'lucide-react';
+import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import WorkflowExecutionModal from '../components/WorkflowExecutionModal';
 
@@ -275,7 +275,7 @@ export default function Workflows() {
                   onClick={() => handleSort('output')}
                 >
                   <div className="flex items-center gap-2">
-                    Output <SortIcon columnKey="output" />
+                    Transformación <SortIcon columnKey="output" />
                   </div>
                 </th>
                 <th
@@ -311,12 +311,31 @@ export default function Workflows() {
                       {workflow.description}
                     </td>
                     <td className="p-5">
-                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${workflow.output === 'PDF'
-                        ? 'bg-red-100 text-red-600'
-                        : 'bg-green-100 text-green-600'
-                        }`}>
-                        {workflow.output}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {(() => {
+                          const getFormatStyle = (fmt) => {
+                            const colors = {
+                              'EXCEL': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+                              'PDF': 'bg-rose-50 text-rose-600 border-rose-100',
+                              'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
+                              'IMG': 'bg-amber-50 text-amber-600 border-amber-100'
+                            };
+                            return colors[fmt?.toUpperCase()] || 'bg-slate-50 text-slate-500 border-slate-100';
+                          };
+
+                          return (
+                            <>
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(workflow.input)}`}>
+                                {workflow.input || "EXCEL"}
+                              </span>
+                              <ArrowRight size={12} className="text-slate-300" />
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium tracking-tight border ${getFormatStyle(workflow.output)}`}>
+                                {workflow.output}
+                              </span>
+                            </>
+                          );
+                        })()}
+                      </div>
                     </td>
                     <td className="p-5 text-slate-500 text-sm font-medium">
                       {workflow.last_run || "Nunca"}

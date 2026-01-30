@@ -94,13 +94,14 @@ async def execute_workflow(workflow_id: int):
 async def get_workflow_config(workflow_id: int):
     try:
         # 1. Buscar metadatos en el Excel
-        excel_metadata = {"name": "", "description": "", "output": "XLSX"}
+        excel_metadata = {"name": "", "description": "", "input": "EXCEL", "output": "XLSX"}
         if WORKFLOWS_EXCEL_PATH.exists():
             df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
             row = df[df['id_evaluation'] == workflow_id]
             if not row.empty:
                 excel_metadata["name"] = str(row.iloc[0]['evaluation'])
                 excel_metadata["description"] = str(row.iloc[0]['description']) if pd.notna(row.iloc[0]['description']) else ""
+                excel_metadata["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
                 excel_metadata["output"] = str(row.iloc[0]['output']) if pd.notna(row.iloc[0]['output']) else "XLSX"
 
         # 2. Buscar configuración técnica en el JSON
@@ -125,6 +126,7 @@ async def get_workflow_config(workflow_id: int):
                 # Asegurar que los valores del Excel se mantienen si el JSON no los tiene
                 config["workflow_metadata"]["name"] = excel_metadata["name"] or config["workflow_metadata"].get("name")
                 config["workflow_metadata"]["description"] = excel_metadata["description"] or config["workflow_metadata"].get("description")
+                config["workflow_metadata"]["input"] = excel_metadata["input"]
                 config["workflow_metadata"]["output"] = excel_metadata["output"]
 
         return config
@@ -175,7 +177,8 @@ async def save_workflow_config(workflow_id: int, config: dict):
                     'id_evaluation': target_id,
                     'evaluation': metadata.get("name", "Nuevo Workflow"),
                     'description': metadata.get("description", ""),
-                    'output': metadata.get("output", "XLSX"),
+                    'input': str(metadata.get("input", "EXCEL")).upper(),
+                    'output': str(metadata.get("output", "XLSX")).upper(),
                     'last_run': ''
                 }
                 df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
@@ -184,8 +187,10 @@ async def save_workflow_config(workflow_id: int, config: dict):
                     df.loc[df['id_evaluation'] == target_id, 'evaluation'] = metadata.get("name")
                 if metadata.get("description"):
                     df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
+                if metadata.get("input"):
+                    df.loc[df['id_evaluation'] == target_id, 'input'] = str(metadata.get("input")).upper()
                 if metadata.get("output"):
-                    df.loc[df['id_evaluation'] == target_id, 'output'] = metadata.get("output")
+                    df.loc[df['id_evaluation'] == target_id, 'output'] = str(metadata.get("output")).upper()
             
             df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
         except Exception as ex:

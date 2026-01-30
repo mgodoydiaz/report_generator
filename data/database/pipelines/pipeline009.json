@@ -1,0 +1,17 @@
+{
+    "workflow_metadata": {
+        "name": "DIA Extraer respuestas correctas",
+        "description": "Diagnóstico Integral de Aprendizaje",
+        "input": "PDF",
+        "output": "Excel"
+    },
+    "context": {
+        "base_dir": "./backend/tests"
+    },
+    "pipeline": [
+        {
+            "step": "",
+            "params": {}
+        }
+    ]
+}

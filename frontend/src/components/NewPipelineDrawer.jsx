@@ -19,6 +19,9 @@ const STEP_OPTIONS = [
     "DeleteTempFiles"
 ];
 
+// Opciones para Entrada y Salida
+const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG"];
+
 /**
  * Componente NewPipelineDrawer
  * @param {boolean} isOpen - Controla la visibilidad del panel
@@ -31,7 +34,8 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     const [formData, setFormData] = useState({
         name: "",
         description: "",
-        output: "",
+        input: "EXCEL",
+        output: "XLSX",
         context: [
             { key: "base_dir", value: "./backend/tests" }
         ],
@@ -57,7 +61,8 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                 setFormData({
                     name: initialData.workflow_metadata?.name || "",
                     description: initialData.workflow_metadata?.description || "",
-                    output: "", // No viene en el JSON pero está en el Excel
+                    input: initialData.workflow_metadata?.input || "EXCEL",
+                    output: initialData.workflow_metadata?.output || "XLSX",
                     context: contextArray.length > 0 ? contextArray : [{ key: "base_dir", value: "./backend/tests" }],
                     pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", params: "" }]
                 });
@@ -66,7 +71,8 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                 setFormData({
                     name: "",
                     description: "",
-                    output: "",
+                    input: "EXCEL",
+                    output: "XLSX",
                     context: [{ key: "base_dir", value: "./backend/tests" }],
                     pipeline: [{ step: "", params: "" }]
                 });
@@ -157,6 +163,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
             workflow_metadata: {
                 name: formData.name,
                 description: formData.description,
+                input: formData.input,
                 output: formData.output
             },
             context: contextObj,
@@ -198,7 +205,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                             <Database size={16} /> Metadata
                         </h3>
                         <div className="grid gap-4">
-                            <div className="grid grid-cols-3 gap-3">
+                            <div className="grid grid-cols-4 gap-3">
                                 <div className="col-span-2">
                                     <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Proceso</label>
                                     <input
@@ -210,14 +217,28 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Formato Salida</label>
-                                    <input
-                                        type="text"
-                                        placeholder="XLSX / PDF"
-                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Entrada</label>
+                                    <select
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white appearance-none"
+                                        value={formData.input}
+                                        onChange={(e) => setFormData({ ...formData, input: e.target.value })}
+                                    >
+                                        {FORMAT_OPTIONS.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Salida</label>
+                                    <select
+                                        className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none bg-white appearance-none"
                                         value={formData.output}
                                         onChange={(e) => setFormData({ ...formData, output: e.target.value })}
-                                    />
+                                    >
+                                        {FORMAT_OPTIONS.map(opt => (
+                                            <option key={opt} value={opt}>{opt}</option>
+                                        ))}
+                                    </select>
                                 </div>
                             </div>
                             <div>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock } from 'lucide-react';
+import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
 import WorkflowExecutionModal from '../components/WorkflowExecutionModal';
 
 export default function Execution() {
@@ -96,10 +96,30 @@ export default function Execution() {
                                     <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white transition-colors duration-300">
                                         <Activity size={24} />
                                     </div>
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${workflow.output === 'PDF' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'
-                                        }`}>
-                                        {workflow.output}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        {(() => {
+                                            const getFormatStyle = (fmt) => {
+                                                const colors = {
+                                                    'EXCEL': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+                                                    'PDF': 'bg-rose-50 text-rose-600 border-rose-100',
+                                                    'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
+                                                    'IMG': 'bg-amber-50 text-amber-600 border-amber-100'
+                                                };
+                                                return colors[fmt?.toUpperCase()] || 'bg-slate-50 text-slate-500 border-slate-100';
+                                            };
+                                            return (
+                                                <>
+                                                    <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(workflow.input)}`}>
+                                                        {workflow.input || "EXCEL"}
+                                                    </span>
+                                                    <ArrowRight size={12} className="text-slate-300" />
+                                                    <span className={`px-2 py-0.5 rounded-lg border text-[10px] font-medium uppercase tracking-widest ${getFormatStyle(workflow.output)}`}>
+                                                        {workflow.output}
+                                                    </span>
+                                                </>
+                                            );
+                                        })()}
+                                    </div>
                                 </div>
 
                                 <div>

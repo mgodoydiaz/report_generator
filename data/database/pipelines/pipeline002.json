@@ -2,7 +2,8 @@
     "workflow_metadata": {
         "name": "SIMCE Lenguaje",
         "description": "Workflow SIMCE",
-        "output": "XLSX"
+        "input": "EXCEL",
+        "output": "PDF"
     },
     "context": {
         "base_dir": "tests"
