@@ -137,7 +137,7 @@ export default function Workflows() {
   };
 
   const handleDeleteWorkflow = async (workflowId, name) => {
-    if (!window.confirm(`¿Estás seguro de que deseas eliminar el workflow "${name}"? Esta acción no se puede deshacer.`)) {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el proceso "${name}"? Esta acción no se puede deshacer.`)) {
       return;
     }
 
@@ -204,10 +204,10 @@ export default function Workflows() {
             <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
               <Workflow size={24} />
             </div>
-            Workflows de Datos
+            Gestión de Procesos
           </h1>
           <p className="text-slate-500 mt-2 text-sm font-medium">
-            Administración de pipelines de evaluación.
+            Administración de flujos de procesamiento de datos.
           </p>
         </div>
         <div className="flex gap-3">
@@ -223,7 +223,7 @@ export default function Workflows() {
             className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
           >
             <Plus size={20} strokeWidth={3} />
-            Nuevo Pipeline
+            Nuevo Proceso
           </button>
         </div>
       </div>
@@ -259,7 +259,7 @@ export default function Workflows() {
                   onClick={() => handleSort('evaluation')}
                 >
                   <div className="flex items-center gap-2">
-                    Workflow <SortIcon columnKey="evaluation" />
+                    Proceso <SortIcon columnKey="evaluation" />
                   </div>
                 </th>
                 <th

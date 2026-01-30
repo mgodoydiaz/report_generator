@@ -51,7 +51,7 @@ export default function Execution() {
                         Centro de Ejecución
                     </h1>
                     <p className="text-slate-500 mt-2 text-lg font-medium">
-                        Selecciona un flujo de trabajo para procesar datos y generar reportes.
+                        Selecciona un proceso para transformar datos y generar reportes.
                     </p>
                 </div>
                 <button
@@ -70,7 +70,7 @@ export default function Execution() {
                 </div>
                 <input
                     type="text"
-                    placeholder="Buscar workflow por nombre o función..."
+                    placeholder="Buscar proceso por nombre o descripción..."
                     className="block w-full pl-14 pr-6 py-5 border-none rounded-3xl bg-white shadow-xl shadow-slate-100/50 focus:ring-4 focus:ring-indigo-100 transition-all text-slate-700 text-lg placeholder:text-slate-400 font-medium"
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
@@ -137,7 +137,7 @@ export default function Execution() {
                     {filteredWorkflows.length === 0 && (
                         <div className="col-span-full py-20 bg-slate-50/50 rounded-3xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400">
                             <Search size={48} className="mb-4 opacity-20" />
-                            <p className="text-lg font-bold">No se encontraron flujos de trabajo</p>
+                            <p className="text-lg font-bold">No se encontraron procesos</p>
                             <p className="text-sm">Prueba con otros términos de búsqueda</p>
                         </div>
                     )}

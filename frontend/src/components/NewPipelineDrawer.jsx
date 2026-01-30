@@ -27,7 +27,7 @@ const STEP_OPTIONS = [
  * @param {string} title - Título del panel
  * @param {function} onSave - Función para procesar los datos al guardar
  */
-const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Configurar Nuevo Pipeline", onSave }) => {
+const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Configurar Nuevo Proceso", onSave }) => {
     const [formData, setFormData] = useState({
         name: "",
         description: "",
@@ -200,10 +200,10 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                         <div className="grid gap-4">
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="col-span-2">
-                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Evaluación</label>
+                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Proceso</label>
                                     <input
                                         type="text"
-                                        placeholder="Nombre del Workflow"
+                                        placeholder="Nombre del Proceso"
                                         className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
                                         value={formData.name}
                                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
@@ -279,7 +279,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                     <section className="space-y-4">
                         <div className="flex items-center justify-between">
                             <h3 className="text-sm font-semibold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
-                                <Code size={16} /> Pasos del Pipeline
+                                <Code size={16} /> Pasos del Proceso
                             </h3>
                             <button
                                 onClick={addStep}
@@ -360,7 +360,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                         className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all active:scale-95"
                         onClick={handleSave}
                     >
-                        Guardar Pipeline
+                        Guardar Proceso
                     </button>
                 </div>
             </div>

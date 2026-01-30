@@ -78,7 +78,7 @@ export default function Sidebar() {
         </NavLink>
         <NavLink to="/workflows" className={linkClass}>
           <Workflow size={18} />
-          Workflows
+          Procesos
         </NavLink>
       </nav>
 
