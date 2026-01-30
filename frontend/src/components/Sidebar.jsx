@@ -1,17 +1,16 @@
 ﻿import { NavLink } from "react-router-dom";
 import {
-  House,
-  Workflow,
-  Notebook,
-  ChartColumn,
-  Search,
-  BookSearch,
-  CircleHelp,
-  Settings,
-  Play,
-  Activity,
-  Layers,
-  Box
+  House,        // Home
+  Activity,     // Activity
+  Play,         // Execution
+  BookSearch,   // Values
+  ChartColumn,  // Results
+  Settings,     // Settings
+  Layers,       // Dimensions
+  Box,          // Metrics
+  Notebook,     // Templates
+  Workflow,     // Pipelines
+  CircleHelp,   // Help
 } from "lucide-react";
 
 export default function Sidebar() {
