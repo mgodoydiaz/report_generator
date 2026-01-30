@@ -39,10 +39,10 @@ export default function Sidebar() {
           <Workflow size={18} />
           Workflows
         </NavLink>
-        <a href="#" className={staticLinkClass}>
+        <NavLink to="/templates" className={linkClass}>
           <Notebook size={18} />
           Plantillas
-        </a>
+        </NavLink>
         <NavLink to="/resultados" className={linkClass}>
           <ChartColumn size={18} />
           Resultados

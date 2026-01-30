@@ -2,6 +2,7 @@
 import Layout from "./components/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Workflows from "./pages/Workflows.jsx";
+import Templates from "./pages/Templates.jsx";
 import Resultados from "./pages/Resultados.jsx";
 
 export default function App() {
@@ -10,6 +11,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/workflows" element={<Workflows />} />
+        <Route path="/templates" element={<Templates />} />
         <Route path="/resultados" element={<Resultados />} />
       </Routes>
     </Layout>

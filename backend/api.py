@@ -17,16 +17,18 @@ app.add_middleware(
 
 # Obtener la ruta del archivo workflows.xlsx
 BASE_DIR = Path(__file__).resolve().parent.parent
-EXCEL_PATH = BASE_DIR / "data" / "database" / "workflows.xlsx"
+WORKFLOWS_EXCEL_PATH = BASE_DIR / "data" / "database" / "workflows.xlsx"
+TEMPLATES_EXCEL_PATH = BASE_DIR / "data" / "database" / "templates.xlsx"
+TEMPLATES_DIR = BASE_DIR / "data" / "database" / "reports_templates"
 
 @app.get("/api/workflows")
 async def get_workflows():
     try:
-        if not EXCEL_PATH.exists():
-            return {"error": f"Archivo no encontrado en {EXCEL_PATH}"}
+        if not WORKFLOWS_EXCEL_PATH.exists():
+            return {"error": f"Archivo no encontrado en {WORKFLOWS_EXCEL_PATH}"}
         
         # Leer el Excel
-        df = pd.read_excel(EXCEL_PATH)
+        df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
         
         # Convertir fechas a string para JSON si es necesario
         if 'last_run' in df.columns:
@@ -56,9 +58,9 @@ async def execute_workflow(workflow_id: int):
         # Actualizar la fecha de última ejecución en el Excel si fue exitoso
         if result["status"] == "success":
             try:
-                df = pd.read_excel(EXCEL_PATH)
+                df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
                 df.loc[df['id_evaluation'] == workflow_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
-                df.to_excel(EXCEL_PATH, index=False)
+                df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
             except Exception as ex:
                 print(f"Error actualizando Excel: {ex}")
 
@@ -71,8 +73,8 @@ async def get_workflow_config(workflow_id: int):
     try:
         # 1. Buscar metadatos en el Excel
         excel_metadata = {"name": "", "description": "", "output": "XLSX"}
-        if EXCEL_PATH.exists():
-            df = pd.read_excel(EXCEL_PATH)
+        if WORKFLOWS_EXCEL_PATH.exists():
+            df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
             row = df[df['id_evaluation'] == workflow_id]
             if not row.empty:
                 excel_metadata["name"] = str(row.iloc[0]['evaluation'])
@@ -114,7 +116,7 @@ async def create_workflow_config(config: dict):
 @app.post("/api/workflows/{workflow_id}/config")
 async def save_workflow_config(workflow_id: int, config: dict):
     try:
-        df = pd.read_excel(EXCEL_PATH)
+        df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
         metadata = config.get("workflow_metadata", {})
         
         target_id = workflow_id
@@ -157,11 +159,104 @@ async def save_workflow_config(workflow_id: int, config: dict):
                 if metadata.get("output"):
                     df.loc[df['id_evaluation'] == target_id, 'output'] = metadata.get("output")
             
-            df.to_excel(EXCEL_PATH, index=False)
+            df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
         except Exception as ex:
             print(f"Error actualizando Excel tras guardado de config: {ex}")
 
         return {"status": "success", "message": f"Configuración guardada para el ID {target_id}", "new_id": target_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/templates")
+async def get_templates():
+    try:
+        if not TEMPLATES_EXCEL_PATH.exists():
+            return []
+        df = pd.read_excel(TEMPLATES_EXCEL_PATH)
+        if 'updated_at' in df.columns:
+            df['updated_at'] = df['updated_at'].fillna("").astype(str)
+        return df.to_dict(orient="records")
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.get("/api/templates/{template_id}/config")
+async def get_template_config(template_id: int):
+    try:
+        df = pd.read_excel(TEMPLATES_EXCEL_PATH)
+        row = df[df['id_template'] == template_id]
+        if row.empty:
+            return {"error": "Plantilla no encontrada"}
+        
+        config_path = row.iloc[0]['config_path']
+        full_path = TEMPLATES_DIR / config_path
+        
+        if not full_path.exists():
+            return {"error": "Archivo de configuración no encontrado"}
+            
+        import json
+        with open(full_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            
+        return {
+            "name": str(row.iloc[0]['name']),
+            "description": str(row.iloc[0]['description']),
+            "type": str(row.iloc[0]['type']),
+            "variables_documento": config.get("variables_documento", {}),
+            "secciones_fijas": config.get("secciones_fijas", []),
+            "secciones_dinamicas": config.get("secciones_dinamicas", [])
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.post("/api/templates/config")
+async def create_template_config(config: dict):
+    return await save_template_config(template_id=0, config=config)
+
+@app.post("/api/templates/{template_id}/config")
+async def save_template_config(template_id: int, config: dict):
+    try:
+        df = pd.read_excel(TEMPLATES_EXCEL_PATH)
+        is_new = template_id == 0 or template_id not in df['id_template'].values
+        
+        target_id = template_id
+        if is_new:
+            target_id = int(df['id_template'].max()) + 1 if len(df) > 0 else 1
+            
+        filename = f"template{target_id:03d}.json"
+        TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+        file_path = TEMPLATES_DIR / filename
+        
+        # Guardar JSON (solo la parte técnica)
+        json_data = {
+            "variables_documento": config.get("variables_documento", {}),
+            "secciones_fijas": config.get("secciones_fijas", []),
+            "secciones_dinamicas": config.get("secciones_dinamicas", [])
+        }
+        
+        import json
+        with open(file_path, 'w', encoding='utf-8') as f:
+            json.dump(json_data, f, indent=4, ensure_ascii=False)
+            
+        # Actualizar Excel
+        now_str = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        if is_new:
+            new_row = {
+                'id_template': target_id,
+                'name': config.get("name", "Nueva Plantilla"),
+                'description': config.get("description", ""),
+                'type': config.get("type", "Reporte"),
+                'config_path': filename,
+                'updated_at': now_str
+            }
+            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
+        else:
+            df.loc[df['id_template'] == target_id, 'name'] = config.get("name")
+            df.loc[df['id_template'] == target_id, 'description'] = config.get("description")
+            df.loc[df['id_template'] == target_id, 'type'] = config.get("type")
+            df.loc[df['id_template'] == target_id, 'updated_at'] = now_str
+            
+        df.to_excel(TEMPLATES_EXCEL_PATH, index=False)
+        return {"status": "success", "message": f"Plantilla {target_id} guardada", "new_id": target_id}
     except Exception as e:
         return {"error": str(e)}
 

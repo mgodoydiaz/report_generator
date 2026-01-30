@@ -1,0 +1,70 @@
+{
+    "variables_documento": {
+        "leftimage": "img/logo_php.png",
+        "rightimage": "img/pullinque_php.png",
+        "centerheaderone": "Informe Ensayo SIMCE N° 5",
+        "centerheadertwo": "Lenguaje 2° Medio",
+        "centerheaderthree": "Octubre 2025",
+        "leftfooter": "Miguel Godoy Díaz",
+        "rightfooter": "\\thepage",
+        "documenttitle": "Informe Ensayo SIMCE N° 5 - Lenguaje 2° Medio",
+        "schoolname": "Liceo Técnico Profesional People Help People Pullinque",
+        "theauthor": "Miguel Godoy Díaz"
+    },
+    "secciones_fijas": [
+        {
+            "titulo": "Cuadro Resumen Logro por Curso",
+            "tipo": "tabla",
+            "contenido": "aux_files/resumen_logro_por_curso.xlsx"
+        },
+        {
+            "titulo": "Resumen Puntaje SIMCE por Curso",
+            "tipo": "tabla",
+            "contenido": "aux_files/resumen_simce_por_curso.xlsx"
+        },
+        {
+            "titulo": "Rendimiento Promedio por Curso",
+            "tipo": "imagen",
+            "contenido": "aux_files/rendimiento_promedio_por_curso.png",
+            "options": "height=0.4\\textheight"
+        },
+        {
+            "titulo": "Distribución de Puntaje SIMCE por Curso",
+            "tipo": "imagen",
+            "contenido": "aux_files/distribucion_puntaje_simce_por_curso.png",
+            "options": "width=0.9\\textwidth"
+        },
+        {
+            "titulo": "Evolución Logro Promedio por Evaluación y Curso",
+            "tipo": "imagen",
+            "contenido": "aux_files/evolucion_logro_promedio_por_curso_y_mes.png",
+            "options": "width=0.9\\textwidth"
+        },
+        {
+            "titulo": "Evolución del SIMCE Promedio por Curso y Mes",
+            "tipo": "imagen",
+            "contenido": "aux_files/evolucion_simce_promedio_por_curso_y_mes.png"
+        },
+        {
+            "titulo": "Cantidad de Alumnos por Nivel de Logro",
+            "tipo": "imagen",
+            "contenido": "aux_files/alumnos_por_nivel.png"
+        },
+        {
+            "titulo": "Evolución de Alumnos por Nivel de Logro, Curso y Mes",
+            "tipo": "imagen",
+            "contenido": "aux_files/evolucion_alumnos_por_nivel.png"
+        },
+        {
+            "titulo": "Logro Promedio por Habilidad",
+            "tipo": "imagen",
+            "contenido": "aux_files/logro_promedio_por_habilidad.png"
+        },
+        {
+            "titulo": "Reporte de estadísticas por pregunta",
+            "tipo": "tabla",
+            "contenido": "aux_files/reporte_preguntas.xlsx"
+        }
+    ],
+    "secciones_dinamicas": []
+}
