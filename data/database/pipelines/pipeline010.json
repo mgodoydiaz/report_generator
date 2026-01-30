@@ -1,0 +1,42 @@
+{
+    "workflow_metadata": {
+        "name": "SIMCE Lenguaje (Copia)",
+        "description": "Workflow SIMCE",
+        "output": ""
+    },
+    "context": {
+        "base_dir": "tests"
+    },
+    "pipeline": [
+        {
+            "step": "InitRun",
+            "params": {
+                "inputs_dir": "tests/input_test/inputs/Lenguaje/inputs"
+            }
+        },
+        {
+            "step": "LoadConfig",
+            "params": {
+                "config_path": "./tests/config_dir/simce_estudiantes_lenguaje.json"
+            }
+        },
+        {
+            "step": "RequestUserFiles",
+            "params": {}
+        },
+        {
+            "step": "RunExcelETL",
+            "params": {
+                "input_key": "estudiantes"
+            }
+        },
+        {
+            "step": "EnrichWithContext",
+            "params": {}
+        },
+        {
+            "step": "ExportConsolidatedExcel",
+            "params": {}
+        }
+    ]
+}

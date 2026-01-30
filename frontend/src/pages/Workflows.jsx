@@ -1,6 +1,7 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw } from 'lucide-react';
+import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy } from 'lucide-react';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
+import WorkflowExecutionModal from '../components/WorkflowExecutionModal';
 
 export default function Workflows() {
   const [workflows, setWorkflows] = useState([]);
@@ -13,6 +14,9 @@ export default function Workflows() {
   const [editingWorkflowId, setEditingWorkflowId] = useState(null);
   const [drawerTitle, setDrawerTitle] = useState("Configurar Nuevo Pipeline");
   const [drawerData, setDrawerData] = useState(null);
+
+  const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
+  const [activeWorkflow, setActiveWorkflow] = useState(null);
 
   useEffect(() => {
     fetchWorkflows();
@@ -88,25 +92,72 @@ export default function Workflows() {
     setIsDrawerOpen(true);
   };
 
-  const handleRunWorkflow = async (id) => {
-    setExecutingId(id);
+  const handleRunWorkflow = (workflow) => {
+    setActiveWorkflow(workflow);
+    setIsExecutionModalOpen(true);
+  };
+
+  const handleDuplicateWorkflow = async (workflowId) => {
+    setLoading(true);
     try {
-      const response = await fetch(`http://localhost:8000/api/workflows/${id}/run`, {
+      // 1. Obtener la configuración actual
+      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}/config`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      // 2. Modificar la metadata para el duplicado
+      const duplicatedConfig = {
+        ...data,
+        workflow_metadata: {
+          ...data.workflow_metadata,
+          name: `${data.workflow_metadata.name} (Copia)`
+        }
+      };
+
+      // 3. Guardar como nuevo workflow (ID 0)
+      const saveResponse = await fetch(`http://localhost:8000/api/workflows/config`, {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(duplicatedConfig)
+      });
+      const saveResult = await saveResponse.json();
+
+      if (saveResult.status === 'success') {
+        alert("Workflow duplicado exitosamente");
+        fetchWorkflows();
+      } else {
+        throw new Error(saveResult.error || "Error al duplicar");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Error al duplicar: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteWorkflow = async (workflowId, name) => {
+    if (!window.confirm(`¿Estás seguro de que deseas eliminar el workflow "${name}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/api/workflows/${workflowId}`, {
+        method: 'DELETE',
       });
       const data = await response.json();
 
       if (data.status === 'success') {
-        alert(`Pipeline ejecutado exitosamente:\n${data.message}`);
-        fetchWorkflows(); // Recargar para ver la nueva fecha
+        fetchWorkflows();
       } else {
-        throw new Error(data.message || data.error);
+        throw new Error(data.error || "Error al eliminar");
       }
     } catch (err) {
       console.error(err);
-      alert(`Error al ejecutar el pipeline: ${err.message}`);
+      alert("Error al eliminar el workflow: " + err.message);
     } finally {
-      setExecutingId(null);
+      setLoading(false);
     }
   };
 
@@ -249,43 +300,59 @@ export default function Workflows() {
                   </td>
                 </tr>
               ) : sortedAndFilteredWorkflows.length > 0 ? (
-                sortedAndFilteredWorkflows.map((wf) => (
-                  <tr key={wf.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
+                sortedAndFilteredWorkflows.map((workflow) => (
+                  <tr key={workflow.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="p-5">
-                      <div className="font-bold text-slate-700">{wf.evaluation}</div>
+                      <div className="font-bold text-slate-700">
+                        {workflow.evaluation}
+                      </div>
                     </td>
                     <td className="p-5 text-slate-500 text-sm">
-                      {wf.description}
+                      {workflow.description}
                     </td>
                     <td className="p-5">
-                      <span className="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded uppercase tracking-tighter">
-                        {wf.output}
+                      <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${workflow.output === 'PDF'
+                        ? 'bg-red-100 text-red-600'
+                        : 'bg-green-100 text-green-600'
+                        }`}>
+                        {workflow.output}
                       </span>
                     </td>
                     <td className="p-5 text-slate-500 text-sm font-medium">
-                      {wf.last_run}
+                      {workflow.last_run || "Nunca"}
                     </td>
                     <td className="p-5 text-right flex justify-end gap-1">
                       <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
-                          onClick={() => handleRunWorkflow(wf.id_evaluation)}
-                          disabled={executingId !== null}
-                          className={`p-2 rounded-xl transition-all ${executingId === wf.id_evaluation ? "text-indigo-600 bg-indigo-50" : "text-indigo-400 hover:text-indigo-600 hover:bg-indigo-50"}`}
-                          title="Ejecutar ahora"
+                          onClick={() => handleRunWorkflow(workflow)}
+                          disabled={executingId === workflow.id_evaluation}
+                          className={`p-2 rounded-xl transition-all ${executingId === workflow.id_evaluation
+                            ? 'bg-slate-100 text-slate-400'
+                            : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
+                            }`}
+                          title="Ejecutar"
                         >
-                          {executingId === wf.id_evaluation ?
-                            <RefreshCcw size={18} className="animate-spin" /> :
-                            <Play size={18} fill="currentColor" />
-                          }
+                          <Play size={18} fill={executingId === workflow.id_evaluation ? "none" : "currentColor"} className={executingId === workflow.id_evaluation ? "animate-spin" : ""} />
                         </button>
                         <button
-                          onClick={() => handleEditWorkflow(wf.id_evaluation)}
+                          onClick={() => handleDuplicateWorkflow(workflow.id_evaluation)}
+                          className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
+                          title="Duplicar"
+                        >
+                          <Copy size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleEditWorkflow(workflow.id_evaluation)}
                           className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
                           title="Configurar"
                         >
                           <Settings size={18} />
                         </button>
-                        <button className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Eliminar">
+                        <button
+                          onClick={() => handleDeleteWorkflow(workflow.id_evaluation, workflow.evaluation)}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                          title="Eliminar"
+                        >
                           <Trash2 size={18} />
                         </button>
                       </div>
@@ -310,6 +377,16 @@ export default function Workflows() {
         initialData={drawerData}
         title={drawerTitle}
         onSave={handleSavePipeline}
+      />
+
+      <WorkflowExecutionModal
+        isOpen={isExecutionModalOpen}
+        onClose={() => {
+          setIsExecutionModalOpen(false);
+          fetchWorkflows(); // Recargar datos al cerrar por si cambió last_run
+        }}
+        workflowId={activeWorkflow?.id_evaluation}
+        workflowName={activeWorkflow?.evaluation}
       />
     </div>
   );

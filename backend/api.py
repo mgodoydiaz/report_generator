@@ -1,8 +1,10 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from pathlib import Path
 import os
+import shutil
+from typing import List
 
 app = FastAPI()
 
@@ -41,6 +43,26 @@ async def get_workflows():
         return {"error": str(e)}
 
 from rgenerator.tooling.pipeline_tools import run_pipeline
+
+@app.post("/api/workflows/{workflow_id}/upload")
+async def upload_workflow_files(workflow_id: int, input_key: str = Form(...), files: List[UploadFile] = File(...)):
+    try:
+        upload_dir = BASE_DIR / "data" / "database" / "pipelines" / "uploads" / str(workflow_id) / input_key
+        # Limpiar directorio previo para este input_key si existe para evitar mezclar archivos de ejecuciones fallidas
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir)
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        saved_files = []
+        for file in files:
+            file_path = upload_dir / file.filename
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            saved_files.append(file.filename)
+
+        return {"status": "success", "message": f"Cargados {len(saved_files)} archivos para {input_key}", "files": saved_files}
+    except Exception as e:
+        return {"error": str(e)}
 
 @app.post("/api/workflows/{workflow_id}/run")
 async def execute_workflow(workflow_id: int):
@@ -125,6 +147,12 @@ async def save_workflow_config(workflow_id: int, config: dict):
         # Si workflow_id es 0 o no está en el Excel, es uno nuevo
         if workflow_id == 0 or workflow_id not in df['id_evaluation'].values:
             is_new = True
+            
+            # Comprobar si el nombre ya existe
+            new_name = metadata.get("name", "Nuevo Workflow")
+            if new_name in df['evaluation'].values:
+                return {"error": f"Ya existe un workflow llamado '{new_name}'. Por favor elige otro nombre."}
+
             # ID correlativo
             if len(df) > 0:
                 target_id = int(df['id_evaluation'].max()) + 1
@@ -164,6 +192,32 @@ async def save_workflow_config(workflow_id: int, config: dict):
             print(f"Error actualizando Excel tras guardado de config: {ex}")
 
         return {"status": "success", "message": f"Configuración guardada para el ID {target_id}", "new_id": target_id}
+    except Exception as e:
+        return {"error": str(e)}
+
+@app.delete("/api/workflows/{workflow_id}")
+async def delete_workflow(workflow_id: int):
+    try:
+        # 1. Eliminar del Excel
+        df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
+        if workflow_id not in df['id_evaluation'].values:
+            return {"error": "Workflow no encontrado"}
+        
+        df = df[df['id_evaluation'] != workflow_id]
+        df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
+        
+        # 2. Eliminar archivo JSON
+        pipeline_filename = f"pipeline{workflow_id:03d}.json"
+        pipeline_path = BASE_DIR / "data" / "database" / "pipelines" / pipeline_filename
+        if pipeline_path.exists():
+            os.remove(pipeline_path)
+            
+        # 3. Opcional: Eliminar carpeta de subidas
+        uploads_dir = BASE_DIR / "data" / "database" / "pipelines" / "uploads" / str(workflow_id)
+        if uploads_dir.exists():
+            shutil.rmtree(uploads_dir)
+            
+        return {"status": "success", "message": f"Workflow {workflow_id} eliminado correctamente"}
     except Exception as e:
         return {"error": str(e)}
 

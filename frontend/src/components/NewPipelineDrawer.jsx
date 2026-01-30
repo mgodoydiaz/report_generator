@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-    X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus
+    X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, ChevronUp, ChevronDown
 } from 'lucide-react';
 
 // Opciones para el selector de pasos del pipeline
@@ -8,9 +8,15 @@ const STEP_OPTIONS = [
     "InitRun",
     "LoadConfig",
     "DiscoverInputs",
+    "RequestUserFiles",
     "RunExcelETL",
     "EnrichWithContext",
-    "ExportConsolidatedExcel"
+    "ExportConsolidatedExcel",
+    "GenerateGraphics",
+    "GenerateTables",
+    "RenderReport",
+    "GenerateDocxReport",
+    "DeleteTempFiles"
 ];
 
 /**
@@ -105,6 +111,17 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     const updateStep = (index, field, value) => {
         const newPipeline = [...formData.pipeline];
         newPipeline[index][field] = value;
+        setFormData({ ...formData, pipeline: newPipeline });
+    };
+
+    const moveStep = (index, direction) => {
+        if (direction === 'up' && index === 0) return;
+        if (direction === 'down' && index === formData.pipeline.length - 1) return;
+
+        const newPipeline = [...formData.pipeline];
+        const targetIndex = direction === 'up' ? index - 1 : index + 1;
+        [newPipeline[index], newPipeline[targetIndex]] = [newPipeline[targetIndex], newPipeline[index]];
+
         setFormData({ ...formData, pipeline: newPipeline });
     };
 
@@ -276,7 +293,28 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                             {formData.pipeline.map((step, index) => (
                                 <div key={index} className="p-4 border border-slate-200 rounded-xl space-y-3 bg-slate-50/30 relative group">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase">Paso {index + 1}</span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase">Paso {index + 1}</span>
+                                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
+                                                <button
+                                                    onClick={() => moveStep(index, 'up')}
+                                                    disabled={index === 0}
+                                                    className={`p-1 hover:bg-slate-50 transition-colors ${index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
+                                                    title="Mover arriba"
+                                                >
+                                                    <ChevronUp size={14} />
+                                                </button>
+                                                <div className="w-px h-3 bg-slate-100" />
+                                                <button
+                                                    onClick={() => moveStep(index, 'down')}
+                                                    disabled={index === formData.pipeline.length - 1}
+                                                    className={`p-1 hover:bg-slate-50 transition-colors ${index === formData.pipeline.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
+                                                    title="Mover abajo"
+                                                >
+                                                    <ChevronDown size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
                                         <button
                                             onClick={() => removeStep(index)}
                                             className="text-slate-300 hover:text-red-500 transition-colors"

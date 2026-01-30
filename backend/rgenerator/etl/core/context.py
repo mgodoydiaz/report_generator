@@ -7,29 +7,12 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class RunContext:
-    """Contexto compartido entre steps.
-    
-    Parameters:
-    ---------------
-    evaluation: str
-        Nombre de la evaluación (ej: 'simce', 'psu', etc.)
-    
-    run_id: str
-        Identificador único de la corrida (ej: timestamp, UUID, etc.)
-
-    base_dir: Path
-        Directorio base donde se encuentran inputs, outputs, etc.
-
-    params: Dict[str, Any]
-        Parámetros generales de la corrida (configuración, opciones, etc.) 
-        """
+    """Contexto compartido entre steps."""
     
     evaluation: str = ""
     run_id: str = ""
+    workflow_id: Optional[int] = None
     base_dir: Path = field(default_factory=lambda: Path("."))
-    # In case user adds a string path instead of Path object, convert it
-    if isinstance(base_dir, str):
-        base_dir = Path(base_dir)
     params: Dict[str, Any] = field(default_factory=dict)
 
     # Archivos de entrada por rol (ej: estudiantes, preguntas, resultados, reporte_preguntas, etc.)
@@ -40,6 +23,12 @@ class RunContext:
 
     # Salidas por rol (ej: consolidado_estudiantes, consolidado_preguntas, informe_pdf, etc.)
     outputs: Dict[str, Path] = field(default_factory=dict)
+
+    # Rutas calculadas durante InitRun
+    inputs_dir: Optional[Path] = None
+    outputs_dir: Optional[Path] = None
+    aux_dir: Optional[Path] = None
+    work_dir: Optional[Path] = None
 
     # Estado
     last_step: Optional[str] = None

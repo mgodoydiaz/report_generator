@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import pandas as pd
 import os 
+import shutil
 from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
@@ -72,22 +73,17 @@ class InitRun(Step):
             context.params[k] = v       
 
         # carpetas estandar
-        ########################################
-        # ATENCION A CAMBIO
-        # ESTO DEBERIA CAMBIAR POR ALGUNA BASE DE DATOS
-        
-        # base_dir puede existir dentro del contexto y en self.params venir vacío
         context.base_dir = Path(self.params.get("base_dir", context.base_dir))
-        context.inputs_dir = Path(self.params.get("inputs_dir", context.base_dir / "inputs"))
         
-        """
+        # Estructura organizada por evaluacion y run_id
+        context.work_dir = context.base_dir / "runs" / context.evaluation / context.run_id
+        context.inputs_dir = context.work_dir / "inputs"
         context.aux_dir = context.work_dir / "aux_files"
         context.outputs_dir = context.work_dir / "outputs"
-        context.work_dir = context.base_dir / context.evaluation / context.run_id
+
+        # Crear directorios
         for d in [context.work_dir, context.inputs_dir, context.aux_dir, context.outputs_dir]:
             d.mkdir(parents=True, exist_ok=True)
-        """
-        ########################################
 
         context.status = "RUNNING"
         context.last_step = self.name
@@ -781,6 +777,66 @@ class GenerateTables(Step):
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
+
+class RequestUserFiles(Step):
+    """
+    Step que declara archivos requeridos que deben ser cargados por el usuario.
+    En una ejecución interactiva, el frontend utiliza esta definición para mostrar los inputs.
+    
+    Parámetros:
+        file_specs (List[Dict]): Lista de especificaciones {id, label, description, multiple}.
+    """
+    def __init__(self, file_specs: List[Dict]):
+        super().__init__(name="RequestUserFiles")
+        self.file_specs = file_specs
+
+    def run(self, ctx):
+        """
+        En una ejecución automatizada, verifica que los archivos existan en ctx.inputs.
+        En una ejecución interactiva, este paso toma los archivos cargados previamente 
+        por el usuario y los incorpora al flujo.
+        """
+        before = self._snapshot_artifacts(ctx)
+        
+        if not ctx.workflow_id:
+            self._log("No se encontró workflow_id en el contexto para RequestUserFiles.")
+            return
+
+        # Ruta donde el backend guarda las subidas temporales (ver api.py)
+        # Asumiendo estructura: backend/data/database/pipelines/uploads/{workflow_id}/{input_key}
+        base_path = Path(__file__).resolve().parent.parent.parent.parent.parent
+        uploads_root = base_path / "data" / "database" / "pipelines" / "uploads" / str(ctx.workflow_id)
+
+        if not uploads_root.exists():
+            self._log(f"No se encontró directorio de subidas en {uploads_root}")
+            return
+
+        for spec in self.file_specs:
+            input_key = spec.get("id")
+            source_dir = uploads_root / input_key
+            
+            if source_dir.exists():
+                # Directorio de destino dentro de la corrida
+                target_dir = ctx.inputs_dir / input_key
+                target_dir.mkdir(parents=True, exist_ok=True)
+                
+                discovered_files = []
+                for file_path in source_dir.glob("*"):
+                    if file_path.is_file():
+                        # Mover o copiar a la carpeta de inputs de la corrida
+                        dest_path = target_dir / file_path.name
+                        shutil.copy2(file_path, dest_path)
+                        discovered_files.append(dest_path)
+                
+                if discovered_files:
+                    ctx.inputs[input_key] = discovered_files
+                    self._log(f"Registrados {len(discovered_files)} archivos para '{input_key}'")
+            else:
+                if not spec.get("optional", False):
+                    self._log(f"ADVERTENCIA: No se encontraron archivos para el requerimiento obligatorio '{input_key}'")
+
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
 
 class RenderReport(Step):
     """

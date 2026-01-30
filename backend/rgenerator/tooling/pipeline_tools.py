@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 from typing import Dict, Type, List
+import re
 from rgenerator.etl.core.context import RunContext
 from rgenerator.etl.core.step import Step
 import rgenerator.etl.core.pipeline_steps as ps
@@ -14,7 +15,8 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "RunExcelETL": ps.RunExcelETL,
     "EnrichWithContext": ps.EnrichWithContext,
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
-    "DeleteTempFiles": ps.DeleteTempFiles
+    "DeleteTempFiles": ps.DeleteTempFiles,
+    "RequestUserFiles": ps.RequestUserFiles
 }
 
 def load_pipeline_from_json(json_path: str | Path) -> tuple[RunContext, List[Step]]:
@@ -32,6 +34,11 @@ def load_pipeline_from_json(json_path: str | Path) -> tuple[RunContext, List[Ste
     # Si base_dir es relativo en el JSON, lo resolvemos respecto a la raíz del proyecto
     json_base_dir = config.get("context", {}).get("base_dir", ".")
     ctx = RunContext(base_dir=Path(json_base_dir))
+
+    # Intentar extraer workflow_id del nombre del archivo (ej: pipeline001.json)
+    match = re.search(r'pipeline(\d+)\.json', path.name)
+    if match:
+        ctx.workflow_id = int(match.group(1))
 
     # 2. Construir el pipeline
     pipeline = []
