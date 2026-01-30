@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
-import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, Upload, FileText } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, Upload, FileText, FastForward, Square, StepForward } from 'lucide-react';
 import { API_BASE_URL } from '../constants';
+import '../assets/pipeline-execution.css';
 
 /**
- * Modal para la ejecución paso a paso de un pipeline.
- * Permite subir archivos requeridos y visualiza el progreso técnico.
+ * Modal para la ejecución paso a paso de un pipeline con visualización avanzada.
  */
 const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) => {
     const [status, setStatus] = useState('idle'); // idle, loading, requesting_files, executing, success, error
@@ -13,6 +13,9 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const [error, setError] = useState(null);
     const [userFiles, setUserFiles] = useState({}); // { input_key: File[] }
     const [executionResult, setExecutionResult] = useState(null);
+
+    const stepsViewportRef = useRef(null);
+    const activeStepRef = useRef(null);
 
     // Cargar pasos del pipeline al abrir
     useEffect(() => {
@@ -23,6 +26,13 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         }
     }, [isOpen, pipelineId]);
 
+    // Auto-scroll al paso activo
+    useEffect(() => {
+        if (activeStepRef.current && stepsViewportRef.current) {
+            activeStepRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }, [currentStepIndex, status]);
+
     const resetState = () => {
         setStatus('idle');
         setSteps([]);
@@ -30,6 +40,10 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         setError(null);
         setUserFiles({});
         setExecutionResult(null);
+        // Resetear sesión en backend también?
+        if (pipelineId) {
+            fetch(`${API_BASE_URL}/workflows/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+        }
     };
 
     const fetchSteps = async () => {
@@ -46,8 +60,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
             if (pipelineSteps?.[0]?.step === 'RequestUserFiles') {
                 setStatus('requesting_files');
             } else {
-                // Iniciar ejecución directamente
-                startExecution(pipelineSteps);
+                setStatus('idle');
             }
         } catch (err) {
             setError(err.message);
@@ -62,11 +75,10 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         }));
     };
 
-    const startExecution = async (overrideSteps = null) => {
-        const activeSteps = overrideSteps || steps;
-        // Validar archivos requeridos
-        const requestStep = activeSteps.find(s => s.step === 'RequestUserFiles');
-        if (requestStep) {
+    const startExecution = async (mode = 'normal') => {
+        // Validar archivos requeridos si estamos en ese paso
+        const requestStep = steps.find(s => s.step === 'RequestUserFiles');
+        if (requestStep && status === 'requesting_files') {
             const missing = requestStep.params.file_specs.filter(spec => !userFiles[spec.id] || userFiles[spec.id].length === 0);
             if (missing.length > 0) {
                 alert(`Por favor sube los archivos requeridos: ${missing.map(m => m.label).join(', ')}`);
@@ -75,45 +87,72 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         }
 
         setStatus('executing');
-        setCurrentStepIndex(0);
+        // No reseteamos currentStepIndex a 0 aquí, porque podríamos estar reanudando
 
         try {
-            // 1. Subir archivos si existen
-            const uploadPromises = Object.entries(userFiles).map(([id, files]) => {
-                if (files.length === 0) return Promise.resolve();
+            // 1. Subir archivos si existen (solo si estamos al inicio o es la primera vez)
+            // Para simplificar, subimos siempre que haya archivos y estemos en requesting_files
+            if (status === 'requesting_files') {
+                const uploadPromises = Object.entries(userFiles).map(([id, files]) => {
+                    if (files.length === 0) return Promise.resolve();
 
-                const formData = new FormData();
-                formData.append('input_key', id);
-                files.forEach(file => formData.append('files', file));
+                    const formData = new FormData();
+                    formData.append('input_key', id);
+                    files.forEach(file => formData.append('files', file));
 
-                return fetch(`${API_BASE_URL}/workflows/${pipelineId}/upload`, {
-                    method: 'POST',
-                    body: formData
-                }).then(res => res.json());
-            });
-
-            await Promise.all(uploadPromises);
-
-            // 2. Iniciar ejecución
-            // Simulamos el avance de la barra mientras el backend trabaja
-            const progressInterval = setInterval(() => {
-                setCurrentStepIndex(prev => {
-                    if (prev < steps.length - 1) return prev + 1;
-                    return prev;
+                    return fetch(`${API_BASE_URL}/workflows/${pipelineId}/upload`, {
+                        method: 'POST',
+                        body: formData
+                    }).then(res => res.json());
                 });
-            }, 800);
+                await Promise.all(uploadPromises);
+            }
 
-            const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/run`, {
-                method: 'POST'
-            });
-            const result = await response.json();
+            // 2. Ejecutar según modo
+            let result;
+            let finalState = false;
 
-            clearInterval(progressInterval);
+            if (mode === 'fast') {
+                // Modo rápido: Backend ejecuta todo lo restante
+                // Simulamos progreso visual acelerado
+                const progressInterval = setInterval(() => {
+                    setCurrentStepIndex(prev => {
+                        if (prev < steps.length - 1) return prev + 1;
+                        return prev;
+                    });
+                }, 400);
+
+                const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/run`, {
+                    method: 'POST'
+                });
+                result = await response.json();
+                clearInterval(progressInterval);
+                finalState = true;
+            } else {
+                // Modo paso a paso: Backend ejecuta solo el siguiente paso
+                const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/step`, {
+                    method: 'POST'
+                });
+                result = await response.json();
+
+                if (result.status === 'success') {
+                    // Actualizar índice al siguiente paso indicado por el backend
+                    if (result.next_index !== undefined) {
+                        setCurrentStepIndex(result.next_index);
+                    }
+                    finalState = result.finished;
+                }
+            }
 
             if (result.status === 'success') {
-                setCurrentStepIndex(steps.length);
-                setExecutionResult(result);
-                setStatus('success');
+                if (finalState) {
+                    setCurrentStepIndex(steps.length); // Marcar todo como completo visualmente
+                    setExecutionResult(result);
+                    setStatus('success');
+                } else {
+                    // Si no ha terminado, volvemos a idle para esperar el siguiente click
+                    setStatus('idle');
+                }
             } else {
                 throw new Error(result.message || result.error);
             }
@@ -125,190 +164,241 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
     if (!isOpen) return null;
 
-    const progress = steps.length > 0 ? (currentStepIndex / steps.length) * 100 : 0;
-    const currentStepName = steps[currentStepIndex]?.step || "Finalizando...";
+    // Calculamos el porcentaje para la línea de fondo
+    const totalSteps = steps.length;
+    // Si estamos en success, visualmente lleno (steps.length - 1 para array index).
+    // Si steps.length es N, indices son 0..N-1.
+    // Si estamos en N (finished), mostramos lleno.
+    const displayIndex = status === 'success' ? totalSteps - 1 : Math.min(currentStepIndex, totalSteps - 1);
+    const progressPercent = totalSteps > 1 ? (displayIndex / (totalSteps - 1)) * 100 : 0;
+
+    const currentStepData = steps[displayIndex];
 
     return (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
 
-            <div className="bg-white rounded-3xl shadow-2xl w-full max-w-lg relative overflow-hidden flex flex-col max-h-[90vh]">
-                {/* Header */}
-                <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0">
-                    <div>
-                        <h2 className="text-lg font-bold text-slate-900">Ejecución: {pipelineName}</h2>
-                        <p className="text-xs text-slate-500">ID: {pipelineId}</p>
+            {/* Popup Container */}
+            <div id="pipeline-popup" className="bg-white w-full max-w-4xl h-[600px] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative z-10 transition-all duration-300">
+
+                {/* Sidebar: Visualizador de Pasos con Scroll */}
+                <div className="bg-slate-50 w-full md:w-64 border-r border-slate-200 flex flex-col items-center py-6 shrink-0">
+                    <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Progreso</h2>
+
+                    {/* Contenedor con Scroll */}
+                    <div ref={stepsViewportRef} id="steps-viewport" className="relative flex-1 w-full overflow-y-auto pipeline-scrollbar pipeline-steps-viewport px-6">
+                        <div className="relative flex flex-col items-center min-h-full py-4">
+                            {/* Línea de conexión dinámica */}
+                            {totalSteps > 1 && (
+                                <div
+                                    className="pipeline-step-line"
+                                    style={{
+                                        background: `linear-gradient(to bottom, #4f46e5 ${progressPercent}%, #e2e8f0 ${progressPercent}%)`
+                                    }}
+                                ></div>
+                            )}
+
+                            {/* Contenedor de Círculos */}
+                            <div className="flex flex-col gap-12 items-center w-full z-10">
+                                {steps.map((step, index) => {
+                                    // Comprobación de estado del paso
+                                    const isCompleted = index < currentStepIndex; // Pasos anteriores completados
+                                    const isCurrent = index === currentStepIndex && status !== 'success'; // Paso actual activo
+                                    const isError = status === 'error' && index === currentStepIndex;
+
+                                    return (
+                                        <div
+                                            key={index}
+                                            ref={isCurrent ? activeStepRef : null}
+                                            className={`step-circle w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold transition-all duration-500 shrink-0 border-2 
+                                                ${isError ? 'bg-red-500 text-white border-red-500 shadow-md' :
+                                                    isCompleted ? 'bg-indigo-600 text-white border-indigo-600 shadow-md' :
+                                                        isCurrent ? 'bg-slate-900 text-white border-slate-900 ring-4 ring-indigo-100 scale-110' :
+                                                            'bg-white text-slate-400 border-slate-200'
+                                                }`}
+                                        >
+                                            {isCompleted ? <CheckCircle2 size={14} /> :
+                                                isError ? <AlertCircle size={14} /> :
+                                                    (index + 1)}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors">
-                        <X size={20} className="text-slate-500" />
-                    </button>
+
+                    {/* Info de progreso fija abajo */}
+                    <div className="mt-4 text-center border-t border-slate-200 pt-4 w-full px-4">
+                        <p className="text-xl font-semibold text-slate-800">{Math.round(progressPercent)}%</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold">
+                            Paso {Math.min(displayIndex + 1, totalSteps)} de {totalSteps}
+                        </p>
+                    </div>
                 </div>
 
-                {/* Content */}
-                <div className="p-8 flex-1 overflow-y-auto">
-                    {status === 'loading' && (
-                        <div className="flex flex-col items-center justify-center py-12 gap-4">
-                            <Loader2 size={40} className="text-indigo-600 animate-spin" />
-                            <p className="text-slate-600 font-medium">Cargando definición del proceso...</p>
-                        </div>
-                    )}
+                {/* Main Content */}
+                <div className="flex-1 p-8 flex flex-col bg-white overflow-y-auto">
+                    <div className="mb-6 border-b border-slate-100 pb-4">
+                        <h1 className="text-xs font-bold text-indigo-500 uppercase tracking-tight mb-1">Ejecución de Proceso</h1>
+                        <h2 className="text-2xl font-light text-slate-800">{pipelineName}</h2>
+                        <p className="text-xs text-slate-400 mt-1 font-mono">{pipelineId}</p>
+                    </div>
 
-                    {status === 'requesting_files' && (
-                        <div className="space-y-6">
-                            <div className="bg-amber-50 border border-amber-100 p-4 rounded-2xl flex gap-3 text-amber-700">
-                                <AlertCircle size={20} className="shrink-0" />
-                                <div className="text-sm">
-                                    <p className="font-bold">Archivos Requeridos</p>
-                                    <p>Este proceso necesita que proporciones los siguientes datos antes de comenzar.</p>
-                                </div>
+                    <div className="flex-1">
+                        {status === 'loading' && (
+                            <div className="flex flex-col items-center justify-center h-full gap-4 text-slate-400">
+                                <Loader2 size={32} className="animate-spin text-indigo-500" />
+                                <p className="text-sm font-medium">Cargando definición...</p>
                             </div>
+                        )}
 
-                            <div className="space-y-4">
-                                {steps.find(s => s.step === 'RequestUserFiles')?.params.file_specs.map(spec => (
-                                    <div key={spec.id} className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-between">
-                                            {spec.label}
-                                            {userFiles[spec.id] && <span className="text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> Listo</span>}
-                                        </label>
-                                        <div className="relative group">
-                                            <input
-                                                type="file"
-                                                multiple={spec.multiple}
-                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-                                                onChange={(e) => handleFileChange(spec.id, e.target.files)}
-                                            />
-                                            <div className={`p-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-2 transition-all ${userFiles[spec.id] ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 group-hover:bg-white group-hover:border-indigo-300'}`}>
-                                                <Upload size={24} className={userFiles[spec.id] ? 'text-indigo-500' : 'text-slate-400'} />
-                                                <p className="text-sm text-slate-600 font-medium">
-                                                    {userFiles[spec.id]
-                                                        ? `${userFiles[spec.id].length} archivo(s) seleccionado(s)`
-                                                        : 'Haz clic o arrastra el archivo aquí'}
-                                                </p>
-                                                {spec.description && <p className="text-[10px] text-slate-400">{spec.description}</p>}
+                        {status === 'requesting_files' && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 text-amber-700">
+                                    <AlertCircle size={20} className="shrink-0" />
+                                    <div className="text-sm">
+                                        <p className="font-bold">Archivos Requeridos</p>
+                                        <p>Selecciona los archivos necesarios para iniciar el proceso.</p>
+                                    </div>
+                                </div>
+                                <div className="grid gap-4">
+                                    {steps.find(s => s.step === 'RequestUserFiles')?.params.file_specs.map(spec => (
+                                        <div key={spec.id} className="space-y-2">
+                                            <div className="flex justify-between items-center">
+                                                <label className="text-xs font-bold text-slate-600 uppercase">{spec.label}</label>
+                                                {userFiles[spec.id] && <span className="text-xs font-bold text-green-600 flex items-center gap-1"><CheckCircle2 size={12} /> Listo</span>}
                                             </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <button
-                                onClick={startExecution}
-                                className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100 flex items-center justify-center gap-2"
-                            >
-                                <Play size={20} fill="currentColor" />
-                                Iniciar Ejecución
-                            </button>
-                        </div>
-                    )}
-
-                    {(status === 'executing' || status === 'idle') && (
-                        <div className="space-y-8 py-4">
-                            <div className="flex flex-col items-center gap-6">
-                                <div className="relative">
-                                    <div className="w-24 h-24 rounded-full border-4 border-slate-100 flex items-center justify-center">
-                                        <RefreshCcw size={40} className="text-indigo-600 animate-spin" />
-                                    </div>
-                                    <div className="absolute -bottom-1 -right-1 bg-white p-1 rounded-full border border-slate-100">
-                                        <div className="w-6 h-6 bg-indigo-600 rounded-full flex items-center justify-center text-white text-[10px] font-bold">
-                                            {currentStepIndex + 1}
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="text-center">
-                                    <h3 className="text-xl font-bold text-slate-800">{currentStepName}</h3>
-                                    <p className="text-slate-500 text-sm mt-1">Procesando paso {currentStepIndex + 1} de {steps.length}</p>
-                                </div>
-                            </div>
-
-                            {/* Progress Bar */}
-                            <div className="space-y-2">
-                                <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                                    <span>Progreso</span>
-                                    <span>{Math.round(progress)}%</span>
-                                </div>
-                                <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden">
-                                    <div
-                                        className="h-full bg-indigo-600 transition-all duration-500 ease-out shadow-[0_0_10px_rgba(79,70,229,0.4)]"
-                                        style={{ width: `${progress}%` }}
-                                    />
-                                </div>
-                            </div>
-
-                            {status === 'idle' && (
-                                <button
-                                    onClick={startExecution}
-                                    className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-bold hover:bg-indigo-700 transition-all"
-                                >
-                                    Confirmar y Ejecutar
-                                </button>
-                            )}
-                        </div>
-                    )}
-
-                    {status === 'success' && (
-                        <div className="flex flex-col items-center justify-center py-6 gap-6 text-center">
-                            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center text-green-600">
-                                <CheckCircle2 size={48} />
-                            </div>
-                            <div className="space-y-2">
-                                <h3 className="text-2xl font-extrabold text-slate-800">¡Completado!</h3>
-                                <div className="flex flex-col gap-1">
-                                    <p className="text-slate-500 text-sm">El proceso se ejecutó con éxito.</p>
-                                    <div className="flex items-center justify-center gap-4 mt-2">
-                                        <div className="bg-indigo-50 px-3 py-1 rounded-full text-indigo-700 text-[10px] font-bold uppercase tracking-wider border border-indigo-100">
-                                            Pasos: {steps.length}
-                                        </div>
-                                        <div className="bg-green-50 px-3 py-1 rounded-full text-green-700 text-[10px] font-bold uppercase tracking-wider border border-green-100">
-                                            Artefactos: {executionResult?.artifacts?.length || 0}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="bg-slate-50 w-full p-4 rounded-2xl border border-slate-100 text-left">
-                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Resultados</p>
-                                <div className="space-y-2">
-                                    {executionResult?.artifacts?.map(art => (
-                                        <div key={art} className="flex items-center gap-2 text-sm text-slate-700 font-medium bg-white p-2 rounded-lg border border-slate-100 shadow-sm">
-                                            <FileText size={14} className="text-indigo-500" />
-                                            {art}
+                                            <div className="relative group">
+                                                <input
+                                                    type="file"
+                                                    multiple={spec.multiple}
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                                                    onChange={(e) => handleFileChange(spec.id, e.target.files)}
+                                                />
+                                                <div className={`p-4 border-2 border-dashed rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${userFiles[spec.id] ? 'bg-indigo-50 border-indigo-200' : 'bg-slate-50 border-slate-200 group-hover:bg-white group-hover:border-indigo-300'}`}>
+                                                    <Upload size={20} className={userFiles[spec.id] ? 'text-indigo-500' : 'text-slate-400'} />
+                                                    <span className="text-sm font-medium text-slate-600">
+                                                        {userFiles[spec.id] ? `${userFiles[spec.id].length} archivo(s)` : 'Subir archivo'}
+                                                    </span>
+                                                </div>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
                             </div>
-                            <button
-                                onClick={onClose}
-                                className="w-full bg-slate-800 text-white py-3 rounded-2xl font-bold hover:bg-slate-900 transition-all"
-                            >
-                                Cerrar Ventana
-                            </button>
-                        </div>
-                    )}
+                        )}
 
-                    {status === 'error' && (
-                        <div className="flex flex-col items-center justify-center py-6 gap-6 text-center">
-                            <div className="w-20 h-20 bg-red-100 rounded-full flex items-center justify-center text-red-600">
-                                <AlertCircle size={48} />
+                        {(status === 'idle' || status === 'executing') && currentStepData && (
+                            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-50"></div>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-2">{currentStepData.step}</h3>
+                                    <p className="text-slate-600 text-sm leading-relaxed">
+                                        {currentStepData.description || "Esperando confirmación para ejecutar este paso..."}
+                                    </p>
+                                    <div className="mt-4 flex items-center gap-2 text-xs font-mono text-slate-400">
+                                        <div className={`w-2 h-2 rounded-full bg-indigo-500 ${status === 'executing' ? 'animate-pulse' : ''}`}></div>
+                                        {status === 'executing' ? "Procesando paso..." : "Listo para continuar"}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="space-y-2 text-red-700">
-                                <h3 className="text-2xl font-extrabold">Ocurrió un Error</h3>
-                                <p className="text-sm font-medium">{error}</p>
+                        )}
+
+                        {status === 'success' && (
+                            <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-in zoom-in duration-500">
+                                <div className="w-16 h-16 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-2">
+                                    <CheckCircle2 size={32} />
+                                </div>
+                                <div>
+                                    <h3 className="text-xl font-bold text-slate-800">¡Proceso Completado!</h3>
+                                    <p className="text-slate-500 text-sm">Todos los pasos han finalizado correctamente.</p>
+                                </div>
+                                <div className="w-full bg-slate-50 rounded-xl border border-slate-100 p-4 text-left mt-4">
+                                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-3">Artefactos Generados</p>
+                                    <div className="space-y-2">
+                                        {executionResult?.artifacts?.map((art, i) => (
+                                            <div key={i} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-100 shadow-sm text-sm text-slate-700">
+                                                <FileText size={16} className="text-indigo-500" />
+                                                <span className="truncate">{art}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="flex gap-3 w-full">
+                        )}
+
+                        {status === 'error' && (
+                            <div className="bg-red-50 border border-red-100 p-6 rounded-2xl text-center space-y-4 animate-in shake duration-300">
+                                <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto">
+                                    <AlertCircle size={24} />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-red-800">Error en la Ejecución</h3>
+                                    <p className="text-sm text-red-600 mt-1">{error}</p>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Botones footer */}
+                    <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-6 mt-6">
+                        {/* Botón Cancelar */}
+                        <button
+                            onClick={onClose}
+                            className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                            title="Cancelar ejecución"
+                        >
+                            <Square size={16} fill="currentColor" className="opacity-80" />
+                            <span>{status === 'success' ? 'Cerrar' : 'Cancelar'}</span>
+                        </button>
+
+                        <div className="flex gap-2">
+                            {(status === 'idle' || status === 'requesting_files') && (
+                                <>
+                                    {/* Siguiente (Paso a paso / Normal) */}
+                                    <button
+                                        onClick={() => startExecution('normal')}
+                                        disabled={status === 'executing'}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-bold hover:bg-slate-200 hover:text-slate-900 transition-all active:scale-95 disabled:opacity-50"
+                                        title="Ejecutar siguiente paso"
+                                    >
+                                        <StepForward size={18} />
+                                        <span>Siguiente</span>
+                                    </button>
+
+                                    {/* Avanzar Rápido (Fast Forward) */}
+                                    <button
+                                        onClick={() => startExecution('fast')}
+                                        disabled={status === 'executing'}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 active:scale-95 disabled:opacity-50"
+                                        title="Ejecutar todo el proceso automáticamente"
+                                    >
+                                        <span>Ejecutar Todo</span>
+                                        <FastForward size={18} fill="currentColor" />
+                                    </button>
+                                </>
+                            )}
+
+
+                            {status === 'error' && (
                                 <button
-                                    onClick={fetchSteps}
-                                    className="flex-1 bg-white border border-slate-200 text-slate-600 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all"
+                                    onClick={() => startExecution(currentStepIndex > 0 ? 'normal' : 'fast')} // Reintentar
+                                    className="px-6 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50 transition-all active:scale-95 flex items-center gap-2"
                                 >
-                                    Reintentar
+                                    <RefreshCcw size={16} /> Reintentar
                                 </button>
+                            )}
+
+                            {status === 'success' && (
                                 <button
                                     onClick={onClose}
-                                    className="flex-1 bg-slate-800 text-white py-3 rounded-2xl font-bold hover:bg-slate-900 transition-all"
+                                    className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-all shadow-lg active:scale-95"
                                 >
-                                    Cerrar
+                                    Finalizar
                                 </button>
-                            </div>
+                            )}
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
         </div>

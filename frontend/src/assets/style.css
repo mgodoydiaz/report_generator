@@ -1,3 +1,7 @@
 ﻿@import "tailwindcss";
 
-/* Custom styles can go here */
+/* 
+  Global Styles 
+  Estilos generales de la aplicación.
+  Los estilos específicos de componentes deben ir en sus propios archivos CSS (ej. pipeline-execution.css)
+*/

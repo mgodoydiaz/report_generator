@@ -4,7 +4,7 @@ import pandas as pd
 from pathlib import Path
 import os
 import shutil
-from typing import List
+from typing import List, Dict
 
 app = FastAPI()
 
@@ -22,6 +22,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 WORKFLOWS_EXCEL_PATH = BASE_DIR / "data" / "database" / "pipelines.xlsx"
 TEMPLATES_EXCEL_PATH = BASE_DIR / "data" / "database" / "templates.xlsx"
 TEMPLATES_DIR = BASE_DIR / "data" / "database" / "reports_templates"
+
+# Store active sessions in memory
+from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
+
+ACTIVE_RUNNERS: Dict[int, PipelineRunner] = {}
 
 @app.get("/api/workflows")
 async def get_workflows():
@@ -41,8 +46,6 @@ async def get_workflows():
         return data
     except Exception as e:
         return {"error": str(e)}
-
-from rgenerator.tooling.pipeline_tools import run_pipeline
 
 @app.post("/api/workflows/{workflow_id}/upload")
 async def upload_workflow_files(workflow_id: int, input_key: str = Form(...), files: List[UploadFile] = File(...)):
@@ -64,31 +67,78 @@ async def upload_workflow_files(workflow_id: int, input_key: str = Form(...), fi
     except Exception as e:
         return {"error": str(e)}
 
+def _update_last_run(workflow_id):
+    try:
+        df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
+        df.loc[df['id_evaluation'] == workflow_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
+    except Exception as ex:
+        print(f"Error actualizando Excel: {ex}")
+
 @app.post("/api/workflows/{workflow_id}/run")
 async def execute_workflow(workflow_id: int):
+    """Executes the workflow completely (Fast Forward). Resumes if active session exists."""
     try:
         os.system("cls")
-        pipeline_filename = f"pipeline{workflow_id:03d}.json"
-        pipeline_path = BASE_DIR / "data" / "database" / "pipelines" / pipeline_filename
         
-        if not pipeline_path.exists():
-            return {"error": f"No se encontró la configuración del pipeline para el ID {workflow_id}"}
-        
-        # Ejecutar el pipeline
-        result = run_pipeline(pipeline_path)
-        
-        # Actualizar la fecha de última ejecución en el Excel si fue exitoso
+        # Use active runner if exists, otherwise create new
+        if workflow_id in ACTIVE_RUNNERS:
+            runner = ACTIVE_RUNNERS[workflow_id]
+            # Run remaining steps
+            runner.run_all()
+            result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
+            # Clean up
+            del ACTIVE_RUNNERS[workflow_id]
+        else:
+            # Traditional clean run
+            pipeline_filename = f"pipeline{workflow_id:03d}.json"
+            pipeline_path = BASE_DIR / "data" / "database" / "pipelines" / pipeline_filename
+            
+            if not pipeline_path.exists():
+                return {"error": f"No se encontró la configuración del pipeline para el ID {workflow_id}"}
+                
+            result = run_pipeline(pipeline_path)
+
         if result["status"] == "success":
-            try:
-                df = pd.read_excel(WORKFLOWS_EXCEL_PATH)
-                df.loc[df['id_evaluation'] == workflow_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
-                df.to_excel(WORKFLOWS_EXCEL_PATH, index=False)
-            except Exception as ex:
-                print(f"Error actualizando Excel: {ex}")
+            _update_last_run(workflow_id)
 
         return result
     except Exception as e:
         return {"error": str(e)}
+
+@app.post("/api/workflows/{workflow_id}/step")
+async def execute_workflow_step(workflow_id: int):
+    """Executes the next step of the workflow."""
+    try:
+        if workflow_id not in ACTIVE_RUNNERS:
+            # Initialize session
+            pipeline_filename = f"pipeline{workflow_id:03d}.json"
+            pipeline_path = BASE_DIR / "data" / "database" / "pipelines" / pipeline_filename
+            
+            if not pipeline_path.exists():
+                return {"error": f"No se encontró la configuración del pipeline"}
+                
+            ACTIVE_RUNNERS[workflow_id] = PipelineRunner(pipeline_path)
+
+        runner = ACTIVE_RUNNERS[workflow_id]
+        result = runner.step()
+
+        if result.get("finished"):
+            _update_last_run(workflow_id)
+            del ACTIVE_RUNNERS[workflow_id]
+
+        return result
+    except Exception as e:
+        if workflow_id in ACTIVE_RUNNERS:
+            del ACTIVE_RUNNERS[workflow_id] # Clean on error
+        return {"error": str(e)}
+
+@app.post("/api/workflows/{workflow_id}/reset")
+async def reset_workflow_session(workflow_id: int):
+    """Clears any active session for this workflow."""
+    if workflow_id in ACTIVE_RUNNERS:
+        del ACTIVE_RUNNERS[workflow_id]
+    return {"status": "success"}
 
 @app.get("/api/workflows/{workflow_id}/config")
 async def get_workflow_config(workflow_id: int):

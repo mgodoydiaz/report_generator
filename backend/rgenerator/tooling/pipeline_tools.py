@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, Type, List
+from typing import Dict, Type, List, Optional
 import re
 from rgenerator.etl.core.context import RunContext
 from rgenerator.etl.core.step import Step
@@ -50,7 +50,6 @@ def load_pipeline_from_json(json_path: str | Path) -> tuple[RunContext, List[Ste
             raise ValueError(f"Paso desconocido en el pipeline: {step_name}")
         
         # Instanciar el paso con sus parámetros
-        # Nota: La mayoría de los pasos en pipeline_steps.py usan los argumentos en el __init__
         step_class = STEP_MAPPING[step_name]
         
         try:
@@ -61,22 +60,59 @@ def load_pipeline_from_json(json_path: str | Path) -> tuple[RunContext, List[Ste
 
     return ctx, pipeline
 
+class PipelineRunner:
+    def __init__(self, json_path: str | Path):
+        self.ctx, self.pipeline = load_pipeline_from_json(json_path)
+        self.current_step_index = 0
+        self.total_steps = len(self.pipeline)
+        self.status = "IDLE" # IDLE, RUNNING, COMPLETED, FAILED
+
+    def step(self):
+        """Ejecuta el siguiente paso."""
+        if self.current_step_index >= self.total_steps:
+            self.status = "COMPLETED"
+            return {"status": "completed", "message": "Pipeline completed"}
+
+        step = self.pipeline[self.current_step_index]
+        self.status = "RUNNING"
+        
+        try:
+            print(f"-- Running step {self.current_step_index + 1}/{self.total_steps}: {step.__class__.__name__}")
+            step.run(self.ctx)
+            
+            self.current_step_index += 1
+            if self.current_step_index >= self.total_steps:
+                self.status = "COMPLETED"
+            
+            return {
+                "status": "success", 
+                "step_index": self.current_step_index - 1, # Index executed
+                "next_index": self.current_step_index,
+                "step_name": step.__class__.__name__,
+                "artifacts": list(self.ctx.artifacts.keys()),
+                "finished": self.status == "COMPLETED"
+            }
+        except Exception as e:
+            self.status = "FAILED"
+            raise e
+
+    def run_all(self):
+        """Ejecuta todos los pasos restantes."""
+        results = []
+        while self.current_step_index < self.total_steps:
+            res = self.step()
+            results.append(res)
+        return results
+
 def run_pipeline(json_path: str | Path):
     """
     Ejecuta un pipeline completo desde un archivo JSON.
+    Wrapper para compatibilidad con código existente.
     """
     try:
-        ctx, pipeline = load_pipeline_from_json(json_path)
-        
-        for step in pipeline:
-            print()
-            print("-"*20)
-            print(os.getcwd())
-            print(step.__class__.__name__)
-            step.run(ctx)
-            ctx.show_attrs()
-            
-        return {"status": "success", "message": "Pipeline ejecutado correctamente", "artifacts": list(ctx.artifacts.keys())}
+        runner = PipelineRunner(json_path)
+        runner.run_all()
+        return {"status": "success", "message": "Pipeline ejecutado correctamente", "artifacts": list(runner.ctx.artifacts.keys())}
     
     except Exception as e:
         return {"status": "error", "message": str(e)}

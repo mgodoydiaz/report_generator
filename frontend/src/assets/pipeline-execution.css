@@ -1,0 +1,47 @@
+/* Estilos específicos para el Modal de Ejecución de Pipeline */
+
+/* Barras de desplazamiento personalizadas más estéticas y accesibles */
+.pipeline-scrollbar::-webkit-scrollbar {
+    width: 8px;
+    /* Ancho suficiente para facilitar la interacción */
+}
+
+.pipeline-scrollbar::-webkit-scrollbar-track {
+    background: #f3f4f6;
+    /* Fondo gris claro suave */
+}
+
+.pipeline-scrollbar::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    /* Pulgar gris visible */
+    border-radius: 10px;
+    border: 2px solid #f3f4f6;
+    /* Borde blanco para efecto "flotante" */
+}
+
+.pipeline-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+    /* Oscurecer al pasar el mouse */
+}
+
+/* Línea vertical dinámica que conecta los pasos del proceso */
+.pipeline-step-line {
+    width: 2px;
+    /* El background (gradiente de progreso) se inyecta vía inline-style en el componente */
+    background: #e5e7eb;
+    position: absolute;
+    left: 50%;
+    top: 16px;
+    /* Inicia en el centro visual del primer círculo */
+    bottom: 0px;
+    transform: translateX(-50%);
+    z-index: 0;
+    /* Se mantiene detrás de los nodos circulares */
+    transition: background 0.5s ease;
+    /* Transición suave del color de progreso */
+}
+
+/* Contenedor con scroll suave para la lista de pasos */
+.pipeline-steps-viewport {
+    scroll-behavior: smooth;
+}
