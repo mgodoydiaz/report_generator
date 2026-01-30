@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, ChevronUp, ChevronDown
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { STEP_OPTIONS, FORMAT_OPTIONS } from '../constants';
 
 /**
@@ -132,7 +133,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                 console.error("Error parsing JSON params for step", s.step, e);
                 // Si no es JSON válido, lo enviamos como string o lo dejamos vacío?
                 // Mejor alertar al usuario si no es válido
-                alert(`Error en el JSON del paso "${s.step}": Parámetros inválidos.`);
+                toast.error(`Error en el JSON del paso "${s.step}": Parámetros inválidos.`);
                 throw e; // Detener el guardado
             }
             return {

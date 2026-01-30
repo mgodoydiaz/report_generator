@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout } from 'lucide-react';
+import toast from 'react-hot-toast';
 import NewTemplateDrawer from '../components/NewTemplateDrawer';
 
 export default function Templates() {
@@ -48,7 +49,7 @@ export default function Templates() {
             setIsDrawerOpen(true);
         } catch (err) {
             console.error(err);
-            alert("No se pudo cargar la configuración de la plantilla.");
+            toast.error("No se pudo cargar la configuración de la plantilla.");
         } finally {
             setLoading(false);
         }
@@ -83,7 +84,7 @@ export default function Templates() {
             const data = await response.json();
 
             if (data.status === 'success') {
-                alert(data.message);
+                toast.success(data.message);
                 setIsDrawerOpen(false);
                 fetchTemplates();
             } else {
@@ -91,7 +92,7 @@ export default function Templates() {
             }
         } catch (err) {
             console.error(err);
-            alert("Error al guardar la plantilla: " + err.message);
+            toast.error("Error al guardar la plantilla: " + err.message);
         }
     };
 

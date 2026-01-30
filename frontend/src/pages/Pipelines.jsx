@@ -1,5 +1,6 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
+import toast from 'react-hot-toast';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
@@ -59,7 +60,7 @@ export default function Pipelines() {
       setEditingData(configData);
       setIsDrawerOpen(true);
     } catch (err) {
-      alert("Error al cargar configuración: " + err.message);
+      toast.error("Error al cargar configuración: " + err.message);
     }
   };
 
@@ -85,9 +86,10 @@ export default function Pipelines() {
       const result = await saveResponse.json();
       if (result.error) throw new Error(result.error);
 
+      toast.success("Proceso duplicado correctamente");
       fetchPipelines();
     } catch (err) {
-      alert("Error al duplicar: " + err.message);
+      toast.error("Error al duplicar: " + err.message);
     }
   };
 
@@ -113,10 +115,11 @@ export default function Pipelines() {
       const result = await response.json();
       if (result.error) throw new Error(result.error);
 
+      toast.success(editingPipelineId ? "Configuración actualizada" : "Nuevo proceso creado");
       setIsDrawerOpen(false);
       fetchPipelines();
     } catch (err) {
-      alert("Error al guardar: " + err.message);
+      toast.error("Error al guardar: " + err.message);
     }
   };
 
@@ -132,9 +135,10 @@ export default function Pipelines() {
       const result = await response.json();
       if (result.error) throw new Error(result.error);
 
+      toast.success("Proceso eliminado");
       fetchPipelines();
     } catch (err) {
-      alert("Error al eliminar: " + err.message);
+      toast.error("Error al eliminar: " + err.message);
     }
   };
 

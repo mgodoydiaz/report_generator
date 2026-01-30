@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, Upload, FileText, FastForward, Square, StepForward } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import '../assets/pipeline-execution.css';
 
@@ -81,7 +82,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         if (requestStep && status === 'requesting_files') {
             const missing = requestStep.params.file_specs.filter(spec => !userFiles[spec.id] || userFiles[spec.id].length === 0);
             if (missing.length > 0) {
-                alert(`Por favor sube los archivos requeridos: ${missing.map(m => m.label).join(', ')}`);
+                toast.error(`Faltan archivos: ${missing.map(m => m.label).join(', ')}`);
                 return;
             }
         }
@@ -146,9 +147,10 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
             if (result.status === 'success') {
                 if (finalState) {
-                    setCurrentStepIndex(steps.length); // Marcar todo como completo visualmente
+                    setCurrentStepIndex(totalSteps); // Marcar todo como completo visualmente
                     setExecutionResult(result);
                     setStatus('success');
+                    toast.success("¡Pipeline completado con éxito!");
                 } else {
                     // Si no ha terminado, volvemos a idle para esperar el siguiente click
                     setStatus('idle');
