@@ -18,7 +18,7 @@ const charts = [
   { src: "/data/output/distribucion_puntaje_simce_por_curso.png", caption: "Distribución de puntajes" },
 ];
 
-export default function Resultados() {
+export default function Results() {
   return (
     <div className="max-w-6xl mx-auto space-y-10">
       {/* Header section */}

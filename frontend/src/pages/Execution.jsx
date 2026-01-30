@@ -3,7 +3,7 @@ import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock, ArrowR
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
 
-export default function Ejecucion() {
+export default function Execution() {
     const [pipelines, setPipelines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");

@@ -21,8 +21,6 @@ export default function Sidebar() {
       : "text-slate-600 hover:bg-slate-100 hover:text-indigo-600"
     }`;
 
-  const staticLinkClass = "flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium text-slate-600 hover:bg-slate-100 hover:text-indigo-600 transition-all";
-
   const sectionHeaderClass = "px-4 pt-6 pb-2 text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2";
 
   return (
@@ -46,15 +44,15 @@ export default function Sidebar() {
           <Activity size={12} className="text-indigo-500" />
           Operaciones
         </div>
-        <NavLink to="/ejecucion" className={linkClass}>
+        <NavLink to="/execution" className={linkClass}>
           <Play size={18} />
           Ejecución
         </NavLink>
-        <NavLink to="/valores" className={linkClass}>
+        <NavLink to="/values" className={linkClass}>
           <BookSearch size={18} />
           Valores
         </NavLink>
-        <NavLink to="/resultados" className={linkClass}>
+        <NavLink to="/results" className={linkClass}>
           <ChartColumn size={18} />
           Resultados
         </NavLink>
@@ -64,15 +62,15 @@ export default function Sidebar() {
           <Settings size={12} className="text-amber-500" />
           Configuración
         </div>
-        <NavLink to="/dimensiones" className={linkClass}>
+        <NavLink to="/dimensions" className={linkClass}>
           <Layers size={18} />
           Dimensiones
         </NavLink>
-        <NavLink to="/metricas" className={linkClass}>
+        <NavLink to="/metrics" className={linkClass}>
           <Box size={18} />
           Métricas
         </NavLink>
-        <NavLink to="/plantillas" className={linkClass}>
+        <NavLink to="/templates" className={linkClass}>
           <Notebook size={18} />
           Plantillas
         </NavLink>
@@ -83,7 +81,7 @@ export default function Sidebar() {
       </nav>
 
       <div className="p-4 mt-auto border-t border-slate-100 space-y-1 text-left">
-        <NavLink to="/ayuda" className={linkClass}>
+        <NavLink to="/help" className={linkClass}>
           <CircleHelp size={18} />
           Ayuda
         </NavLink>
