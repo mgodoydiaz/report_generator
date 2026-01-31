@@ -9,7 +9,7 @@ export const API_BASE_URL = "http://localhost:8000/api";
 // Opciones de formatos de entrada y salida permitidos
 export const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG"];
 
-// Lista de pasos disponibles para configurar en los procesos
+// Lista de pasos disponibles
 export const STEP_OPTIONS = [
     "InitRun",
     "LoadConfig",
@@ -24,6 +24,22 @@ export const STEP_OPTIONS = [
     "GenerateDocxReport",
     "DeleteTempFiles"
 ];
+
+// Traducciones a lenguaje humano para los pasos técnicos
+export const STEP_TRANSLATIONS = {
+    "InitRun": "Inicializar Proceso",
+    "LoadConfig": "Cargar Configuración",
+    "DiscoverInputs": "Identificar Archivos",
+    "RequestUserFiles": "Cargar Archivos",
+    "RunExcelETL": "Procesar Datos",
+    "EnrichWithContext": "Enriquecer Información",
+    "ExportConsolidatedExcel": "Exportar Datos",
+    "GenerateGraphics": "Crear Gráficos",
+    "GenerateTables": "Preparar Tablas",
+    "RenderReport": "Generar Informe",
+    "GenerateDocxReport": "Generar Documento",
+    "DeleteTempFiles": "Limpiar Archivos"
+};
 
 // Mapeo de colores y estilos para los formatos de archivo
 export const FORMAT_COLORS = {

@@ -1,5 +1,5 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Play, Trash2, Plus, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
+import { Settings, Play, Trash2, Plus, PlusCircle, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
@@ -163,8 +163,10 @@ export default function Pipelines() {
   }, [pipelines, busqueda, sortConfig]);
 
   const SortIcon = ({ columnKey }) => {
-    if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} className="text-slate-300" />;
-    return sortConfig.direction === 'asc' ? <ChevronUp size={12} className="text-indigo-600" /> : <ChevronDown size={12} className="text-indigo-600" />;
+    if (sortConfig.key !== columnKey) return <ArrowUpDown size={14} className="text-slate-300 dark:text-slate-600" />;
+    return sortConfig.direction === 'asc'
+      ? <ChevronUp size={14} className="text-indigo-600 dark:text-indigo-400" />
+      : <ChevronDown size={14} className="text-indigo-600 dark:text-indigo-400" />;
   };
 
   return (
@@ -172,13 +174,13 @@ export default function Pipelines() {
       {/* Header section con Título Principal y Stats rápidos */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
-          <h1 className="text-4xl font-black text-slate-800 tracking-tight flex items-center gap-3">
-            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
+          <h1 className="text-4xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-3">
+            <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100 dark:shadow-indigo-900/20">
               <Workflow size={22} />
             </div>
             Gestión de Procesos
           </h1>
-          <p className="text-slate-400 text-sm font-medium">
+          <p className="text-slate-400 dark:text-slate-500 text-sm font-medium">
             Administra los flujos de trabajo, automatizaciones y scripts de procesamiento.
           </p>
         </div>
@@ -201,29 +203,29 @@ export default function Pipelines() {
       </div>
 
       {/* Filter & Search Bar */}
-      <div className="flex items-center gap-3 bg-slate-100/50 p-2 rounded-2xl border border-slate-200/50">
+      <div className="flex items-center gap-3 bg-slate-100/50 dark:bg-slate-900/50 p-2 rounded-2xl border border-slate-200/50 dark:border-slate-800/50 transition-colors">
         <div className="relative flex-1">
-          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400" />
+          <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
           <input
             type="text"
             placeholder="Buscar por proceso, descripción o tag..."
-            className="w-full bg-transparent border-none py-3 pl-12 pr-4 focus:ring-0 text-sm text-slate-600 placeholder:text-slate-400 font-medium"
+            className="w-full bg-transparent border-none py-3 pl-12 pr-4 focus:ring-0 text-sm text-slate-600 dark:text-slate-300 placeholder:text-slate-400 font-medium"
             value={busqueda}
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
-        <div className="h-6 w-px bg-slate-300 mx-2"></div>
-        <div className="px-4 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+        <div className="h-6 w-px bg-slate-300 dark:bg-slate-700 mx-2"></div>
+        <div className="px-4 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
           {sortedAndFilteredPipelines.length} Procesos
         </div>
       </div>
 
       {/* Table Card */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden text-left">
+      <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden text-left transition-colors font-sans">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100">
+              <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                 <th
                   className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
                   onClick={() => handleSort('pipeline')}
@@ -271,13 +273,13 @@ export default function Pipelines() {
                 </tr>
               ) : sortedAndFilteredPipelines.length > 0 ? (
                 sortedAndFilteredPipelines.map((p) => (
-                  <tr key={p.id_evaluation} className="hover:bg-slate-50/80 transition-colors group">
+                  <tr key={p.id_evaluation} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 border-b border-slate-50 dark:border-slate-800/50 transition-colors group">
                     <td className="p-5">
-                      <div className="font-bold text-slate-700">
+                      <div className="font-bold text-slate-700 dark:text-slate-200">
                         {p.pipeline}
                       </div>
                     </td>
-                    <td className="p-5 text-slate-500 text-sm">
+                    <td className="p-5 text-slate-500 dark:text-slate-400 text-sm">
                       {p.description}
                     </td>
                     <td className="p-5">
@@ -291,7 +293,7 @@ export default function Pipelines() {
                         </span>
                       </div>
                     </td>
-                    <td className="p-5 text-slate-500 text-sm font-medium">
+                    <td className="p-5 text-slate-500 dark:text-slate-400 text-sm font-medium">
                       {p.last_run || "Nunca"}
                     </td>
                     <td className="p-5 text-right flex justify-end gap-1">
@@ -300,30 +302,30 @@ export default function Pipelines() {
                           onClick={() => handleRunPipeline(p)}
                           disabled={executingId === p.id_evaluation}
                           className={`p-2 rounded-xl transition-all ${executingId === p.id_evaluation
-                            ? 'bg-slate-100 text-slate-400'
-                            : 'text-indigo-600 hover:text-indigo-700 hover:bg-indigo-50'
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600'
+                            : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
                             }`}
                           title="Ejecutar"
                         >
                           <Play size={18} fill={executingId === p.id_evaluation ? "none" : "currentColor"} className={executingId === p.id_evaluation ? "animate-spin" : ""} />
                         </button>
                         <button
-                          onClick={() => handleDuplicatePipeline(p.id_evaluation)}
-                          className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-xl transition-all"
-                          title="Duplicar"
-                        >
-                          <Copy size={18} />
-                        </button>
-                        <button
                           onClick={() => handleEditPipeline(p.id_evaluation)}
-                          className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
-                          title="Configurar"
+                          className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                          title="Editar"
                         >
                           <Settings size={18} />
                         </button>
                         <button
+                          onClick={() => handleDuplicatePipeline(p.id_evaluation)}
+                          className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
+                          title="Duplicar"
+                        >
+                          <PlusCircle size={18} />
+                        </button>
+                        <button
                           onClick={() => handleDeletePipeline(p.id_evaluation, p.pipeline)}
-                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                          className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
                           title="Eliminar"
                         >
                           <Trash2 size={18} />

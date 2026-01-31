@@ -1,7 +1,9 @@
 ﻿@import "tailwindcss";
 
-/* 
-  Global Styles 
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Global Styles
   Estilos generales de la aplicación.
   Los estilos específicos de componentes deben ir en sus propios archivos CSS (ej. pipeline-execution.css)
 */

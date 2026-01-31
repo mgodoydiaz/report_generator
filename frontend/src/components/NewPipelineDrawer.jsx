@@ -3,7 +3,11 @@ import {
     X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, ChevronUp, ChevronDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { STEP_OPTIONS, FORMAT_OPTIONS } from '../constants';
+import Editor from 'react-simple-code-editor';
+import { highlight, languages } from 'prismjs/components/prism-core';
+import 'prismjs/components/prism-json';
+import 'prismjs/themes/prism.css'; // Light theme
+import { STEP_OPTIONS, FORMAT_OPTIONS, STEP_TRANSLATIONS } from '../constants';
 
 /**
  * Componente NewPipelineDrawer
@@ -22,7 +26,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         context: [
             { key: "base_dir", value: "./backend/tests" }
         ],
-        pipeline: [{ step: "", params: "" }]
+        pipeline: [{ step: "", description: "", params: "" }]
     });
 
     // Cargar datos iniciales al abrir o cambiar initialData
@@ -38,6 +42,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                 // Transformar pipeline para pasar params a string JSON
                 const pipelineArray = (initialData.pipeline || []).map(s => ({
                     step: s.step || "",
+                    description: s.description || "",
                     params: s.params ? JSON.stringify(s.params, null, 2) : ""
                 }));
 
@@ -47,7 +52,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                     input: initialData.workflow_metadata?.input || "EXCEL",
                     output: initialData.workflow_metadata?.output || "XLSX",
                     context: contextArray.length > 0 ? contextArray : [{ key: "base_dir", value: "./backend/tests" }],
-                    pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", params: "" }]
+                    pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", description: "", params: "" }]
                 });
             } else {
                 // Reset format for new pipeline
@@ -57,7 +62,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                     input: "EXCEL",
                     output: "XLSX",
                     context: [{ key: "base_dir", value: "./backend/tests" }],
-                    pipeline: [{ step: "", params: "" }]
+                    pipeline: [{ step: "", description: "", params: "" }]
                 });
             }
         }
@@ -88,7 +93,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     const addStep = () => {
         setFormData({
             ...formData,
-            pipeline: [...formData.pipeline, { step: "", params: "" }]
+            pipeline: [...formData.pipeline, { step: "", description: "", params: "" }]
         });
     };
 
@@ -138,6 +143,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
             }
             return {
                 step: s.step,
+                description: s.description,
                 params: parsedParams
             };
         });
@@ -327,24 +333,59 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                                         </button>
                                     </div>
                                     <div className="grid gap-3">
-                                        <select
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm outline-none bg-white focus:ring-2 focus:ring-indigo-500 appearance-none"
-                                            value={step.step}
-                                            onChange={(e) => updateStep(index, 'step', e.target.value)}
-                                        >
-                                            <option value="" disabled>Selecciona un paso...</option>
-                                            {STEP_OPTIONS.map(opt => (
-                                                <option key={opt} value={opt}>{opt}</option>
-                                            ))}
-                                        </select>
+                                        {/* Selector de Paso Humanizado */}
+                                        <div className="relative">
+                                            <select
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium outline-none bg-white focus:ring-2 focus:ring-indigo-500 appearance-none shadow-sm transition-all"
+                                                value={step.step}
+                                                onChange={(e) => updateStep(index, 'step', e.target.value)}
+                                            >
+                                                <option value="" disabled>Selecciona un paso...</option>
+                                                {STEP_OPTIONS.map(opt => (
+                                                    <option key={opt} value={opt}>
+                                                        {STEP_TRANSLATIONS[opt] || opt}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                                <ChevronDown size={16} />
+                                            </div>
+                                        </div>
 
-                                        <textarea
-                                            placeholder='Parámetros (JSON o Texto)'
-                                            rows="4"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-                                            value={step.params}
-                                            onChange={(e) => updateStep(index, 'params', e.target.value)}
-                                        />
+                                        {/* Instrucciones (Texto normal) */}
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Instrucciones</label>
+                                            <textarea
+                                                placeholder="Ej: Este paso limpia los archivos temporales..."
+                                                rows="2"
+                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white transition-all resize-none placeholder:text-slate-300"
+                                                value={step.description}
+                                                onChange={(e) => updateStep(index, 'description', e.target.value)}
+                                            />
+                                        </div>
+
+                                        {/* Parámetros (Code/JSON) con Syntax Highlighting */}
+                                        <div>
+                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Parámetros</label>
+                                            <div className="relative group/params border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                                                <Editor
+                                                    value={step.params}
+                                                    onValueChange={code => updateStep(index, 'params', code)}
+                                                    highlight={code => highlight(code, languages.json)}
+                                                    padding={16}
+                                                    placeholder='{ "key": "value" }'
+                                                    className="font-mono text-[13px] bg-white min-h-[120px] outline-none"
+                                                    textareaClassName="outline-none focus:ring-0"
+                                                    style={{
+                                                        fontFamily: '"Fira Code", "Fira Mono", "Cascadia Code", Menlo, Courier, monospace',
+                                                        fontSize: 13,
+                                                    }}
+                                                />
+                                                <div className="absolute right-3 top-3 p-1 bg-slate-100 rounded text-[10px] text-slate-400 font-bold opacity-0 group-hover/params:opacity-100 transition-opacity uppercase tracking-tight pointer-events-none z-10">
+                                                    JSON
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             ))}

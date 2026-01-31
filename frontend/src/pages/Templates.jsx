@@ -124,10 +124,10 @@ export default function Templates() {
     }, [templates, busqueda, sortConfig]);
 
     const SortIcon = ({ columnKey }) => {
-        if (sortConfig.key !== columnKey) return <ArrowUpDown size={12} className="opacity-30" />;
-        return sortConfig.direction === 'asc' ?
-            <ChevronUp size={12} className="text-indigo-600" /> :
-            <ChevronDown size={12} className="text-indigo-600" />;
+        if (sortConfig.key !== columnKey) return <ArrowUpDown size={14} className="text-slate-300 dark:text-slate-600" />;
+        return sortConfig.direction === 'asc'
+            ? <ChevronUp size={14} className="text-indigo-600 dark:text-indigo-400" />
+            : <ChevronDown size={14} className="text-indigo-600 dark:text-indigo-400" />;
     };
 
     return (
@@ -135,27 +135,27 @@ export default function Templates() {
             {/* Header */}
             <div className="flex items-start justify-between mb-8">
                 <div>
-                    <h1 className="text-3xl font-extrabold text-slate-800 flex items-center gap-3 tracking-tight">
-                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100">
+                    <h1 className="text-4xl font-black text-slate-800 dark:text-white tracking-tight flex items-center gap-3">
+                        <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100 dark:shadow-indigo-900/20">
                             <FileText size={24} />
                         </div>
                         Plantillas
                     </h1>
-                    <p className="text-slate-500 mt-2 text-sm font-medium">
+                    <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm font-medium">
                         Gestión de plantillas de informes y dashboards.
                     </p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex items-center gap-2">
                     <button
                         onClick={fetchTemplates}
-                        className="bg-white hover:bg-slate-50 text-slate-600 p-2.5 rounded-xl border border-slate-200 transition-all shadow-sm"
+                        className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 transition-all shadow-sm"
                         title="Refrescar datos"
                     >
                         <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
                     </button>
                     <button
                         onClick={handleOpenNewTemplate}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 flex items-center gap-2"
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 dark:shadow-indigo-900/20 flex items-center gap-2"
                     >
                         <Plus size={20} strokeWidth={3} />
                         Nueva Plantilla
@@ -166,12 +166,12 @@ export default function Templates() {
             {/* Search */}
             <div className="relative mb-6">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                    <Search className="h-5 w-5 text-slate-400" />
+                    <Search className="h-5 w-5 text-slate-400 dark:text-slate-500" />
                 </div>
                 <input
                     type="text"
                     placeholder="Buscar por nombre o descripción..."
-                    className="block w-full pl-12 pr-4 py-3.5 border border-slate-200 rounded-2xl bg-white focus:outline-none focus:ring-4 focus:ring-indigo-100 transition-all text-slate-600 placeholder:text-slate-400"
+                    className="block w-full pl-12 pr-4 py-3.5 border border-slate-200 dark:border-slate-800 rounded-2xl bg-white dark:bg-slate-900 focus:outline-none focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/20 transition-all text-slate-600 dark:text-slate-200 placeholder:text-slate-400"
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
                 />
@@ -184,11 +184,11 @@ export default function Templates() {
             )}
 
             {/* Table Card */}
-            <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden text-left">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden text-left transition-colors font-sans">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                         <thead>
-                            <tr className="bg-slate-50/50 border-b border-slate-100">
+                            <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
                                 <th
                                     className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors"
                                     onClick={() => handleSort('name')}
@@ -224,7 +224,7 @@ export default function Templates() {
                                 <th className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest text-right">Acciones</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
                             {loading ? (
                                 <tr>
                                     <td colSpan="5" className="p-12 text-center text-slate-400">
@@ -236,36 +236,36 @@ export default function Templates() {
                                 </tr>
                             ) : sortedAndFilteredTemplates.length > 0 ? (
                                 sortedAndFilteredTemplates.map((template) => (
-                                    <tr key={template.id_template} className="hover:bg-slate-50/80 transition-colors group">
-                                        <td className="p-5">
-                                            <div className="font-bold text-slate-700">{template.name}</div>
+                                    <tr key={template.id_template} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
+                                        <td className="p-5 text-left">
+                                            <div className="font-bold text-slate-700 dark:text-slate-200">{template.name}</div>
                                         </td>
-                                        <td className="p-5 text-slate-500 text-sm">
+                                        <td className="p-5 text-slate-500 dark:text-slate-400 text-sm text-left">
                                             {template.description}
                                         </td>
-                                        <td className="p-5">
+                                        <td className="p-5 text-left">
                                             <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${template.type === 'Dashboard'
-                                                ? 'bg-purple-100 text-purple-600'
-                                                : 'bg-blue-100 text-blue-600'
+                                                ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
+                                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                                                 }`}>
                                                 {template.type}
                                             </span>
                                         </td>
-                                        <td className="p-5 text-slate-500 text-sm font-medium">
+                                        <td className="p-5 text-slate-500 dark:text-slate-400 text-sm font-medium">
                                             {template.updated_at}
                                         </td>
                                         <td className="p-5 text-right flex justify-end gap-1">
                                             <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
                                                     onClick={() => handleEditTemplate(template.id_template)}
-                                                    className="p-2 text-slate-300 hover:text-slate-500 hover:bg-slate-100 rounded-xl transition-all"
+                                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
                                                     title="Configurar"
                                                 >
                                                     <Settings size={18} />
                                                 </button>
                                                 <button
                                                     onClick={() => handleDeleteTemplate(template.id_template)}
-                                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
                                                     title="Eliminar"
                                                 >
                                                     <Trash2 size={18} />

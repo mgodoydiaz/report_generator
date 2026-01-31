@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, Upload, FileText, FastForward, Square, StepForward } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_BASE_URL } from '../constants';
+import { API_BASE_URL, STEP_TRANSLATIONS } from '../constants';
 import '../assets/pipeline-execution.css';
 
 /**
@@ -243,7 +243,6 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     <div className="mb-6 border-b border-slate-100 pb-4">
                         <h1 className="text-xs font-bold text-indigo-500 uppercase tracking-tight mb-1">Ejecución de Proceso</h1>
                         <h2 className="text-2xl font-light text-slate-800">{pipelineName}</h2>
-                        <p className="text-xs text-slate-400 mt-1 font-mono">{pipelineId}</p>
                     </div>
 
                     <div className="flex-1">
@@ -294,7 +293,9 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                                 <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100 relative overflow-hidden">
                                     <div className="absolute top-0 right-0 w-32 h-32 bg-indigo-50 rounded-full blur-3xl -mr-16 -mt-16 opacity-50"></div>
-                                    <h3 className="text-lg font-bold text-slate-800 mb-2">{currentStepData.step}</h3>
+                                    <h3 className="text-lg font-bold text-slate-800 mb-2">
+                                        {STEP_TRANSLATIONS[currentStepData.step] || currentStepData.step}
+                                    </h3>
                                     <p className="text-slate-600 text-sm leading-relaxed">
                                         {currentStepData.description || "Esperando confirmación para ejecutar este paso..."}
                                     </p>

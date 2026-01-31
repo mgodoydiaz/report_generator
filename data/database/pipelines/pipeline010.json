@@ -1,9 +1,9 @@
 {
     "workflow_metadata": {
-        "name": "SIMCE Lenguaje (Copia)",
-        "description": "Workflow SIMCE",
+        "name": "Proceso de prueba",
+        "description": "Testing pipeline",
         "input": "EXCEL",
-        "output": "XLSX"
+        "output": "PDF"
     },
     "context": {
         "base_dir": "tests"
@@ -11,32 +11,40 @@
     "pipeline": [
         {
             "step": "InitRun",
+            "description": "",
             "params": {
                 "inputs_dir": "tests/input_test/inputs/Lenguaje/inputs"
             }
         },
         {
             "step": "LoadConfig",
+            "description": "",
             "params": {
                 "config_path": "./tests/config_dir/simce_estudiantes_lenguaje.json"
             }
         },
         {
             "step": "RequestUserFiles",
-            "params": {}
+            "description": "Cargue los archivos de puntajes asociado a los estudiantes",
+            "params": {
+                "input_key": "estudiantes"
+            }
         },
         {
             "step": "RunExcelETL",
+            "description": "",
             "params": {
                 "input_key": "estudiantes"
             }
         },
         {
             "step": "EnrichWithContext",
+            "description": "",
             "params": {}
         },
         {
             "step": "ExportConsolidatedExcel",
+            "description": "",
             "params": {}
         }
     ]

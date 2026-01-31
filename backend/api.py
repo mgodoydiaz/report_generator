@@ -4,6 +4,7 @@ import pandas as pd
 from pathlib import Path
 import os
 import shutil
+import json
 from typing import List, Dict
 
 app = FastAPI()
@@ -25,6 +26,9 @@ TEMPLATES_DIR = BASE_DIR / "data" / "database" / "reports_templates"
 
 # Store active sessions in memory
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
+from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
+
+
 
 ACTIVE_RUNNERS: Dict[int, PipelineRunner] = {}
 
@@ -165,7 +169,6 @@ async def get_workflow_config(workflow_id: int):
         }
 
         if pipeline_path.exists():
-            import json
             with open(pipeline_path, 'r', encoding='utf-8') as f:
                 json_config = json.load(f)
                 # El JSON manda sobre la estructura técnica, pero el Excel sobre la metadata visible
@@ -216,10 +219,14 @@ async def save_workflow_config(workflow_id: int, config: dict):
         pipeline_dir.mkdir(parents=True, exist_ok=True)
         pipeline_path = pipeline_dir / pipeline_filename
         
-        import json
         with open(pipeline_path, 'w', encoding='utf-8') as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
         
+        # Preparar resumen de pasos y el JSON completo para el Excel
+        steps_list = config.get("pipeline", [])
+        steps_text = " -> ".join([s.get("step", "Sin nombre") for s in steps_list])
+        config_json_text = safe_json_to_text(config)
+
         # Actualizar o insertar en el Excel
         try:
             if is_new:
@@ -227,6 +234,8 @@ async def save_workflow_config(workflow_id: int, config: dict):
                     'id_evaluation': target_id,
                     'pipeline': metadata.get("name", "Nuevo Proceso"),
                     'description': metadata.get("description", ""),
+                    'steps': steps_text,
+                    'config_json': config_json_text,
                     'input': str(metadata.get("input", "EXCEL")).upper(),
                     'output': str(metadata.get("output", "XLSX")).upper(),
                     'last_run': ''
@@ -237,6 +246,10 @@ async def save_workflow_config(workflow_id: int, config: dict):
                     df.loc[df['id_evaluation'] == target_id, 'pipeline'] = metadata.get("name")
                 if metadata.get("description"):
                     df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
+                
+                df.loc[df['id_evaluation'] == target_id, 'steps'] = steps_text
+                df.loc[df['id_evaluation'] == target_id, 'config_json'] = config_json_text
+                
                 if metadata.get("input"):
                     df.loc[df['id_evaluation'] == target_id, 'input'] = str(metadata.get("input")).upper()
                 if metadata.get("output"):
@@ -342,7 +355,6 @@ async def save_template_config(template_id: int, config: dict):
             "secciones_dinamicas": config.get("secciones_dinamicas", [])
         }
         
-        import json
         with open(file_path, 'w', encoding='utf-8') as f:
             json.dump(json_data, f, indent=4, ensure_ascii=False)
             
