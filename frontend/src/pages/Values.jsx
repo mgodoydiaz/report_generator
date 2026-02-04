@@ -1,14 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle } from 'lucide-react';
+import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import NewValueDrawer from '../components/NewValueDrawer';
 import ExportModal from '../components/ExportModal';
+import ImportModal from '../components/ImportModal';
+import ConfirmModal from '../components/ConfirmModal';
 
 export default function Values() {
     const [metrics, setMetrics] = useState([]);
     const [selectedMetric, setSelectedMetric] = useState(null);
     const [metricData, setMetricData] = useState([]);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [editingData, setEditingData] = useState(null); // Dato siendo editado
     const [dimensionsMap, setDimensionsMap] = useState({}); // {dimId: {name, values: {valId: label}}} para renderizado rápido
     const [loadingMetrics, setLoadingMetrics] = useState(true);
     const [loadingData, setLoadingData] = useState(false);
@@ -17,6 +21,8 @@ export default function Values() {
     // UI States
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+    const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+    const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
     useEffect(() => {
         loadInitialData();
@@ -25,8 +31,10 @@ export default function Values() {
     useEffect(() => {
         if (selectedMetric) {
             loadMetricData(selectedMetric.id_metric);
+            setSelectedIds(new Set()); // Limpiar selección al cambiar métrica
         } else {
             setMetricData([]);
+            setSelectedIds(new Set());
         }
     }, [selectedMetric]);
 
@@ -99,6 +107,60 @@ export default function Values() {
         }
     };
 
+    // Selección
+    const toggleSelect = (id) => {
+        const newSet = new Set(selectedIds);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setSelectedIds(newSet);
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === metricData.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(metricData.map(d => d.id_data)));
+        }
+    };
+
+    const handleAddValue = () => {
+        setEditingData(null); // Modo creación
+        if (!selectedMetric) {
+            toast.error("Selecciona una métrica primero");
+            return;
+        }
+        setIsDrawerOpen(true);
+    };
+
+    const handleEditValue = (row) => {
+        setEditingData(row);
+        setIsDrawerOpen(true);
+    };
+
+    const handleBatchDeleteClick = () => {
+        if (selectedIds.size === 0) return;
+        setIsDeleteModalOpen(true);
+    };
+
+    const confirmBatchDelete = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/metrics/data/batch-delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(selectedIds) })
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            toast.success(`Eliminados ${data.deleted_count} registros`);
+            loadMetricData(selectedMetric.id_metric);
+            setSelectedIds(new Set());
+            setIsDeleteModalOpen(false);
+        } catch (error) {
+            toast.error("Error eliminando: " + error.message);
+        }
+    };
+
     const handleExportClick = () => {
         if (!selectedMetric) return;
         setIsExportModalOpen(true);
@@ -129,8 +191,51 @@ export default function Values() {
         }
     };
 
-    const handleImport = () => {
-        toast("Funcionalidad de Importación Masiva en camino", { icon: '🚧' });
+    const handleImportClick = () => {
+        if (!selectedMetric) return;
+        setIsImportModalOpen(true);
+    };
+
+    const handleImportConfirm = async (files) => {
+        try {
+            const formData = new FormData();
+            files.forEach(file => {
+                formData.append('files', file);
+            });
+
+            const res = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/import`, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (data.error) throw new Error(data.error || "Error importing data");
+
+            toast.success(`Importados ${data.imported} registros correctamente`);
+            loadMetricData(selectedMetric.id_metric); // Recargar tabla
+        } catch (error) {
+            console.error(error);
+            toast.error("Error al importar: " + error.message);
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/template`);
+            if (!response.ok) throw new Error("Error generando plantilla");
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Plantilla_${selectedMetric.name.replace(/\s+/g, '_')}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (error) {
+            toast.error(error.message);
+        }
     };
 
     const filteredMetrics = useMemo(() => {
@@ -242,19 +347,27 @@ export default function Values() {
                                 </h1>
                                 <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedMetric.description}</p>
                             </div>
-                            <div className="flex gap-2">
+                            <div className="flex gap-2 items-center">
+                                {selectedIds.size > 0 && (
+                                    <button
+                                        onClick={handleBatchDeleteClick}
+                                        className="flex items-center gap-2 px-3 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-transparent rounded-xl text-sm font-bold transition-all animate-in zoom-in duration-200 mr-2"
+                                    >
+                                        <Trash2 size={16} /> Eliminar ({selectedIds.size})
+                                    </button>
+                                )}
                                 <button onClick={() => toast("Filtros próximamente", { icon: '🚧' })} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl border border-transparent hover:border-slate-200 transition-all" title="Filtrar">
                                     <Filter size={18} />
                                 </button>
                                 <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                                <button onClick={handleImport} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                <button onClick={handleImportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
                                     <Upload size={16} /> Importar
                                 </button>
                                 <button onClick={handleExportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
                                     <Download size={16} /> Exportar
                                 </button>
                                 <button
-                                    onClick={() => setIsDrawerOpen(true)}
+                                    onClick={handleAddValue}
                                     className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95 ml-2"
                                 >
                                     <Plus size={18} strokeWidth={3} /> Agregar Valor
@@ -267,6 +380,14 @@ export default function Values() {
                             <table className="w-full text-left border-collapse">
                                 <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                                     <tr>
+                                        <th className="p-4 w-10 border-b border-slate-200 dark:border-slate-700">
+                                            <input
+                                                type="checkbox"
+                                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                checked={metricData.length > 0 && selectedIds.size === metricData.length}
+                                                onChange={toggleSelectAll}
+                                            />
+                                        </th>
                                         {dynamicColumns.map(col => (
                                             <th key={col.key} className="p-4 font-bold text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
                                                 {col.label}
@@ -284,13 +405,21 @@ export default function Values() {
                                                 <div className="flex flex-col items-center gap-3 text-slate-300">
                                                     <AlertCircle size={32} />
                                                     <p className="font-medium">No hay datos registrados aún.</p>
-                                                    <button onClick={() => setIsDrawerOpen(true)} className="text-indigo-500 hover:underline text-sm">Agregar el primer valor</button>
+                                                    <button onClick={handleAddValue} className="text-indigo-500 hover:underline text-sm">Agregar el primer valor</button>
                                                 </div>
                                             </td>
                                         </tr>
                                     ) : (
                                         metricData.map(row => (
-                                            <tr key={row.id_data} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 group transition-colors">
+                                            <tr key={row.id_data} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 group transition-colors ${selectedIds.has(row.id_data) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}>
+                                                <td className="p-4 border-b border-slate-50 dark:border-slate-800/50">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                                        checked={selectedIds.has(row.id_data)}
+                                                        onChange={() => toggleSelect(row.id_data)}
+                                                    />
+                                                </td>
                                                 {dynamicColumns.map(col => {
                                                     let cellContent = '-';
                                                     if (col.isDim) {
@@ -321,12 +450,22 @@ export default function Values() {
                                                     );
                                                 })}
                                                 <td className="p-4 text-right border-b border-slate-50 dark:border-slate-800/50">
-                                                    <button
-                                                        onClick={() => handleDeleteValue(row.id_data)}
-                                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
+                                                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => handleEditValue(row)}
+                                                            className="p-1.5 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-all"
+                                                            title="Editar"
+                                                        >
+                                                            <SquarePen size={16} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteValue(row.id_data)}
+                                                            className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                                            title="Eliminar"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
@@ -338,13 +477,17 @@ export default function Values() {
                 )}
             </div>
 
-            {/* Drawer para Agregar Valor (Pendiente de implementar) */}
+            {/* Drawer para Agregar/Editar Valor */}
             <NewValueDrawer
                 isOpen={isDrawerOpen}
-                onClose={() => setIsDrawerOpen(false)}
+                onClose={() => {
+                    setIsDrawerOpen(false);
+                    setEditingData(null);
+                }}
                 metric={selectedMetric}
                 dimensionsMap={dimensionsMap}
                 onSave={() => loadMetricData(selectedMetric.id_metric)}
+                initialData={editingData}
             />
 
             <ExportModal
@@ -353,11 +496,29 @@ export default function Values() {
                 onExport={handleExportConfirm}
                 defaultFileName={selectedMetric ? (() => {
                     const d = new Date();
-                    const yyyy = d.getFullYear();
+                    const yyyy = d.getFullYear(); // Usar año completo
                     const mm = String(d.getMonth() + 1).padStart(2, '0');
                     const dd = String(d.getDate()).padStart(2, '0');
                     return `${selectedMetric.name.replace(/\s+/g, '_')}_${yyyy}_${mm}_${dd}`;
                 })() : 'export'}
+            />
+
+            <ImportModal
+                isOpen={isImportModalOpen}
+                onClose={() => setIsImportModalOpen(false)}
+                onImport={handleImportConfirm}
+                onDownloadTemplate={handleDownloadTemplate}
+                metricName={selectedMetric?.name}
+            />
+
+            <ConfirmModal
+                isOpen={isDeleteModalOpen}
+                onClose={() => setIsDeleteModalOpen(false)}
+                onConfirm={confirmBatchDelete}
+                title="Eliminar datos seleccionados"
+                message={`¿Estás seguro de que deseas eliminar ${selectedIds.size} registros? Esta acción no se puede deshacer.`}
+                confirmText="Sí, Eliminar"
+                isDestructive={true}
             />
         </div>
     );

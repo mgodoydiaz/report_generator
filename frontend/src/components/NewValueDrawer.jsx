@@ -3,7 +3,7 @@ import { X, Save, Layers, Hash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 
-export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap, onSave }) {
+export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap, onSave, initialData = null }) {
     // dimensionsValues: { [dimId]: value } -> Value can be ID (for List validation) or Text (for Free validation)
     const [dimensionInputs, setDimensionInputs] = useState({});
 
@@ -17,14 +17,29 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
 
     useEffect(() => {
         if (isOpen && metric) {
-            // Reset forms
-            setDimensionInputs({});
-            setValueInput(metric.data_type === 'object' ? {} : "");
-
-            // Cargar opciones para dimensiones tipo "Lista"
+            // Cargar opciones
             fetchListOptions(metric.dimension_ids);
+
+            if (initialData) {
+                // Modo Edición
+                let dims = initialData.dimensions_json;
+                if (typeof dims === 'string') {
+                    try { dims = JSON.parse(dims); } catch { }
+                }
+                setDimensionInputs(dims || {});
+
+                let val = initialData.value;
+                if (metric.data_type === 'object' && typeof val === 'string') {
+                    try { val = JSON.parse(val); } catch { }
+                }
+                setValueInput(val);
+            } else {
+                // Reset forms
+                setDimensionInputs({});
+                setValueInput(metric.data_type === 'object' ? {} : "");
+            }
         }
-    }, [isOpen, metric]);
+    }, [isOpen, metric, initialData]);
 
     const fetchListOptions = async (dimIds) => {
         setLoadingLists(true);
@@ -97,8 +112,14 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                 dimensions_json: dimsJson
             };
 
-            const res = await fetch(`${API_BASE_URL}/metrics/${metric.id_metric}/data`, {
-                method: 'POST',
+            const url = initialData
+                ? `${API_BASE_URL}/metrics/data/${initialData.id_data}`
+                : `${API_BASE_URL}/metrics/${metric.id_metric}/data`;
+
+            const method = initialData ? 'PUT' : 'POST';
+
+            const res = await fetch(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
@@ -106,7 +127,7 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
             const result = await res.json();
             if (result.error) throw new Error(result.error);
 
-            toast.success("Valor registrado");
+            toast.success(initialData ? "Valor actualizado" : "Valor registrado");
             onSave();
             onClose();
 
@@ -175,7 +196,7 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                     {/* Header */}
                     <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
                         <div>
-                            <h2 className="text-xl font-black text-slate-800 dark:text-white">Registrar Valor</h2>
+                            <h2 className="text-xl font-black text-slate-800 dark:text-white">{initialData ? "Editar Valor" : "Registrar Valor"}</h2>
                             <p className="text-slate-400 dark:text-slate-500 text-sm font-medium">{metric.name}</p>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors text-slate-400">
@@ -257,7 +278,7 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                             disabled={saving || loadingLists}
                             className="flex items-center gap-2 px-8 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 disabled:opacity-70 disabled:active:scale-100"
                         >
-                            {saving ? 'Guardando...' : <><Save size={18} /> Guardar Registro</>}
+                            {saving ? 'Guardando...' : <><Save size={18} /> {initialData ? "Actualizar" : "Guardar Registro"}</>}
                         </button>
                     </div>
 

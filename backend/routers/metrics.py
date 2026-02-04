@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Response, UploadFile, File
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -214,6 +214,58 @@ async def delete_data_point(data_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/data/{data_id}")
+async def update_metric_data(data_id: int, point: MetricDataPoint):
+    try:
+        df = get_df(METRIC_DATA_DB_PATH)
+        
+        # Validar existencia
+        if data_id not in df['id_data'].values:
+            raise HTTPException(status_code=404, detail="Data point not found")
+        
+        # Actualizar fila
+        # Convertir dimensions_json a string si viene como dict
+        dims_json = json.dumps(point.dimensions_json) if isinstance(point.dimensions_json, dict) else point.dimensions_json
+        
+        # Actualizar campos
+        # Nota: value puede ser cualquier cosa. Si es objeto, asegurarnos de serializar si viene como tal?
+        # Pydantic MetricDataPoint define value: Any.
+        # Si nuestra DB espera string en value para objetos complejos (que no sean int/float nativos), debemos manejarlo.
+        # Asumiremos que el frontend envía el valor listo o que pandas lo maneja. 
+        # Para consistencia con create, serializamos si es dict/list.
+        final_val = point.value
+        if isinstance(final_val, (dict, list)):
+             final_val = json.dumps(final_val)
+
+        # Usar loc para update seguro
+        mask = df['id_data'] == data_id
+        df.loc[mask, 'value'] = final_val
+        df.loc[mask, 'dimensions_json'] = dims_json
+        # Opcional: updated_at
+        
+        save_df(df, METRIC_DATA_DB_PATH)
+        return {"status": "success", "id_data": data_id}
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class BatchDeleteRequest(BaseModel):
+    ids: List[int]
+
+@router.post("/data/batch-delete")
+async def delete_metric_data_batch(req: BatchDeleteRequest):
+    try:
+        df = get_df(METRIC_DATA_DB_PATH)
+        initial_len = len(df)
+        df = df[~df['id_data'].isin(req.ids)]
+        
+        if len(df) < initial_len:
+            save_df(df, METRIC_DATA_DB_PATH)
+            
+        return {"status": "success", "deleted_count": initial_len - len(df)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{metric_id}/export")
 async def export_metric_data(metric_id: int, format: str = "excel"):
     try:
@@ -313,6 +365,174 @@ async def export_metric_data(metric_id: int, format: str = "excel"):
             media_type=media_type,
             headers={"Content-Disposition": f"attachment; filename=export.{filename_ext}"}
         )
+
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{metric_id}/template")
+async def get_metric_template(metric_id: int):
+    try:
+        # Cargar definiciones
+        df_metrics = get_df(METRICS_DB_PATH)
+        metric = df_metrics[df_metrics['id_metric'] == metric_id].iloc[0].to_dict()
+        
+        try:
+            if isinstance(metric.get('meta_json'), str) and metric['meta_json']:
+                metric['meta_json'] = json.loads(metric['meta_json'].replace("'", '"'))
+        except:
+            metric['meta_json'] = {}
+
+        # Mapear IDs de Dimensión -> Nombres
+        # Necesitamos saber qué dimensiones tiene esta métrica
+        metric_dims = []
+        try:
+            md_df = get_df(METRIC_DIMENSIONS_DB_PATH)
+            # Filtrar dimensiones asociadas a esta métrica
+            rel_dims = md_df[md_df['id_metric'] == metric_id]['id_dimension'].tolist()
+            
+            # Obtener nombres
+            d_df = get_df(DIMENSIONS_DB_PATH)
+            for dim_id in rel_dims:
+                dim_row = d_df[d_df['id_dimension'] == dim_id]
+                if not dim_row.empty:
+                    metric_dims.append(dim_row.iloc[0]['name'])
+        except:
+            pass
+
+        # Construir columnas
+        columns = []
+        # 1. Dimensiones
+        columns.extend(metric_dims)
+        
+        # 2. Valores
+        if metric['data_type'] == 'object' and metric['meta_json'].get('fields'):
+            for f in metric['meta_json']['fields']:
+                columns.append(f['name'])
+        else:
+            columns.append("Valor")
+
+        # Crear DF Vacío
+        df_template = pd.DataFrame(columns=columns)
+        
+        stream = io.BytesIO()
+        with pd.ExcelWriter(stream, engine='openpyxl') as writer:
+            df_template.to_excel(writer, index=False, sheet_name="Plantilla")
+            
+        stream.seek(0)
+        
+        filename = f"Plantilla_{metric['name'].replace(' ', '_')}.xlsx"
+        
+        return StreamingResponse(
+            stream,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{metric_id}/import")
+async def import_metric_data(metric_id: int, files: List[UploadFile] = File(...)):
+    try:
+        # Cargar definiciones Base
+        df_metrics = get_df(METRICS_DB_PATH)
+        metric = df_metrics[df_metrics['id_metric'] == metric_id].iloc[0].to_dict()
+        
+        # Parsear meta
+        try:
+            if isinstance(metric.get('meta_json'), str) and metric['meta_json']:
+                metric['meta_json'] = json.loads(metric['meta_json'].replace("'", '"'))
+        except:
+            metric['meta_json'] = {}
+
+        # Mapa de Dimensiones: Nombre -> ID
+        dim_name_to_id = {}
+        try:
+            md_df = get_df(METRIC_DIMENSIONS_DB_PATH)
+            rel_dims = md_df[md_df['id_metric'] == metric_id]['id_dimension'].tolist()
+            
+            d_df = get_df(DIMENSIONS_DB_PATH)
+            for dim_id in rel_dims:
+                row = d_df[d_df['id_dimension'] == dim_id]
+                if not row.empty:
+                    dim_name_to_id[row.iloc[0]['name']] = dim_id
+        except:
+            pass
+
+        new_rows = []
+        
+        for file in files:
+            contents = await file.read()
+            # Detectar formato
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(io.BytesIO(contents), sep=';') # Asumimos ; por defecto
+            else:
+                df = pd.read_excel(io.BytesIO(contents))
+            
+            # Iterar filas
+            for _, row in df.iterrows():
+                # 1. Extraer Dimensiones
+                dims_json = {}
+                for dim_name, dim_id in dim_name_to_id.items():
+                    if dim_name in df.columns:
+                        val = row[dim_name]
+                        # Guardar como string siempre para evitar NaN raros
+                        if pd.notna(val):
+                            dims_json[str(dim_id)] = str(val)
+                
+                # 2. Extraer Valor
+                final_value = None
+                
+                if metric['data_type'] == 'object':
+                    val_obj = {}
+                    fields = metric['meta_json'].get('fields', [])
+                    for f in fields:
+                        fname = f['name']
+                        if fname in df.columns:
+                            val = row[fname]
+                            if pd.notna(val):
+                                # Convertir tipo si es necesario
+                                if f['type'] == 'int':
+                                    try: val = int(val)
+                                    except: pass
+                                elif f['type'] == 'float':
+                                    try: val = float(val)
+                                    except: pass
+                                val_obj[fname] = val
+                    final_value = json.dumps(val_obj)
+                else:
+                    if "Valor" in df.columns:
+                        v = row["Valor"]
+                        if pd.notna(v):
+                             if metric['data_type'] == 'int': final_value = int(v)
+                             elif metric['data_type'] == 'float': final_value = float(v)
+                             else: final_value = str(v)
+                
+                if final_value is not None:
+                     new_rows.append({
+                        "id_data": int(datetime.now().timestamp() * 1000000) + len(new_rows), # ID temporal simple
+                        "id_metric": metric_id,
+                        "value": final_value,
+                        "dimensions_json": json.dumps(dims_json),
+                        "created_at": datetime.now().isoformat()
+                    })
+
+        # Guardar en DB
+        if new_rows:
+            df_existing = get_df(METRIC_DATA_DB_PATH)
+            df_new = pd.DataFrame(new_rows)
+            # Asegurar IDs únicos (chapa)
+            if not df_existing.empty:
+                max_id = df_existing['id_data'].max()
+                df_new['id_data'] = range(max_id + 1, max_id + 1 + len(df_new))
+            else:
+                df_new['id_data'] = range(1, 1 + len(df_new))
+                
+            df_final = pd.concat([df_existing, df_new], ignore_index=True)
+            save_df(df_final, METRIC_DATA_DB_PATH)
+
+        return {"status": "success", "imported": len(new_rows)}
 
     except Exception as e:
         print(e)
