@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Type, List, Optional
 import re
 from rgenerator.etl.core.context import RunContext
-from rgenerator.etl.core.step import Step
+from rgenerator.etl.core.step import Step, WaitingForInputException
 import rgenerator.etl.core.pipeline_steps as ps
 import os
 
@@ -91,6 +91,16 @@ class PipelineRunner:
                 "step_name": step.__class__.__name__,
                 "artifacts": list(self.ctx.artifacts.keys()),
                 "finished": self.status == "COMPLETED"
+            }
+        except WaitingForInputException as e:
+            self.status = "WAITING_INPUT"
+            print(f"-- Step {self.current_step_index + 1} WAITING: {e}")
+            return {
+                "status": "waiting_input", 
+                "step_index": self.current_step_index,
+                "step_name": step.__class__.__name__,
+                "input_details": e.input_details,
+                "message": str(e)
             }
         except Exception as e:
             self.status = "FAILED"

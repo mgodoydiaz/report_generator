@@ -4,7 +4,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .context import RunContext 
+from .context import RunContext
+
+class WaitingForInputException(Exception):
+    """Excepción para indicar que un paso requiere input del usuario y se debe pausar el pipeline."""
+    def __init__(self, step_name: str, input_details: Dict):
+        self.step_name = step_name
+        self.input_details = input_details
+        super().__init__(f"Step '{step_name}' waiting for input.") 
 
 @dataclass
 class Step:

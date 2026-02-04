@@ -9,7 +9,7 @@ import shutil
 from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
-from .step import Step
+from .step import Step, WaitingForInputException
 from rgenerator.tooling.config_tools import cargar_config_desde_json
 from rgenerator.tooling import plot_tools, report_tools
 from rgenerator.tooling.report_docx_tools import render_docx_report
@@ -833,7 +833,8 @@ class RequestUserFiles(Step):
                     self._log(f"Registrados {len(discovered_files)} archivos para '{input_key}'")
             else:
                 if not spec.get("optional", False):
-                    self._log(f"ADVERTENCIA: No se encontraron archivos para el requerimiento obligatorio '{input_key}'")
+                    self._log(f"Solicitando input usuario para '{input_key}'")
+                    raise WaitingForInputException(self.name, {"input_key": input_key, "spec": spec})
 
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)

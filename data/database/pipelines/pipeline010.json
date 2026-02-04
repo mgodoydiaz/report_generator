@@ -27,7 +27,14 @@
             "step": "RequestUserFiles",
             "description": "Cargue los archivos de puntajes asociado a los estudiantes",
             "params": {
-                "input_key": "estudiantes"
+                "file_specs": [
+                    {
+                        "id": "estudiantes",
+                        "label": "Archivos Excel de Estudiantes",
+                        "description": "Cargue los archivos Excel con los puntajes.",
+                        "multiple": true
+                    }
+                ]
             }
         },
         {
