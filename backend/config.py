@@ -11,6 +11,9 @@ WORKFLOWS_DB_PATH = DB_DIR / "pipelines.xlsx"
 TEMPLATES_DB_PATH = DB_DIR / "templates.xlsx"
 DIMENSIONS_DB_PATH = DB_DIR / "dimensions.xlsx"
 DIMENSION_VALUES_DB_PATH = DB_DIR / "dimension_values.xlsx"
+METRICS_DB_PATH = DB_DIR / "metrics.xlsx"
+METRIC_DIMENSIONS_DB_PATH = DB_DIR / "metric_dimensions.xlsx"
+METRIC_DATA_DB_PATH = DB_DIR / "metric_data.xlsx"
 
 # Directorios de Almacenamiento
 PIPELINES_DIR = DB_DIR / "pipelines"
