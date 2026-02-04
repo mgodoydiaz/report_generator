@@ -1,10 +1,12 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 import pandas as pd
 import json
+import io
 from datetime import datetime
-from config import METRICS_DB_PATH, METRIC_DIMENSIONS_DB_PATH, METRIC_DATA_DB_PATH
+from config import METRICS_DB_PATH, METRIC_DIMENSIONS_DB_PATH, METRIC_DATA_DB_PATH, DIMENSIONS_DB_PATH
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -210,4 +212,108 @@ async def delete_data_point(data_id: int):
         save_df(df, METRIC_DATA_DB_PATH)
         return {"status": "success"}
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{metric_id}/export")
+async def export_metric_data(metric_id: int, format: str = "excel"):
+    try:
+        # 1. Cargar Datos
+        df_data = get_df(METRIC_DATA_DB_PATH)
+        df_data = df_data[df_data['id_metric'] == metric_id].copy()
+        
+        # 2. Cargar Definiciones (Métrica y Dimensiones)
+        df_metrics = get_df(METRICS_DB_PATH)
+        metric = df_metrics[df_metrics['id_metric'] == metric_id].iloc[0].to_dict()
+        
+        # Parsear meta_json de la métrica si es necesario
+        try:
+            if isinstance(metric.get('meta_json'), str) and metric['meta_json']:
+                metric['meta_json'] = json.loads(metric['meta_json'].replace("'", '"'))
+        except:
+            metric['meta_json'] = {}
+
+        df_dims = get_df(DIMENSIONS_DB_PATH)
+        dims_map = {row['id_dimension']: row['name'] for _, row in df_dims.iterrows()}
+        
+        # 3. Construir DataFrame Plano
+        # Lista de diccionarios para el nuevo DF
+        flat_data = []
+        
+        for _, row in df_data.iterrows():
+            item = {}
+            
+            # 3.1 Procesar Dimensiones
+            dims_json = {}
+            try:
+                val = row['dimensions_json']
+                if isinstance(val, str):
+                    dims_json = json.loads(val.replace("'", '"'))
+                elif isinstance(val, dict):
+                    dims_json = val
+            except:
+                pass
+            
+            # Mapear {id_dim: valor} -> {NombreDimensión: valor}
+            for dim_id, val in dims_json.items():
+                dim_name = dims_map.get(int(dim_id), f"Dim_{dim_id}")
+                item[dim_name] = val
+                
+            # 3.2 Procesar Valor
+            # Si es objeto, expandir
+            value = row['value']
+            if metric['data_type'] == 'object':
+                try:
+                    val_obj = {}
+                    if isinstance(value, str):
+                        val_obj = json.loads(value)
+                    elif isinstance(value, dict):
+                        val_obj = value
+                    
+                    # Expandir campos
+                    for k, v in val_obj.items():
+                        item[k] = v
+                except:
+                    item['Valor_Raw'] = str(value)
+            else:
+                item['Valor'] = value
+                
+            flat_data.append(item)
+            
+        df_export = pd.DataFrame(flat_data)
+        
+        # 4. Generar Archivo
+        stream = io.BytesIO()
+        media_type = ""
+        filename_ext = ""
+        
+        if format == 'excel':
+            # Excel
+            with pd.ExcelWriter(stream, engine='openpyxl') as writer:
+                df_export.to_excel(writer, index=False, sheet_name="Datos")
+            media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            filename_ext = "xlsx"
+        elif format == 'csv':
+            # CSV (;) y BOM para Excel
+            # encoding='utf-8-sig' agrega BOM
+            df_export.to_csv(stream, index=False, sep=';', encoding='utf-8-sig')
+            media_type = "text/csv"
+            filename_ext = "csv"
+        elif format == 'txt':
+            # TXT (Tablas \t)
+            df_export.to_csv(stream, index=False, sep='\t', encoding='utf-8')
+            media_type = "text/plain"
+            filename_ext = "txt"
+        else:
+            raise HTTPException(status_code=400, detail="Formato no soportado")
+            
+        stream.seek(0)
+        
+        return StreamingResponse(
+            stream, 
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename=export.{filename_ext}"}
+        )
+
+    except Exception as e:
+        print(e)
         raise HTTPException(status_code=500, detail=str(e))

@@ -2,7 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
-import NewValueDrawer from '../components/NewValueDrawer'; // Crearemos este después
+import NewValueDrawer from '../components/NewValueDrawer';
+import ExportModal from '../components/ExportModal';
 
 export default function Values() {
     const [metrics, setMetrics] = useState([]);
@@ -15,6 +16,7 @@ export default function Values() {
 
     // UI States
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+    const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
     useEffect(() => {
         loadInitialData();
@@ -97,8 +99,34 @@ export default function Values() {
         }
     };
 
-    const handleExport = () => {
-        toast("Funcionalidad de Exportación en camino", { icon: '🚧' });
+    const handleExportClick = () => {
+        if (!selectedMetric) return;
+        setIsExportModalOpen(true);
+    };
+
+    const handleExportConfirm = async (format, fileName) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}`);
+            if (!response.ok) throw new Error("Error en la exportación");
+
+            // Convertir respuesta a Blob y descargar
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // Usar nombre personalizado, asegurarse de tener la extensión correcta
+            const ext = format === 'excel' ? 'xlsx' : format;
+            a.download = `${fileName}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+            toast.success("Exportación completada");
+        } catch (error) {
+            console.error(error);
+            toast.error("Error al exportar: " + error.message);
+        }
     };
 
     const handleImport = () => {
@@ -127,8 +155,22 @@ export default function Values() {
             }
         });
 
-        // 2. Columna de Valor
-        cols.push({ key: 'value', label: 'Valor', isValue: true });
+        // 2. Columna(s) de Valor
+        if (selectedMetric.data_type === 'object' && selectedMetric.meta_json?.fields) {
+            // Si es objeto, creamos una columna por cada campo definido en la estructura
+            selectedMetric.meta_json.fields.forEach(field => {
+                cols.push({
+                    key: `field_${field.name}`,
+                    label: field.name,
+                    isObjField: true,
+                    fieldKey: field.name,
+                    fieldType: field.type
+                });
+            });
+        } else {
+            // Si es simple, una sola columna Valor
+            cols.push({ key: 'value', label: 'Valor', isValue: true });
+        }
 
         return cols;
     }, [selectedMetric, dimensionsMap]);
@@ -162,8 +204,8 @@ export default function Values() {
                             key={metric.id_metric}
                             onClick={() => setSelectedMetric(metric)}
                             className={`w-full text-left p-3 rounded-xl transition-all border ${selectedMetric?.id_metric === metric.id_metric
-                                    ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 shadow-sm'
-                                    : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500'
+                                ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 shadow-sm'
+                                : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500'
                                 }`}
                         >
                             <div className="font-bold text-sm text-slate-700 dark:text-slate-200">{metric.name}</div>
@@ -208,7 +250,7 @@ export default function Values() {
                                 <button onClick={handleImport} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
                                     <Upload size={16} /> Importar
                                 </button>
-                                <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                <button onClick={handleExportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
                                     <Download size={16} /> Exportar
                                 </button>
                                 <button
@@ -252,21 +294,26 @@ export default function Values() {
                                                 {dynamicColumns.map(col => {
                                                     let cellContent = '-';
                                                     if (col.isDim) {
-                                                        // Extraer valor del JSON de dimensiones mediante el ID de la dimensión
+                                                        // Extraer valor del JSON de dimensiones
                                                         cellContent = row.dimensions_json?.[String(col.dimId)] || '-';
-                                                    } else if (col.isValue) {
-                                                        if (selectedMetric.data_type === 'object') {
-                                                            try {
-                                                                // Mostrar JSON como string amigable o preview
-                                                                const valObj = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                                                                cellContent = <pre className="text-[10px] bg-slate-100 dark:bg-slate-800 p-1 rounded font-mono truncate max-w-[200px]">{JSON.stringify(valObj)}</pre>;
-                                                            } catch {
-                                                                cellContent = row.value;
-                                                            }
-                                                        } else {
-                                                            cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{row.value}</span>;
+                                                    } else if (col.isObjField) {
+                                                        // Extraer campo específico del Objeto valor
+                                                        try {
+                                                            const valObj = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                                                            const rawVal = valObj?.[col.fieldKey] ?? '-';
+
+                                                            // Formato básico según tipo (opcional)
+                                                            const displayVal = (col.fieldType === 'bool') ? (rawVal ? 'Sí' : 'No') : rawVal;
+
+                                                            cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{displayVal}</span>;
+                                                        } catch {
+                                                            cellContent = <span className="text-red-300" title="Error parseando JSON">Error</span>;
                                                         }
+                                                    } else if (col.isValue) {
+                                                        // Valor Simple
+                                                        cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{row.value}</span>;
                                                     }
+
                                                     return (
                                                         <td key={col.key} className="p-4 text-sm text-slate-600 dark:text-slate-400 border-b border-slate-50 dark:border-slate-800/50">
                                                             {cellContent}
@@ -296,8 +343,21 @@ export default function Values() {
                 isOpen={isDrawerOpen}
                 onClose={() => setIsDrawerOpen(false)}
                 metric={selectedMetric}
-                dimensionsMap={dimensionsMap} // Pasamos la definición de dims
+                dimensionsMap={dimensionsMap}
                 onSave={() => loadMetricData(selectedMetric.id_metric)}
+            />
+
+            <ExportModal
+                isOpen={isExportModalOpen}
+                onClose={() => setIsExportModalOpen(false)}
+                onExport={handleExportConfirm}
+                defaultFileName={selectedMetric ? (() => {
+                    const d = new Date();
+                    const yyyy = d.getFullYear();
+                    const mm = String(d.getMonth() + 1).padStart(2, '0');
+                    const dd = String(d.getDate()).padStart(2, '0');
+                    return `${selectedMetric.name.replace(/\s+/g, '_')}_${yyyy}_${mm}_${dd}`;
+                })() : 'export'}
             />
         </div>
     );
