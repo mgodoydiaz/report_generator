@@ -1,7 +1,304 @@
-import React from 'react';
-import { BookSearch } from 'lucide-react';
-import UnderConstruction from '../components/UnderConstruction';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle } from 'lucide-react';
+import toast from 'react-hot-toast';
+import { API_BASE_URL } from '../constants';
+import NewValueDrawer from '../components/NewValueDrawer'; // Crearemos este después
 
 export default function Values() {
-    return <UnderConstruction title="Módulo de Valores" icon={BookSearch} />;
+    const [metrics, setMetrics] = useState([]);
+    const [selectedMetric, setSelectedMetric] = useState(null);
+    const [metricData, setMetricData] = useState([]);
+    const [dimensionsMap, setDimensionsMap] = useState({}); // {dimId: {name, values: {valId: label}}} para renderizado rápido
+    const [loadingMetrics, setLoadingMetrics] = useState(true);
+    const [loadingData, setLoadingData] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
+
+    // UI States
+    const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+    useEffect(() => {
+        loadInitialData();
+    }, []);
+
+    useEffect(() => {
+        if (selectedMetric) {
+            loadMetricData(selectedMetric.id_metric);
+        } else {
+            setMetricData([]);
+        }
+    }, [selectedMetric]);
+
+    const loadInitialData = async () => {
+        setLoadingMetrics(true);
+        try {
+            // Cargar Métricas y Dimensiones (con sus valores)
+            // Idealmente el backend nos daría todo junto, pero por ahora hacemos varias llamadas o una optimizada
+            // Para Values, necesitamos saber los Nombres de las dimensiones y los Nombres de los valores (si son ID).
+            // Estrategia: Cargar Métricas y Dimensiones base. Los valores específicos los resolveremos al cargar la data o bajo demanda.
+
+            const [metricsRes, dimsRes] = await Promise.all([
+                fetch(`${API_BASE_URL}/metrics`),
+                fetch(`${API_BASE_URL}/dimensions`)
+            ]);
+
+            const metricsList = await metricsRes.json();
+            const dimsList = await dimsRes.json();
+
+            if (metricsList.error) throw new Error(metricsList.error);
+
+            setMetrics(metricsList);
+
+            // Mapa de dimensiones para acceso rápido
+            const dMap = {};
+            // También cargamos los valores de las dimensiones? 
+            // Si la tabla guarda IDs de valores, necesitamos traducir ID -> Texto.
+            // Por simplicidad, asumiremos que metric_data guarda el VALOR REAL (texto/id) directamente en el JSON.
+            // Si guarda IDs, necesitaríamos hacer un fetch de todos los dimension_values.
+            // Para no sobrecargar, cargaremos las definiciones de dimensiones.
+
+            dimsList.forEach(d => {
+                dMap[d.id_dimension] = d;
+            });
+            setDimensionsMap(dMap);
+
+            if (metricsList.length > 0) {
+                setSelectedMetric(metricsList[0]);
+            }
+
+        } catch (error) {
+            toast.error("Error cargando datos: " + error.message);
+        } finally {
+            setLoadingMetrics(false);
+        }
+    };
+
+    const loadMetricData = async (metricId) => {
+        setLoadingData(true);
+        try {
+            const res = await fetch(`${API_BASE_URL}/metrics/${metricId}/data`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+            setMetricData(data);
+        } catch (error) {
+            toast.error("Error cargando valores: " + error.message);
+        } finally {
+            setLoadingData(false);
+        }
+    };
+
+    const handleDeleteValue = async (dataId) => {
+        if (!confirm("¿Eliminar este registro?")) return;
+        try {
+            await fetch(`${API_BASE_URL}/metrics/data/${dataId}`, { method: 'DELETE' });
+            setMetricData(prev => prev.filter(d => d.id_data !== dataId));
+            toast.success("Eliminado");
+        } catch (error) {
+            toast.error(error.message);
+        }
+    };
+
+    const handleExport = () => {
+        toast("Funcionalidad de Exportación en camino", { icon: '🚧' });
+    };
+
+    const handleImport = () => {
+        toast("Funcionalidad de Importación Masiva en camino", { icon: '🚧' });
+    };
+
+    const filteredMetrics = useMemo(() => {
+        return metrics.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
+    }, [metrics, searchTerm]);
+
+    // Columnas Dinámicas
+    const dynamicColumns = useMemo(() => {
+        if (!selectedMetric) return [];
+        const cols = [];
+
+        // 1. Columnas de Dimensiones
+        selectedMetric.dimension_ids.forEach(dimId => {
+            const dimDef = dimensionsMap[dimId];
+            if (dimDef) {
+                cols.push({
+                    key: `dim_${dimId}`,
+                    label: dimDef.name,
+                    isDim: true,
+                    dimId: dimId
+                });
+            }
+        });
+
+        // 2. Columna de Valor
+        cols.push({ key: 'value', label: 'Valor', isValue: true });
+
+        return cols;
+    }, [selectedMetric, dimensionsMap]);
+
+    return (
+        <div className="h-[calc(100vh-100px)] flex gap-6 animate-in fade-in duration-500">
+            {/* Sidebar: Lista de Métricas */}
+            <div className="w-1/4 min-w-[280px] flex flex-col gap-4 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm h-full">
+                <div className="pb-2 border-b border-slate-100 dark:border-slate-800 space-y-3">
+                    <h2 className="font-black text-slate-800 dark:text-white text-lg px-2 flex items-center gap-2">
+                        <Database size={20} className="text-indigo-600" />
+                        Métricas
+                    </h2>
+                    <div className="relative">
+                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                        <input
+                            type="text"
+                            placeholder="Buscar..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="w-full bg-slate-50 dark:bg-slate-800 border-none rounded-xl py-2 pl-9 pr-3 text-sm focus:ring-2 focus:ring-indigo-500/20 text-slate-600 dark:text-slate-300"
+                        />
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto custom-scrollbar space-y-1 pr-1">
+                    {loadingMetrics ? (
+                        <div className="p-4 text-center text-slate-400 text-sm">Cargando métricas...</div>
+                    ) : filteredMetrics.map(metric => (
+                        <button
+                            key={metric.id_metric}
+                            onClick={() => setSelectedMetric(metric)}
+                            className={`w-full text-left p-3 rounded-xl transition-all border ${selectedMetric?.id_metric === metric.id_metric
+                                    ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 shadow-sm'
+                                    : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500'
+                                }`}
+                        >
+                            <div className="font-bold text-sm text-slate-700 dark:text-slate-200">{metric.name}</div>
+                            <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded text-slate-500 font-medium">
+                                    {metric.data_type}
+                                </span>
+                                <span className="text-[10px] text-slate-400 flex items-center gap-1">
+                                    <Layers size={10} /> {metric.dimension_ids?.length || 0} dims
+                                </span>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            {/* Main Content: Tabla de Datos */}
+            <div className="flex-1 bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col h-full overflow-hidden">
+                {!selectedMetric ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-300">
+                        <Database size={48} className="mb-4 opacity-50" />
+                        <p>Selecciona una métrica para ver sus datos</p>
+                    </div>
+                ) : (
+                    <>
+                        {/* Toolbar */}
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
+                            <div>
+                                <h1 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                    {selectedMetric.name}
+                                    <span className="text-xs font-normal text-slate-400 bg-white dark:bg-slate-700 px-2 py-1 rounded-full border border-slate-200 dark:border-slate-600">
+                                        {metricData.length} registros
+                                    </span>
+                                </h1>
+                                <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedMetric.description}</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => toast("Filtros próximamente", { icon: '🚧' })} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl border border-transparent hover:border-slate-200 transition-all" title="Filtrar">
+                                    <Filter size={18} />
+                                </button>
+                                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                <button onClick={handleImport} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                    <Upload size={16} /> Importar
+                                </button>
+                                <button onClick={handleExport} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                    <Download size={16} /> Exportar
+                                </button>
+                                <button
+                                    onClick={() => setIsDrawerOpen(true)}
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95 ml-2"
+                                >
+                                    <Plus size={18} strokeWidth={3} /> Agregar Valor
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Table Area */}
+                        <div className="flex-1 overflow-auto">
+                            <table className="w-full text-left border-collapse">
+                                <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
+                                    <tr>
+                                        {dynamicColumns.map(col => (
+                                            <th key={col.key} className="p-4 font-bold text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                                {col.label}
+                                            </th>
+                                        ))}
+                                        <th className="p-4 w-20 border-b border-slate-200 dark:border-slate-700"></th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {loadingData ? (
+                                        <tr><td colSpan={dynamicColumns.length + 1} className="p-10 text-center text-slate-400">Cargando datos...</td></tr>
+                                    ) : metricData.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={dynamicColumns.length + 1} className="p-12 text-center">
+                                                <div className="flex flex-col items-center gap-3 text-slate-300">
+                                                    <AlertCircle size={32} />
+                                                    <p className="font-medium">No hay datos registrados aún.</p>
+                                                    <button onClick={() => setIsDrawerOpen(true)} className="text-indigo-500 hover:underline text-sm">Agregar el primer valor</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        metricData.map(row => (
+                                            <tr key={row.id_data} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/50 group transition-colors">
+                                                {dynamicColumns.map(col => {
+                                                    let cellContent = '-';
+                                                    if (col.isDim) {
+                                                        // Extraer valor del JSON de dimensiones mediante el ID de la dimensión
+                                                        cellContent = row.dimensions_json?.[String(col.dimId)] || '-';
+                                                    } else if (col.isValue) {
+                                                        if (selectedMetric.data_type === 'object') {
+                                                            try {
+                                                                // Mostrar JSON como string amigable o preview
+                                                                const valObj = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
+                                                                cellContent = <pre className="text-[10px] bg-slate-100 dark:bg-slate-800 p-1 rounded font-mono truncate max-w-[200px]">{JSON.stringify(valObj)}</pre>;
+                                                            } catch {
+                                                                cellContent = row.value;
+                                                            }
+                                                        } else {
+                                                            cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{row.value}</span>;
+                                                        }
+                                                    }
+                                                    return (
+                                                        <td key={col.key} className="p-4 text-sm text-slate-600 dark:text-slate-400 border-b border-slate-50 dark:border-slate-800/50">
+                                                            {cellContent}
+                                                        </td>
+                                                    );
+                                                })}
+                                                <td className="p-4 text-right border-b border-slate-50 dark:border-slate-800/50">
+                                                    <button
+                                                        onClick={() => handleDeleteValue(row.id_data)}
+                                                        className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </>
+                )}
+            </div>
+
+            {/* Drawer para Agregar Valor (Pendiente de implementar) */}
+            <NewValueDrawer
+                isOpen={isDrawerOpen}
+                onClose={() => setIsDrawerOpen(false)}
+                metric={selectedMetric}
+                dimensionsMap={dimensionsMap} // Pasamos la definición de dims
+                onSave={() => loadMetricData(selectedMetric.id_metric)}
+            />
+        </div>
+    );
 }
