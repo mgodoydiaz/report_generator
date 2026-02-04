@@ -73,6 +73,34 @@ async def create_dimension(dim: DimensionCreate):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/{dim_id}")
+async def update_dimension(dim_id: int, dim: DimensionUpdate):
+    try:
+        df = get_df(DIMENSIONS_DB_PATH)
+        
+        if dim_id not in df['id_dimension'].values:
+            raise HTTPException(status_code=404, detail="Dimensión no encontrada")
+
+        # Actualizar campos
+        idx = df[df['id_dimension'] == dim_id].index[0]
+        
+        df.at[idx, 'name'] = dim.name
+        df.at[idx, 'data_type'] = dim.data_type
+        df.at[idx, 'validation_mode'] = dim.validation_mode
+        if dim.description is not None:
+            df.at[idx, 'description'] = dim.description
+        df.at[idx, 'updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        save_df(df, DIMENSIONS_DB_PATH)
+        
+        # Devolver el objeto actualizado
+        updated_row = df.loc[idx].to_dict()
+        return {"status": "success", "data": updated_row}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/{dim_id}")
 async def delete_dimension(dim_id: int):
     try:

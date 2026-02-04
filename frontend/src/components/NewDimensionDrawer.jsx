@@ -52,21 +52,23 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
 
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/dimensions`, {
-                method: 'POST',
+            const isEditing = !!initialData?.id_dimension;
+            const url = isEditing
+                ? `${API_BASE_URL}/dimensions/${initialData.id_dimension}`
+                : `${API_BASE_URL}/dimensions`;
+
+            const method = isEditing ? 'PUT' : 'POST';
+
+            const response = await fetch(url, {
+                method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
             const result = await response.json();
             if (result.error) throw new Error(result.error);
 
-            toast.success("Dimensión guardada");
+            toast.success(isEditing ? "Dimensión actualizada" : "Dimensión guardada");
 
-            // Si es nueva y tiene validation_mode 'list', podríamos querer agregar los valores inmediatamente.
-            // Para simplificar, cerramos y el usuario puede reabrir para editar valores si lo desea,
-            // o mejor aún, si estamos 'creando', el ID recién se genera.
-            // Una mejor UX sería: Guardar Dimensión -> Obtener ID -> Habilitar sección de valores.
-            // Pero seguiremos el flujo simple de onSave parent.
             onSave(result.data);
             onClose();
         } catch (error) {
