@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Save, Box, Type, Hash, Variable, Plus, Trash2, CheckSquare, Square } from 'lucide-react';
+import { X, Save, Box, Type, Hash, Variable, Plus, Trash2, CheckSquare, Square, Calendar, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 
@@ -178,6 +178,8 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
                                     { id: 'float', label: 'Decimal', icon: Hash },
                                     { id: 'int', label: 'Entero', icon: Hash },
                                     { id: 'str', label: 'Texto', icon: Type },
+                                    { id: 'date', label: 'Fecha', icon: Calendar },
+                                    { id: 'datetime', label: 'Fecha+Hora', icon: Clock },
                                     { id: 'object', label: 'Objeto', icon: Box }
                                 ].map(type => (
                                     <button

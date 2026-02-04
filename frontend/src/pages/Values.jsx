@@ -439,8 +439,25 @@ export default function Values() {
                                                             cellContent = <span className="text-red-300" title="Error parseando JSON">Error</span>;
                                                         }
                                                     } else if (col.isValue) {
-                                                        // Valor Simple
-                                                        cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{row.value}</span>;
+                                                        // Valor Simple con Formato
+                                                        let displayVal = row.value;
+
+                                                        try {
+                                                            if (selectedMetric.data_type === 'date' && displayVal) {
+                                                                // Ajustar zona horaria para evitar desfase si es solo fecha
+                                                                // Al crear new Date('YYYY-MM-DD'), JS usa UTC. Al mostar local, puede restar un día.
+                                                                // Mejor técnica simple: split y mostrar o usar biblioteca día.
+                                                                // Para prototipo: new Date(displayVal + 'T00:00:00') forzando hora local o string directo si ya es YYYY-MM-DD
+                                                                // Mostraremos el string tal cual si es corto, o formateado.
+                                                                displayVal = new Date(displayVal).toLocaleDateString();
+                                                            } else if (selectedMetric.data_type === 'datetime' && displayVal) {
+                                                                displayVal = new Date(displayVal).toLocaleString();
+                                                            }
+                                                        } catch (e) {
+                                                            console.warn("Date parse error", e);
+                                                        }
+
+                                                        cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{displayVal}</span>;
                                                     }
 
                                                     return (

@@ -251,7 +251,12 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                                 <div>
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-1.5">Valor ({metric.data_type})</label>
                                     <input
-                                        type={metric.data_type === 'int' || metric.data_type === 'float' ? 'number' : 'text'}
+                                        type={
+                                            metric.data_type === 'int' || metric.data_type === 'float' ? 'number' :
+                                                metric.data_type === 'date' ? 'date' :
+                                                    metric.data_type === 'datetime' ? 'datetime-local' :
+                                                        'text'
+                                        }
                                         step={metric.data_type === 'float' ? '0.01' : '1'}
                                         value={valueInput}
                                         onChange={(e) => setValueInput(e.target.value)}
