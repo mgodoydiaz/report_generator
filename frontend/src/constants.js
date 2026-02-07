@@ -22,7 +22,9 @@ export const STEP_OPTIONS = [
     "GenerateTables",
     "RenderReport",
     "GenerateDocxReport",
-    "DeleteTempFiles"
+    "GenerateDocxReport",
+    "DeleteTempFiles",
+    "LoadToMetrics"
 ];
 
 // Traducciones a lenguaje humano para los pasos técnicos
@@ -38,7 +40,8 @@ export const STEP_TRANSLATIONS = {
     "GenerateTables": "Preparar Tablas",
     "RenderReport": "Generar Informe",
     "GenerateDocxReport": "Generar Documento",
-    "DeleteTempFiles": "Limpiar Archivos"
+    "DeleteTempFiles": "Limpiar Archivos",
+    "LoadToMetrics": "Cargar Métricas"
 };
 
 // Mapeo de colores y estilos para los formatos de archivo
@@ -48,6 +51,18 @@ export const FORMAT_COLORS = {
     'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
     'IMG': 'bg-amber-50 text-amber-600 border-amber-100'
 };
+
+// Tipos de Plantillas
+export const TEMPLATE_TYPES = ["Reporte", "Dashboard", "ETL Archivo"];
+
+// Opciones de parámetros para ETL
+export const ETL_PARAMETER_OPTIONS = [
+    { id: 'header_row', label: 'Fila Encabezado', type: 'text', limit: 1 },
+    { id: 'output_name', label: 'Nombre Salida', type: 'text', limit: 1 },
+    { id: 'select_columns', label: 'Seleccionar Columnas', type: 'list_text', limit: 0 },
+    { id: 'rename_columns', label: 'Renombrar Columnas', type: 'list_pair', limit: 0, fields: ['Original', 'Final'] },
+    { id: 'enrich_data', label: 'Enriquecer Data', type: 'list_pair', limit: 0, fields: ['Columna', 'Valor'] }
+];
 
 /**
  * Helper para obtener el estilo de un formato de forma segura.

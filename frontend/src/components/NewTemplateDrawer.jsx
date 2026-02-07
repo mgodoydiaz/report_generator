@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
     X, FileText, Settings, Layers, PlusCircle, Trash, Trash2, Plus, LayoutTemplate
 } from 'lucide-react';
+import { TEMPLATE_TYPES, ETL_PARAMETER_OPTIONS } from '../constants';
 
-const TYPE_OPTIONS = ["Reporte", "Dashboard"];
 const SECTION_TYPES = ["tabla", "imagen", "texto"]; // Expanded types just in case
 
 const FIXED_VARIABLES = [
@@ -18,8 +18,12 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
         description: "",
         type: "Reporte",
         variables: FIXED_VARIABLES.map(key => ({ key, value: "" })),
-        sections: []
+        sections: [],
+        etlParams: []
     });
+
+    // Estado para el select de "Nuevo Parámetro"
+    const [selectedEtlParam, setSelectedEtlParam] = useState("");
 
     useEffect(() => {
         if (isOpen) {
@@ -36,7 +40,8 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                     description: initialData.description || "",
                     type: initialData.type || "Reporte",
                     variables: variablesArray,
-                    sections: initialData.secciones_fijas || []
+                    sections: initialData.secciones_fijas || [],
+                    etlParams: initialData.etlParams || []
                 });
             } else {
                 // Reset for new template
@@ -45,9 +50,11 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                     description: "",
                     type: "Reporte",
                     variables: FIXED_VARIABLES.map(key => ({ key, value: "" })),
-                    sections: []
+                    sections: [],
+                    etlParams: []
                 });
             }
+            setSelectedEtlParam("");
         }
     }, [isOpen, initialData]);
 
@@ -79,24 +86,97 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
         setFormData({ ...formData, sections: newSections });
     };
 
+    // --- Handlers for ETL Params ---
+    const addEtlParam = (paramId) => {
+        if (!paramId) return;
+
+        const paramConfig = ETL_PARAMETER_OPTIONS.find(p => p.id === paramId);
+        if (!paramConfig) return;
+
+        // Estructura incial según tipo
+        let initialValue = "";
+        if (paramConfig.type === 'list_text') initialValue = [];
+        if (paramConfig.type === 'list_pair') initialValue = [];
+
+        setFormData(prev => ({
+            ...prev,
+            etlParams: [...prev.etlParams, {
+                id: paramId,
+                type: paramConfig.type,
+                label: paramConfig.label,
+                value: initialValue,
+                config: paramConfig
+            }]
+        }));
+        setSelectedEtlParam(""); // Reset select
+    };
+
+    const removeEtlParam = (index) => {
+        const newParams = formData.etlParams.filter((_, i) => i !== index);
+        setFormData({ ...formData, etlParams: newParams });
+    };
+
+    const updateEtlParamValue = (index, newValue) => {
+        const newParams = [...formData.etlParams];
+        newParams[index].value = newValue;
+        setFormData({ ...formData, etlParams: newParams });
+    };
+
+    // Helpers para actualizar listas dentro de ETL Params
+    const addListItem = (paramIndex, itemValue) => {
+        const newParams = [...formData.etlParams];
+        if (Array.isArray(newParams[paramIndex].value)) {
+            newParams[paramIndex].value.push(itemValue);
+        }
+        setFormData({ ...formData, etlParams: newParams });
+    };
+
+    const removeListItem = (paramIndex, itemIndex) => {
+        const newParams = [...formData.etlParams];
+        if (Array.isArray(newParams[paramIndex].value)) {
+            newParams[paramIndex].value = newParams[paramIndex].value.filter((_, i) => i !== itemIndex);
+        }
+        setFormData({ ...formData, etlParams: newParams });
+    };
+
+    const updateListItem = (paramIndex, itemIndex, field, val) => {
+        const newParams = [...formData.etlParams];
+        if (Array.isArray(newParams[paramIndex].value)) {
+            // Si es texto simple (list_text), field es null y val es el string
+            // Si es par (list_pair), field es clave del objeto
+            if (field === null) {
+                newParams[paramIndex].value[itemIndex] = val;
+            } else {
+                newParams[paramIndex].value[itemIndex] = { ...newParams[paramIndex].value[itemIndex], [field]: val };
+            }
+        }
+        setFormData({ ...formData, etlParams: newParams });
+    };
+
+
     const handleSave = () => {
         const variablesObj = {};
         formData.variables.forEach(v => {
             if (v.key.trim()) variablesObj[v.key] = v.value;
         });
 
-        // Filter out empty sections or validate? For now just pass them through
         const result = {
             name: formData.name,
             description: formData.description,
             type: formData.type,
             variables_documento: variablesObj,
             secciones_fijas: formData.sections,
-            secciones_dinamicas: [] // Empty as requested
+            secciones_dinamicas: [],
+            etlParams: formData.etlParams // Guardamos la config ETL cruda o procesada según necesites
         };
 
         if (onSave) onSave(result);
     };
+
+    // Filtrar opciones ya seleccionadas
+    const availableEtlOptions = ETL_PARAMETER_OPTIONS.filter(opt =>
+        !formData.etlParams.some(p => p.id === opt.id)
+    );
 
     return (
         <div className="fixed inset-0 z-50 overflow-hidden font-sans text-left">
@@ -110,7 +190,7 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                 <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
                     <div>
                         <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-                        <p className="text-xs text-slate-500">Configura la estructura básica del informe.</p>
+                        <p className="text-xs text-slate-500">Configura la estructura básica.</p>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-50 rounded-full transition-colors">
                         <X size={20} className="text-slate-500" />
@@ -143,7 +223,7 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                                     value={formData.type}
                                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                 >
-                                    {TYPE_OPTIONS.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                    {TEMPLATE_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -159,6 +239,178 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                         </div>
                     </section>
 
+                    {/* VISTA: ETL Archivo */}
+                    {formData.type === 'ETL Archivo' && (
+                        <section className="space-y-6">
+                            <h3 className="text-sm font-semibold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
+                                <Settings size={16} /> Parámetros ETL
+                            </h3>
+
+                            {/* Selector para añadir parámetros */}
+                            <div className="flex gap-2 items-center">
+                                <select
+                                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                    value={selectedEtlParam}
+                                    onChange={(e) => {
+                                        setSelectedEtlParam(e.target.value);
+                                        addEtlParam(e.target.value);
+                                    }}
+                                >
+                                    <option value="">+ Nuevo Parámetro</option>
+                                    {availableEtlOptions.map(opt => (
+                                        <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Lista de parámetros configurados */}
+                            <div className="space-y-4">
+                                {formData.etlParams.map((param, index) => {
+                                    // Helper para obtener columnas seleccionadas (para rename_columns)
+                                    let selectedColumns = [];
+                                    if (param.id === 'rename_columns') {
+                                        const sel = formData.etlParams.find(p => p.id === 'select_columns');
+                                        if (sel && Array.isArray(sel.value)) selectedColumns = sel.value;
+                                    }
+
+                                    return (
+                                        <div key={param.id} className="p-4 border border-slate-200 rounded-xl bg-slate-50 relative group">
+                                            <button
+                                                onClick={() => removeEtlParam(index)}
+                                                className="absolute top-2 right-2 text-slate-400 hover:text-red-500"
+                                            >
+                                                <X size={16} />
+                                            </button>
+
+                                            <label className="block text-xs font-bold text-slate-700 uppercase mb-2">
+                                                {param.label}
+                                            </label>
+
+                                            {/* TIPO TEXTO SIMPLE */}
+                                            {param.type === 'text' && (
+                                                <input
+                                                    type="text"
+                                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white"
+                                                    value={param.value}
+                                                    onChange={(e) => updateEtlParamValue(index, e.target.value)}
+                                                    placeholder={`Ingrese valor para ${param.label}`}
+                                                />
+                                            )}
+
+                                            {/* TIPO LISTA DE TEXTO (Select Columns) */}
+                                            {param.type === 'list_text' && (
+                                                <div className="space-y-2">
+                                                    {/* Textarea para carga masiva */}
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            id={`input-${param.id}`}
+                                                            type="text"
+                                                            placeholder="Columna individual o separadas por coma"
+                                                            className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-xs"
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    e.preventDefault();
+                                                                    const val = e.target.value;
+                                                                    if (val.trim()) {
+                                                                        val.split(',').forEach(v => {
+                                                                            if (v.trim()) addListItem(index, v.trim());
+                                                                        });
+                                                                        e.target.value = "";
+                                                                    }
+                                                                }
+                                                            }}
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                const input = document.getElementById(`input-${param.id}`);
+                                                                if (input && input.value.trim()) {
+                                                                    input.value.split(',').forEach(v => {
+                                                                        if (v.trim()) addListItem(index, v.trim());
+                                                                    });
+                                                                    input.value = "";
+                                                                }
+                                                            }}
+                                                            className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-xs font-bold hover:bg-indigo-100 border border-indigo-100"
+                                                        >
+                                                            Confirmar
+                                                        </button>
+                                                    </div>
+                                                    {/* Lista actual */}
+                                                    <div className="flex flex-wrap gap-2 mt-2">
+                                                        {param.value.map((item, i) => (
+                                                            <span key={i} className="inline-flex items-center px-2 py-1 rounded bg-white border border-slate-200 text-xs text-slate-700 gap-1">
+                                                                {item}
+                                                                <button onClick={() => removeListItem(index, i)} className="text-slate-400 hover:text-red-500"><X size={12} /></button>
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* TIPO LISTA DE PARES (Rename / Enrich) */}
+                                            {param.type === 'list_pair' && (
+                                                <div className="space-y-2">
+                                                    <div className="grid grid-cols-2 gap-2 mb-2">
+                                                        <span className="text-[10px] font-bold text-slate-400">{param.config.fields[0]}</span>
+                                                        <span className="text-[10px] font-bold text-slate-400">{param.config.fields[1]}</span>
+                                                    </div>
+
+                                                    {param.value.map((item, i) => (
+                                                        <div key={i} className="flex gap-2 items-center">
+                                                            {/* Si es rename_columns y hay columnas seleccionadas, mostramos un select */}
+                                                            {param.id === 'rename_columns' && selectedColumns.length > 0 ? (
+                                                                <select
+                                                                    className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs bg-white"
+                                                                    value={item.key || ""}
+                                                                    onChange={(e) => updateListItem(index, i, 'key', e.target.value)}
+                                                                >
+                                                                    <option value="">Seleccionar Columna...</option>
+                                                                    {selectedColumns.map((col, cIdx) => (
+                                                                        <option key={cIdx} value={col}>{col}</option>
+                                                                    ))}
+                                                                </select>
+                                                            ) : (
+                                                                <input
+                                                                    type="text"
+                                                                    className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs"
+                                                                    value={item.key || ""}
+                                                                    onChange={(e) => updateListItem(index, i, 'key', e.target.value)}
+                                                                    placeholder={param.config.fields[0]}
+                                                                />
+                                                            )}
+
+                                                            <input
+                                                                type="text"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 rounded text-xs"
+                                                                value={item.val || ""}
+                                                                onChange={(e) => updateListItem(index, i, 'val', e.target.value)}
+                                                                placeholder={param.config.fields[1]}
+                                                            />
+                                                            <button onClick={() => removeListItem(index, i)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
+                                                        </div>
+                                                    ))}
+
+                                                    <button
+                                                        onClick={() => addListItem(index, { key: "", val: "" })}
+                                                        className="text-xs text-indigo-600 font-bold flex items-center gap-1 mt-2"
+                                                    >
+                                                        <Plus size={14} /> Agregar Fila
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                                {formData.etlParams.length === 0 && (
+                                    <div className="text-center p-6 border-2 border-dashed border-slate-100 rounded-xl">
+                                        <p className="text-xs text-slate-400">Sin parámetros configurados.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* VISTA: Reporte (Original) */}
                     {formData.type === 'Reporte' && (
                         <>
                             {/* Document Variables */}
