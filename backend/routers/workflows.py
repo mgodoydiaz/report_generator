@@ -6,7 +6,7 @@ import os
 import json
 from config import BASE_DIR, WORKFLOWS_DB_PATH, PIPELINES_DIR, UPLOADS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
-from rgenerator.tooling.data_tools import safe_json_to_text
+from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
 
 router = APIRouter(prefix="/api/workflows", tags=["workflows"])
 
@@ -123,25 +123,42 @@ async def get_workflow_config(workflow_id: int):
                 excel_metadata["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
                 excel_metadata["output"] = str(row.iloc[0]['output']) if pd.notna(row.iloc[0]['output']) else "XLSX"
 
+        # Intentar leer desde la columna 'config_json' del Excel primero
+        json_config = None
+        if WORKFLOWS_DB_PATH.exists():
+             df = pd.read_excel(WORKFLOWS_DB_PATH) 
+             row = df[df['id_evaluation'] == workflow_id]
+             if not row.empty and 'config_json' in row.columns:
+                 possible_json = row.iloc[0]['config_json']
+                 if pd.notna(possible_json):
+                     json_config = safe_text_to_json(possible_json)
+
+        # Si no se pudo obtener del Excel, intentar del archivo (fallback)
         pipeline_filename = f"pipeline{workflow_id:03d}.json"
         pipeline_path = PIPELINES_DIR / pipeline_filename
-        
-        config = {
-            "workflow_metadata": {"name": excel_metadata["name"], "description": excel_metadata["description"], "output": excel_metadata["output"]},
-            "context": {"base_dir": "./backend/tests"},
-            "pipeline": []
-        }
 
-        if pipeline_path.exists():
+        if json_config:
+            # Usar configuración del Excel
+            config["context"] = json_config.get("context", config["context"])
+            config["pipeline"] = json_config.get("pipeline", config["pipeline"])
+            config["workflow_metadata"].update(json_config.get("workflow_metadata", {}))
+        elif pipeline_path.exists():
+            # Fallback: Usar archivo JSON
             with open(pipeline_path, 'r', encoding='utf-8') as f:
                 json_config = json.load(f)
                 config["context"] = json_config.get("context", config["context"])
                 config["pipeline"] = json_config.get("pipeline", config["pipeline"])
                 config["workflow_metadata"].update(json_config.get("workflow_metadata", {}))
-                config["workflow_metadata"]["name"] = excel_metadata["name"] or config["workflow_metadata"].get("name")
-                config["workflow_metadata"]["description"] = excel_metadata["description"] or config["workflow_metadata"].get("description")
-                config["workflow_metadata"]["input"] = excel_metadata["input"]
-                config["workflow_metadata"]["output"] = excel_metadata["output"]
+
+        # Asegurar metadatos actualizados desde Excel
+        if WORKFLOWS_DB_PATH.exists():
+             # Re-leer por si acaso (aunque ya lo leímos arriba, optimización menor)
+             # Usamos excel_metadata que ya leímos al principio de la función, 
+             # pero ojo con el scope, excel_metadata se define al inicio.
+             config["workflow_metadata"]["name"] = excel_metadata["name"] or config["workflow_metadata"].get("name")
+             config["workflow_metadata"]["description"] = excel_metadata["description"] or config["workflow_metadata"].get("description")
+             config["workflow_metadata"]["input"] = excel_metadata.get("input", config["workflow_metadata"].get("input"))
+             config["workflow_metadata"]["output"] = excel_metadata.get("output", config["workflow_metadata"].get("output"))
 
         return config
     except Exception as e:

@@ -40,7 +40,8 @@ async def get_template_config(template_id: int):
             "type": str(row.iloc[0]['type']),
             "variables_documento": config.get("variables_documento", {}),
             "secciones_fijas": config.get("secciones_fijas", []),
-            "secciones_dinamicas": config.get("secciones_dinamicas", [])
+            "secciones_dinamicas": config.get("secciones_dinamicas", []),
+            "etlParams": config.get("etlParams", [])
         }
     except Exception as e:
         return {"error": str(e)}
@@ -65,7 +66,8 @@ async def save_template_config_logic(template_id: int, config: dict):
         json_data = {
             "variables_documento": config.get("variables_documento", {}),
             "secciones_fijas": config.get("secciones_fijas", []),
-            "secciones_dinamicas": config.get("secciones_dinamicas", [])
+            "secciones_dinamicas": config.get("secciones_dinamicas", []),
+            "etlParams": config.get("etlParams", [])
         }
         
         with open(file_path, 'w', encoding='utf-8') as f:
