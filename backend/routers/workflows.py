@@ -21,15 +21,37 @@ def _update_last_run(workflow_id):
     except Exception as ex:
         print(f"Error actualizando Excel: {ex}")
 
+def _get_workflow_config_from_excel(workflow_id: int) -> Optional[dict]:
+    """Lee la configuración JSON desde la columna 'jsonb' del Excel."""
+    try:
+        if not WORKFLOWS_DB_PATH.exists():
+            return None
+        df = pd.read_excel(WORKFLOWS_DB_PATH)
+        row = df[df['id_evaluation'] == workflow_id]
+        if not row.empty and 'jsonb' in row.columns:
+            json_text = row.iloc[0]['jsonb']
+            if pd.notna(json_text):
+                return safe_text_to_json(json_text)
+    except Exception as e:
+        print(f"Error leyendo config desde Excel: {e}")
+    return None
+
 @router.get("/")
+@router.get("", include_in_schema=False)
 async def get_workflows():
     try:
         if not WORKFLOWS_DB_PATH.exists():
             return {"error": f"Archivo no encontrado en {WORKFLOWS_DB_PATH}"}
         
         df = pd.read_excel(WORKFLOWS_DB_PATH)
+        
+        # Reemplazar NaN con None para evitar error "Out of range float values"
+        df = df.where(pd.notnull(df), None)
+        
         if 'last_run' in df.columns:
+            # Asegurar que last_run sea string, tratando None como ""
             df['last_run'] = df['last_run'].fillna("").astype(str)
+            
         return df.to_dict(orient="records")
     except Exception as e:
         return {"error": str(e)}
@@ -64,13 +86,11 @@ async def execute_workflow(workflow_id: int):
             result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
             del ACTIVE_RUNNERS[workflow_id]
         else:
-            pipeline_filename = f"pipeline{workflow_id:03d}.json"
-            pipeline_path = PIPELINES_DIR / pipeline_filename
-            
-            if not pipeline_path.exists():
-                return {"error": f"No se encontró la configuración del pipeline para el ID {workflow_id}"}
+            config = _get_workflow_config_from_excel(workflow_id)
+            if not config:
+                return {"error": f"No se encontró la configuración del pipeline para el ID {workflow_id} en el Excel"}
                 
-            result = run_pipeline(pipeline_path)
+            result = run_pipeline(config, workflow_id=workflow_id)
 
         if result["status"] == "success":
             _update_last_run(workflow_id)
@@ -83,13 +103,11 @@ async def execute_workflow(workflow_id: int):
 async def execute_workflow_step(workflow_id: int):
     try:
         if workflow_id not in ACTIVE_RUNNERS:
-            pipeline_filename = f"pipeline{workflow_id:03d}.json"
-            pipeline_path = PIPELINES_DIR / pipeline_filename
-            
-            if not pipeline_path.exists():
-                return {"error": f"No se encontró la configuración del pipeline"}
+            config = _get_workflow_config_from_excel(workflow_id)
+            if not config:
+                return {"error": f"No se encontró la configuración del pipeline en el Excel"}
                 
-            ACTIVE_RUNNERS[workflow_id] = PipelineRunner(pipeline_path)
+            ACTIVE_RUNNERS[workflow_id] = PipelineRunner(config, workflow_id=workflow_id)
 
         runner = ACTIVE_RUNNERS[workflow_id]
         result = runner.step()
@@ -113,52 +131,38 @@ async def reset_workflow_session(workflow_id: int):
 @router.get("/{workflow_id}/config")
 async def get_workflow_config(workflow_id: int):
     try:
-        excel_metadata = {"name": "", "description": "", "input": "EXCEL", "output": "XLSX"}
-        if WORKFLOWS_DB_PATH.exists():
-            df = pd.read_excel(WORKFLOWS_DB_PATH)
-            row = df[df['id_evaluation'] == workflow_id]
-            if not row.empty:
-                excel_metadata["name"] = str(row.iloc[0]['pipeline'])
-                excel_metadata["description"] = row.iloc[0]['description'] if pd.notna(row.iloc[0]['description']) else ""
-                excel_metadata["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
-                excel_metadata["output"] = str(row.iloc[0]['output']) if pd.notna(row.iloc[0]['output']) else "XLSX"
+        config = {
+            "workflow_metadata": {"id_evaluation": workflow_id, "name": "", "description": "", "input": "EXCEL", "output": "XLSX"},
+            "context": {"base_dir": "."},
+            "pipeline": []
+        }
+        
+        if not WORKFLOWS_DB_PATH.exists():
+            return config
 
-        # Intentar leer desde la columna 'config_json' del Excel primero
-        json_config = None
-        if WORKFLOWS_DB_PATH.exists():
-             df = pd.read_excel(WORKFLOWS_DB_PATH) 
-             row = df[df['id_evaluation'] == workflow_id]
-             if not row.empty and 'config_json' in row.columns:
-                 possible_json = row.iloc[0]['config_json']
-                 if pd.notna(possible_json):
-                     json_config = safe_text_to_json(possible_json)
+        df = pd.read_excel(WORKFLOWS_DB_PATH)
+        row = df[df['id_evaluation'] == workflow_id]
+        
+        if row.empty:
+            return config
 
-        # Si no se pudo obtener del Excel, intentar del archivo (fallback)
-        pipeline_filename = f"pipeline{workflow_id:03d}.json"
-        pipeline_path = PIPELINES_DIR / pipeline_filename
+        # Población desde columnas básicas
+        config["workflow_metadata"]["name"] = str(row.iloc[0]['pipeline'])
+        config["workflow_metadata"]["description"] = row.iloc[0]['description'] if pd.notna(row.iloc[0]['description']) else ""
+        config["workflow_metadata"]["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
+        config["workflow_metadata"]["output"] = str(row.iloc[0]['output']) if 'output' in row.columns and pd.notna(row.iloc[0]['output']) else "XLSX"
 
-        if json_config:
-            # Usar configuración del Excel
-            config["context"] = json_config.get("context", config["context"])
-            config["pipeline"] = json_config.get("pipeline", config["pipeline"])
-            config["workflow_metadata"].update(json_config.get("workflow_metadata", {}))
-        elif pipeline_path.exists():
-            # Fallback: Usar archivo JSON
-            with open(pipeline_path, 'r', encoding='utf-8') as f:
-                json_config = json.load(f)
+        # Población desde jsonb
+        if 'jsonb' in row.columns:
+            json_config = safe_text_to_json(row.iloc[0]['jsonb'])
+            if json_config and isinstance(json_config, dict):
                 config["context"] = json_config.get("context", config["context"])
                 config["pipeline"] = json_config.get("pipeline", config["pipeline"])
-                config["workflow_metadata"].update(json_config.get("workflow_metadata", {}))
-
-        # Asegurar metadatos actualizados desde Excel
-        if WORKFLOWS_DB_PATH.exists():
-             # Re-leer por si acaso (aunque ya lo leímos arriba, optimización menor)
-             # Usamos excel_metadata que ya leímos al principio de la función, 
-             # pero ojo con el scope, excel_metadata se define al inicio.
-             config["workflow_metadata"]["name"] = excel_metadata["name"] or config["workflow_metadata"].get("name")
-             config["workflow_metadata"]["description"] = excel_metadata["description"] or config["workflow_metadata"].get("description")
-             config["workflow_metadata"]["input"] = excel_metadata.get("input", config["workflow_metadata"].get("input"))
-             config["workflow_metadata"]["output"] = excel_metadata.get("output", config["workflow_metadata"].get("output"))
+                # Conservar metadatos del Excel como prioridad
+                config_meta = json_config.get("workflow_metadata", {})
+                for k, v in config_meta.items():
+                    if k not in config["workflow_metadata"] or not config["workflow_metadata"][k]:
+                        config["workflow_metadata"][k] = v
 
         return config
     except Exception as e:
@@ -188,13 +192,12 @@ async def save_workflow_config_logic(workflow_id: int, config: dict):
             else:
                 target_id = 1
         
-        pipeline_filename = f"pipeline{target_id:03d}.json"
-        pipeline_path = PIPELINES_DIR / pipeline_filename
-        
-        PIPELINES_DIR.mkdir(parents=True, exist_ok=True)
-        
-        with open(pipeline_path, 'w', encoding='utf-8') as f:
-            json.dump(config, f, indent=4, ensure_ascii=False)
+        # Ya no guardamos archivos JSON físicos
+        # pipeline_filename = f"pipeline{target_id:03d}.json"
+        # pipeline_path = PIPELINES_DIR / pipeline_filename
+        # PIPELINES_DIR.mkdir(parents=True, exist_ok=True)
+        # with open(pipeline_path, 'w', encoding='utf-8') as f:
+        #     json.dump(config, f, indent=4, ensure_ascii=False)
         
         steps_list = config.get("pipeline", [])
         steps_text = " -> ".join([s.get("step", "Sin nombre") for s in steps_list])
@@ -206,7 +209,7 @@ async def save_workflow_config_logic(workflow_id: int, config: dict):
                 'pipeline': metadata.get("name", "Nuevo Proceso"),
                 'description': metadata.get("description", ""),
                 'steps': steps_text,
-                'config_json': config_json_text,
+                'jsonb': config_json_text,
                 'input': str(metadata.get("input", "EXCEL")).upper(),
                 'output': str(metadata.get("output", "XLSX")).upper(),
                 'last_run': ''
@@ -216,7 +219,7 @@ async def save_workflow_config_logic(workflow_id: int, config: dict):
             if metadata.get("name"): df.loc[df['id_evaluation'] == target_id, 'pipeline'] = metadata.get("name")
             if metadata.get("description"): df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
             df.loc[df['id_evaluation'] == target_id, 'steps'] = steps_text
-            df.loc[df['id_evaluation'] == target_id, 'config_json'] = config_json_text
+            df.loc[df['id_evaluation'] == target_id, 'jsonb'] = config_json_text
             if metadata.get("input"): df.loc[df['id_evaluation'] == target_id, 'input'] = str(metadata.get("input")).upper()
             if metadata.get("output"): df.loc[df['id_evaluation'] == target_id, 'output'] = str(metadata.get("output")).upper()
         
@@ -239,10 +242,11 @@ async def delete_workflow(workflow_id: int):
         df = df[df['id_evaluation'] != workflow_id]
         df.to_excel(WORKFLOWS_DB_PATH, index=False)
         
-        pipeline_filename = f"pipeline{workflow_id:03d}.json"
-        pipeline_path = PIPELINES_DIR / pipeline_filename
-        if pipeline_path.exists():
-            os.remove(pipeline_path)
+        # Ya no eliminamos archivos JSON físicos
+        # pipeline_filename = f"pipeline{workflow_id:03d}.json"
+        # pipeline_path = PIPELINES_DIR / pipeline_filename
+        # if pipeline_path.exists():
+        #     os.remove(pipeline_path)
             
         uploads_dir = UPLOADS_DIR / str(workflow_id)
         if uploads_dir.exists():

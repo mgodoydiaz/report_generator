@@ -6,11 +6,16 @@ from config import TEMPLATES_DB_PATH, TEMPLATES_DIR
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 @router.get("/")
+@router.get("", include_in_schema=False)
 async def get_templates():
     try:
         if not TEMPLATES_DB_PATH.exists():
             return []
         df = pd.read_excel(TEMPLATES_DB_PATH)
+        
+        # Reemplazar NaN con None
+        df = df.where(pd.notnull(df), None)
+        
         if 'updated_at' in df.columns:
             df['updated_at'] = df['updated_at'].fillna("").astype(str)
         return df.to_dict(orient="records")
