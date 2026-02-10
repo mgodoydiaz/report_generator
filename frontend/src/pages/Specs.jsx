@@ -1,9 +1,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout } from 'lucide-react';
 import toast from 'react-hot-toast';
-import NewTemplateDrawer from '../components/NewTemplateDrawer';
+import NewSpecDrawer from '../components/NewSpecDrawer';
 
-export default function Templates() {
+export default function Specs() {
     const [templates, setTemplates] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
@@ -13,7 +13,7 @@ export default function Templates() {
     const [editingTemplateId, setEditingTemplateId] = useState(null);
 
     const [drawerData, setDrawerData] = useState(null);
-    const [drawerTitle, setDrawerTitle] = useState("Nueva Plantilla");
+    const [drawerTitle, setDrawerTitle] = useState("Nueva Especificación");
 
     useEffect(() => {
         fetchTemplates();
@@ -22,7 +22,7 @@ export default function Templates() {
     const fetchTemplates = async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/api/templates');
+            const response = await fetch('http://localhost:8000/api/specs');
             if (!response.ok) throw new Error('Error al conectar con el servidor');
             const data = await response.json();
             if (data.error) throw new Error(data.error);
@@ -38,10 +38,10 @@ export default function Templates() {
 
     const handleEditTemplate = async (templateId) => {
         setEditingTemplateId(templateId);
-        setDrawerTitle("Editar Plantilla");
+        setDrawerTitle("Editar Especificación");
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:8000/api/templates/${templateId}/config`);
+            const response = await fetch(`http://localhost:8000/api/specs/${templateId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -64,7 +64,7 @@ export default function Templates() {
 
     const handleOpenNewTemplate = () => {
         setEditingTemplateId(null);
-        setDrawerTitle("Nueva Plantilla");
+        setDrawerTitle("Nueva Especificación");
         setDrawerData(null);
         setIsDrawerOpen(true);
     };
@@ -72,8 +72,8 @@ export default function Templates() {
     const handleSaveTemplate = async (config) => {
         const isNew = !editingTemplateId;
         const url = isNew
-            ? `http://localhost:8000/api/templates/config`
-            : `http://localhost:8000/api/templates/${editingTemplateId}/config`;
+            ? `http://localhost:8000/api/specs/config`
+            : `http://localhost:8000/api/specs/${editingTemplateId}/config`;
 
         try {
             const response = await fetch(url, {
@@ -139,10 +139,10 @@ export default function Templates() {
                         <div className="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-100 dark:shadow-indigo-900/20">
                             <FileText size={24} />
                         </div>
-                        Plantillas
+                        Especificaciones
                     </h1>
                     <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm font-medium">
-                        Gestión de plantillas de informes y dashboards.
+                        Gestión de especificaciones, modelos y esquemas.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -158,7 +158,7 @@ export default function Templates() {
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 dark:shadow-indigo-900/20 flex items-center gap-2"
                     >
                         <Plus size={20} strokeWidth={3} />
-                        Nueva Plantilla
+                        Nueva Especificación
                     </button>
                 </div>
             </div>
@@ -194,7 +194,7 @@ export default function Templates() {
                                     onClick={() => handleSort('name')}
                                 >
                                     <div className="flex items-center gap-2">
-                                        Plantilla <SortIcon columnKey="name" />
+                                        Especificación <SortIcon columnKey="name" />
                                     </div>
                                 </th>
                                 <th
@@ -277,7 +277,7 @@ export default function Templates() {
                             ) : (
                                 <tr>
                                     <td colSpan="5" className="p-12 text-center text-slate-400 italic">
-                                        No se encontraron plantillas con ese criterio.
+                                        No se encontraron especificaciones con ese criterio.
                                     </td>
                                 </tr>
                             )}

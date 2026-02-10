@@ -74,9 +74,9 @@ export default function Sidebar() {
           <Box size={18} />
           Métricas
         </NavLink>
-        <NavLink to="/templates" className={linkClass}>
+        <NavLink to="/specs" className={linkClass}>
           <Notebook size={18} />
-          Plantillas
+          Especificaciones
         </NavLink>
         <NavLink to="/pipelines" className={linkClass}>
           <Workflow size={18} />

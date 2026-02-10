@@ -4,7 +4,7 @@ import { ThemeProvider } from './context/ThemeContext.jsx';
 import Layout from "./components/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Pipelines from "./pages/Pipelines.jsx";
-import Templates from "./pages/Templates.jsx";
+import Specs from "./pages/Specs.jsx";
 import Results from "./pages/Results.jsx";
 import Execution from "./pages/Execution.jsx";
 import Values from "./pages/Values.jsx";
@@ -20,7 +20,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/pipelines" element={<Pipelines />} />
-          <Route path="/templates" element={<Templates />} />
+          <Route path="/specs" element={<Specs />} />
           <Route path="/results" element={<Results />} />
           <Route path="/execution" element={<Execution />} />
           <Route path="/values" element={<Values />} />

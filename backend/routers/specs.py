@@ -4,7 +4,7 @@ import json
 from config import TEMPLATES_DB_PATH, TEMPLATES_DIR
 from rgenerator.tooling.data_tools import get_json_safe_df
 
-router = APIRouter(prefix="/api/templates", tags=["templates"])
+router = APIRouter(prefix="/api/specs", tags=["specs"])
 
 @router.get("/")
 @router.get("", include_in_schema=False)

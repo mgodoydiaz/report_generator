@@ -12,7 +12,7 @@ const FIXED_VARIABLES = [
     "schoolname", "theauthor"
 ];
 
-const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Plantilla", onSave }) => {
+const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Especificación", onSave }) => {
     const [formData, setFormData] = useState({
         name: "",
         description: "",
@@ -207,7 +207,7 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                         </h3>
                         <div className="grid gap-4">
                             <div>
-                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Plantilla</label>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Especificación</label>
                                 <input
                                     type="text"
                                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -526,7 +526,7 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
                         className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 shadow-md shadow-indigo-100 transition-all active:scale-95"
                         onClick={handleSave}
                     >
-                        Guardar Plantilla
+                        Guardar Especificación
                     </button>
                 </div>
             </div>
@@ -534,4 +534,4 @@ const NewTemplateDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva
     );
 };
 
-export default NewTemplateDrawer;
+export default NewSpecDrawer;
