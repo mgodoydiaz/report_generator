@@ -2,6 +2,7 @@ from fastapi import APIRouter
 import pandas as pd
 import json
 from config import TEMPLATES_DB_PATH, TEMPLATES_DIR
+from rgenerator.tooling.data_tools import get_json_safe_df
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -12,9 +13,7 @@ async def get_templates():
         if not TEMPLATES_DB_PATH.exists():
             return []
         df = pd.read_excel(TEMPLATES_DB_PATH)
-        
-        # Reemplazar NaN con None para compatibilidad JSON (null)
-        df = df.where(pd.notnull(df), None)
+        df = get_json_safe_df(df)
         
         # Asegurar que updated_at sea string para el front
         if 'updated_at' in df.columns:
@@ -36,10 +35,25 @@ async def get_template_config(template_id: int):
         full_path = TEMPLATES_DIR / config_path
         
         if not full_path.exists():
-            return {"error": "Archivo de configuración no encontrado"}
+             # Fallback: retornamos valores default si no existe config
+             return {
+                 "name": str(row.iloc[0]['name']),
+                 "description": str(row.iloc[0]['description']),
+                 "type": str(row.iloc[0]['type']),
+                 "variables_documento": {},
+                 "secciones_fijas": [],
+                 "secciones_dinamicas": [],
+                 "etlParams": []
+             }
             
         with open(full_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
+
+        # Manejo de etlParams legacy (si se guardó como dict por error)
+        etl_params = config.get("etlParams", [])
+        if isinstance(etl_params, dict):
+            # Convertir a lista si es necesario, o resetear
+            etl_params = []
             
         return {
             "name": str(row.iloc[0]['name']) if pd.notna(row.iloc[0]['name']) else "Sin nombre",
@@ -48,7 +62,7 @@ async def get_template_config(template_id: int):
             "variables_documento": config.get("variables_documento", {}),
             "secciones_fijas": config.get("secciones_fijas", []),
             "secciones_dinamicas": config.get("secciones_dinamicas", []),
-            "etlParams": config.get("etlParams", [])
+            "etlParams": etl_params
         }
     except Exception as e:
         return {"error": str(e)}

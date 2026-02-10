@@ -6,7 +6,7 @@ import os
 import json
 from config import BASE_DIR, PIPELINES_DB_PATH, PIPELINES_DIR, UPLOADS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
-from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
+from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json, get_json_safe_df
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
@@ -44,9 +44,7 @@ async def get_pipelines():
             return {"error": f"Archivo no encontrado en {PIPELINES_DB_PATH}"}
         
         df = pd.read_excel(PIPELINES_DB_PATH)
-        
-        # Reemplazar NaN con None para evitar error "Out of range float values"
-        df = df.where(pd.notnull(df), None)
+        df = get_json_safe_df(df)
         
         if 'last_run' in df.columns:
             # Asegurar que last_run sea string, tratando None como ""

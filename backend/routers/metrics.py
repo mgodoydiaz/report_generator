@@ -7,6 +7,7 @@ import json
 import io
 from datetime import datetime
 from config import METRICS_DB_PATH, METRIC_DIMENSIONS_DB_PATH, METRIC_DATA_DB_PATH, DIMENSIONS_DB_PATH
+from rgenerator.tooling.data_tools import get_json_safe_df
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -31,9 +32,10 @@ class MetricDataPoint(BaseModel):
 def get_df(path):
     if not path.exists(): return pd.DataFrame()
     df = pd.read_excel(path)
-    # Reemplazar NaN con None para que se conviertan en 'null' en JSON
-    # Es vital para evitar errores de punto flotante 'OutOfRange' en el front
-    return df.where(pd.notnull(df), None)
+    return get_json_safe_df(df)
+    if not path.exists(): return pd.DataFrame()
+    df = pd.read_excel(path)
+    return get_json_safe_df(df)
 
 def save_df(df, path):
     df.to_excel(path, index=False)

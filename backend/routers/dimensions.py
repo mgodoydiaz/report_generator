@@ -4,6 +4,7 @@ from typing import List, Optional
 import pandas as pd
 from datetime import datetime
 from config import DIMENSIONS_DB_PATH, DIMENSION_VALUES_DB_PATH
+from rgenerator.tooling.data_tools import get_json_safe_df
 
 router = APIRouter(prefix="/api/dimensions", tags=["dimensions"])
 
@@ -33,8 +34,7 @@ def get_df(path):
     if not path.exists():
         return pd.DataFrame()
     df = pd.read_excel(path)
-    # Reemplazar NaN con None para que se conviertan en 'null' en JSON
-    return df.where(pd.notnull(df), None)
+    return get_json_safe_df(df)
 
 def save_df(df, path):
     df.to_excel(path, index=False)
