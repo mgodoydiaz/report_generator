@@ -19,7 +19,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "RequestUserFiles": ps.RequestUserFiles
 }
 
-def load_pipeline_config(config_source: str | Path | dict, workflow_id: Optional[int] = None) -> tuple[RunContext, List[Step]]:
+def load_pipeline_config(config_source: str | Path | dict, pipeline_id: Optional[int] = None) -> tuple[RunContext, List[Step]]:
     """
     Construye el contexto y la lista de pasos (pipeline) a partir de un archivo JSON o un diccionario.
     """
@@ -31,18 +31,19 @@ def load_pipeline_config(config_source: str | Path | dict, workflow_id: Optional
         with open(path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
-        # Intentar extraer workflow_id del nombre del archivo si no se provee
-        if workflow_id is None:
+        # Intentar extraer pipeline_id del nombre del archivo si no se provee
+        if pipeline_id is None:
             match = re.search(r'pipeline(\d+)\.json', path.name)
             if match:
-                workflow_id = int(match.group(1))
+                pipeline_id = int(match.group(1))
     else:
         config = config_source
 
     # 1. Configurar el contexto
     json_base_dir = config.get("context", {}).get("base_dir", ".")
     ctx = RunContext(base_dir=Path(json_base_dir))
-    ctx.workflow_id = workflow_id
+    ctx.pipeline_id = pipeline_id
+
 
     # 2. Construir el pipeline
     pipeline = []
@@ -65,8 +66,8 @@ def load_pipeline_config(config_source: str | Path | dict, workflow_id: Optional
     return ctx, pipeline
 
 class PipelineRunner:
-    def __init__(self, config_source: str | Path | dict, workflow_id: Optional[int] = None):
-        self.ctx, self.pipeline = load_pipeline_config(config_source, workflow_id)
+    def __init__(self, config_source: str | Path | dict, pipeline_id: Optional[int] = None):
+        self.ctx, self.pipeline = load_pipeline_config(config_source, pipeline_id)
         self.current_step_index = 0
         self.total_steps = len(self.pipeline)
         self.status = "IDLE" # IDLE, RUNNING, COMPLETED, FAILED
@@ -118,12 +119,12 @@ class PipelineRunner:
             results.append(res)
         return results
 
-def run_pipeline(config_source: str | Path | dict, workflow_id: Optional[int] = None):
+def run_pipeline(config_source: str | Path | dict, pipeline_id: Optional[int] = None):
     """
     Ejecuta un pipeline completo desde un archivo JSON o diccionario.
     """
     try:
-        runner = PipelineRunner(config_source, workflow_id)
+        runner = PipelineRunner(config_source, pipeline_id)
         runner.run_all()
         return {"status": "success", "message": "Pipeline ejecutado correctamente", "artifacts": list(runner.ctx.artifacts.keys())}
     

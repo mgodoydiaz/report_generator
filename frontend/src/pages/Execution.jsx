@@ -17,7 +17,7 @@ export default function Execution() {
     const fetchPipelines = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/workflows`);
+            const response = await fetch(`${API_BASE_URL}/pipelines`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
             setPipelines(data);

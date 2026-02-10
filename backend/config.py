@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_DIR = BASE_DIR / "data" / "database"
 
 # Archivos Excel Principales
-WORKFLOWS_DB_PATH = DB_DIR / "pipelines.xlsx"
+PIPELINES_DB_PATH = DB_DIR / "pipelines.xlsx"
 TEMPLATES_DB_PATH = DB_DIR / "templates.xlsx"
 DIMENSIONS_DB_PATH = DB_DIR / "dimensions.xlsx"
 DIMENSION_VALUES_DB_PATH = DB_DIR / "dimension_values.xlsx"

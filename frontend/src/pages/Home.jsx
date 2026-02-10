@@ -14,7 +14,7 @@ export default function Home() {
               Generador de Reportes Académicos
             </h1>
             <p className="text-lg text-slate-500 dark:text-slate-400 font-medium leading-relaxed">
-              Bienvenido al sistema de gestión. Utiliza el menú lateral para navegar entre las secciones de workflows, resultados y configuración.
+              Bienvenido al sistema de gestión. Utiliza el menú lateral para navegar entre las secciones de pipelines, resultados y configuración.
             </p>
           </div>
         </div>

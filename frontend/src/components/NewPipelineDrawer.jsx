@@ -47,10 +47,10 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                 }));
 
                 setFormData({
-                    name: initialData.workflow_metadata?.name || "",
-                    description: initialData.workflow_metadata?.description || "",
-                    input: initialData.workflow_metadata?.input || "EXCEL",
-                    output: initialData.workflow_metadata?.output || "XLSX",
+                    name: initialData.pipeline_metadata?.name || "",
+                    description: initialData.pipeline_metadata?.description || "",
+                    input: initialData.pipeline_metadata?.input || "EXCEL",
+                    output: initialData.pipeline_metadata?.output || "XLSX",
                     context: contextArray.length > 0 ? contextArray : [{ key: "base_dir", value: "./backend/tests" }],
                     pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", description: "", params: "" }]
                 });
@@ -149,7 +149,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         });
 
         const finalConfig = {
-            workflow_metadata: {
+            pipeline_metadata: {
                 name: formData.name,
                 description: formData.description,
                 input: formData.input,

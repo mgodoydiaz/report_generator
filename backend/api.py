@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import workflows, templates, dimensions, metrics
+from routers import pipelines, templates, dimensions, metrics
 
 app = FastAPI()
 
@@ -19,7 +19,7 @@ app.add_middleware(
 )
 
 # Incluir Rutas
-app.include_router(workflows.router)
+app.include_router(pipelines.router)
 app.include_router(templates.router)
 app.include_router(dimensions.router)
 app.include_router(metrics.router)

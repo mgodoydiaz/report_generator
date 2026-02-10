@@ -43,14 +43,14 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         setUserFiles({});
         setExecutionResult(null);
         if (pipelineId) {
-            fetch(`${API_BASE_URL}/workflows/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+            fetch(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
         }
     };
 
     const fetchSteps = async () => {
         setStatus('loading');
         try {
-            const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/config`);
+            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -95,7 +95,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                         const formData = new FormData();
                         formData.append('input_key', id);
                         files.forEach(file => formData.append('files', file));
-                        return fetch(`${API_BASE_URL}/workflows/${pipelineId}/upload`, {
+                        return fetch(`${API_BASE_URL}/pipelines/${pipelineId}/upload`, {
                             method: 'POST',
                             body: formData
                         }).then(res => res.json());
@@ -123,13 +123,13 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     setCurrentStepIndex(prev => (prev < steps.length - 1 ? prev + 1 : prev));
                 }, 400);
 
-                const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/run`, { method: 'POST' });
+                const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
                 result = await response.json();
                 clearInterval(progressInterval);
                 finalState = true;
             } else {
                 // Modo paso a paso
-                const response = await fetch(`${API_BASE_URL}/workflows/${pipelineId}/step`, { method: 'POST' });
+                const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
                 result = await response.json();
 
                 // Caso especial: Backend pide input

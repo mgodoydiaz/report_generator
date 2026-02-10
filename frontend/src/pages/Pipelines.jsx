@@ -26,7 +26,7 @@ export default function Pipelines() {
   const fetchPipelines = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/workflows`);
+      const response = await fetch(`${API_BASE_URL}/pipelines`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       setPipelines(data);
@@ -54,7 +54,7 @@ export default function Pipelines() {
     setEditingPipelineId(id);
     setDrawerTitle("Editar Proceso");
     try {
-      const response = await fetch(`${API_BASE_URL}/workflows/${id}/config`);
+      const response = await fetch(`${API_BASE_URL}/pipelines/${id}/config`);
       const configData = await response.json();
       if (configData.error) throw new Error(configData.error);
       setEditingData(configData);
@@ -66,19 +66,19 @@ export default function Pipelines() {
 
   const handleDuplicatePipeline = async (id) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/workflows/${id}/config`);
+      const response = await fetch(`${API_BASE_URL}/pipelines/${id}/config`);
       const configData = await response.json();
       if (configData.error) throw new Error(configData.error);
 
       const newConfig = {
         ...configData,
-        workflow_metadata: {
-          ...configData.workflow_metadata,
-          name: `${configData.workflow_metadata.name} (Copia)`
+        pipeline_metadata: {
+          ...configData.pipeline_metadata,
+          name: `${configData.pipeline_metadata.name} (Copia)`
         }
       };
 
-      const saveResponse = await fetch(`${API_BASE_URL}/workflows/config`, {
+      const saveResponse = await fetch(`${API_BASE_URL}/pipelines/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
@@ -103,8 +103,8 @@ export default function Pipelines() {
   const handleSavePipeline = async (config) => {
     try {
       const url = editingPipelineId
-        ? `${API_BASE_URL}/workflows/${editingPipelineId}/config`
-        : `${API_BASE_URL}/workflows/config`;
+        ? `${API_BASE_URL}/pipelines/${editingPipelineId}/config`
+        : `${API_BASE_URL}/pipelines/config`;
 
       const response = await fetch(url, {
         method: 'POST',
@@ -129,7 +129,7 @@ export default function Pipelines() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/workflows/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/pipelines/${id}`, {
         method: 'DELETE'
       });
       const result = await response.json();

@@ -798,14 +798,14 @@ class RequestUserFiles(Step):
         """
         before = self._snapshot_artifacts(ctx)
         
-        if not ctx.workflow_id:
-            self._log("No se encontró workflow_id en el contexto para RequestUserFiles.")
+        if not ctx.pipeline_id:
+            self._log("No se encontró pipeline_id en el contexto para RequestUserFiles.")
             return
 
         # Ruta donde el backend guarda las subidas temporales (ver api.py)
-        # Asumiendo estructura: backend/data/database/pipelines/uploads/{workflow_id}/{input_key}
+        # Asumiendo estructura: backend/data/database/pipelines/uploads/{pipeline_id}/{input_key}
         base_path = Path(__file__).resolve().parent.parent.parent.parent.parent
-        uploads_root = base_path / "data" / "database" / "pipelines" / "uploads" / str(ctx.workflow_id)
+        uploads_root = base_path / "data" / "database" / "pipelines" / "uploads" / str(ctx.pipeline_id)
 
         if not uploads_root.exists():
             self._log(f"No se encontró directorio de subidas en {uploads_root}")

@@ -11,7 +11,7 @@ class RunContext:
     
     evaluation: str = ""
     run_id: str = ""
-    workflow_id: Optional[int] = None
+    pipeline_id: Optional[int] = None
     base_dir: Path = field(default_factory=lambda: Path("."))
     params: Dict[str, Any] = field(default_factory=dict)
 
