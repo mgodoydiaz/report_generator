@@ -13,11 +13,13 @@ async def get_templates():
             return []
         df = pd.read_excel(TEMPLATES_DB_PATH)
         
-        # Reemplazar NaN con None
+        # Reemplazar NaN con None para compatibilidad JSON (null)
         df = df.where(pd.notnull(df), None)
         
+        # Asegurar que updated_at sea string para el front
         if 'updated_at' in df.columns:
-            df['updated_at'] = df['updated_at'].fillna("").astype(str)
+            df['updated_at'] = df['updated_at'].apply(lambda x: str(x) if x is not None else "")
+            
         return df.to_dict(orient="records")
     except Exception as e:
         return {"error": str(e)}
@@ -40,9 +42,9 @@ async def get_template_config(template_id: int):
             config = json.load(f)
             
         return {
-            "name": str(row.iloc[0]['name']),
-            "description": str(row.iloc[0]['description']),
-            "type": str(row.iloc[0]['type']),
+            "name": str(row.iloc[0]['name']) if pd.notna(row.iloc[0]['name']) else "Sin nombre",
+            "description": str(row.iloc[0]['description']) if pd.notna(row.iloc[0]['description']) else "",
+            "type": str(row.iloc[0]['type']) if pd.notna(row.iloc[0]['type']) else "Reporte",
             "variables_documento": config.get("variables_documento", {}),
             "secciones_fijas": config.get("secciones_fijas", []),
             "secciones_dinamicas": config.get("secciones_dinamicas", []),

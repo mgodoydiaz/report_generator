@@ -30,7 +30,10 @@ class MetricDataPoint(BaseModel):
 # --- Helpers ---
 def get_df(path):
     if not path.exists(): return pd.DataFrame()
-    return pd.read_excel(path).fillna("")
+    df = pd.read_excel(path)
+    # Reemplazar NaN con None para que se conviertan en 'null' en JSON
+    # Es vital para evitar errores de punto flotante 'OutOfRange' en el front
+    return df.where(pd.notnull(df), None)
 
 def save_df(df, path):
     df.to_excel(path, index=False)
@@ -48,9 +51,12 @@ async def get_metrics():
             metric = row.to_dict()
             # Parsear meta_json
             try:
-                if isinstance(metric['meta_json'], str) and metric['meta_json']:
-                    metric['meta_json'] = json.loads(metric['meta_json'].replace("'", '"'))
-                elif not isinstance(metric['meta_json'], dict):
+                meta_val = metric.get('meta_json')
+                if isinstance(meta_val, str) and meta_val:
+                    metric['meta_json'] = json.loads(meta_val.replace("'", '"'))
+                elif pd.isna(meta_val) or meta_val is None:
+                    metric['meta_json'] = {}
+                elif not isinstance(meta_val, dict):
                     metric['meta_json'] = {}
             except:
                 metric['meta_json'] = {}

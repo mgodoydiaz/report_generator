@@ -32,7 +32,9 @@ class DimensionValueUpdate(BaseModel):
 def get_df(path):
     if not path.exists():
         return pd.DataFrame()
-    return pd.read_excel(path).fillna("")
+    df = pd.read_excel(path)
+    # Reemplazar NaN con None para que se conviertan en 'null' en JSON
+    return df.where(pd.notnull(df), None)
 
 def save_df(df, path):
     df.to_excel(path, index=False)
@@ -130,6 +132,9 @@ async def get_dimension_values(dim_id: int):
             
         # Filtrar por id_dimension
         filtered = df[df['id_dimension'] == dim_id]
+        
+        # Opcional: convertir booleanos explícitamente si es necesario para JSON
+        # Aunque pandas None ya se convierte a null
         return filtered.to_dict(orient="records")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

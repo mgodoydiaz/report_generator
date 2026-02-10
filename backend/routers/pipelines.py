@@ -30,7 +30,7 @@ def _get_pipeline_config_from_excel(pipeline_id: int) -> Optional[dict]:
         row = df[df['id_evaluation'] == pipeline_id]
         if not row.empty and 'jsonb' in row.columns:
             json_text = row.iloc[0]['jsonb']
-            if pd.notna(json_text):
+            if json_text is not None and pd.notna(json_text) and str(json_text).strip():
                 return safe_text_to_json(json_text)
     except Exception as e:
         print(f"Error leyendo config desde Excel: {e}")
@@ -50,7 +50,7 @@ async def get_pipelines():
         
         if 'last_run' in df.columns:
             # Asegurar que last_run sea string, tratando None como ""
-            df['last_run'] = df['last_run'].fillna("").astype(str)
+            df['last_run'] = df['last_run'].apply(lambda x: str(x) if x is not None else "")
             
         return df.to_dict(orient="records")
     except Exception as e:
@@ -147,8 +147,8 @@ async def get_pipeline_config(pipeline_id: int):
             return config
 
         # Población desde columnas básicas
-        config["pipeline_metadata"]["name"] = str(row.iloc[0]['pipeline'])
-        config["pipeline_metadata"]["description"] = row.iloc[0]['description'] if pd.notna(row.iloc[0]['description']) else ""
+        config["pipeline_metadata"]["name"] = str(row.iloc[0]['pipeline']) if pd.notna(row.iloc[0]['pipeline']) else "Sin nombre"
+        config["pipeline_metadata"]["description"] = str(row.iloc[0]['description']) if pd.notna(row.iloc[0]['description']) else ""
         config["pipeline_metadata"]["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
         config["pipeline_metadata"]["output"] = str(row.iloc[0]['output']) if 'output' in row.columns and pd.notna(row.iloc[0]['output']) else "XLSX"
 
