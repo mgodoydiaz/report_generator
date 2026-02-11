@@ -4,44 +4,44 @@ import toast from 'react-hot-toast';
 import NewSpecDrawer from '../components/NewSpecDrawer';
 
 export default function Specs() {
-    const [templates, setTemplates] = useState([]);
+    const [specs, setSpecs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
     const [error, setError] = useState(null);
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-    const [editingTemplateId, setEditingTemplateId] = useState(null);
+    const [editingSpecId, setEditingSpecId] = useState(null);
 
     const [drawerData, setDrawerData] = useState(null);
     const [drawerTitle, setDrawerTitle] = useState("Nueva Especificación");
 
     useEffect(() => {
-        fetchTemplates();
+        fetchSpecs();
     }, []);
 
-    const fetchTemplates = async () => {
+    const fetchSpecs = async () => {
         setLoading(true);
         try {
             const response = await fetch('http://localhost:8000/api/specs');
             if (!response.ok) throw new Error('Error al conectar con el servidor');
             const data = await response.json();
             if (data.error) throw new Error(data.error);
-            setTemplates(data);
+            setSpecs(data);
             setError(null);
         } catch (err) {
             console.error(err);
-            setError("No se pudo cargar la base de datos de plantillas.");
+            setError("No se pudo cargar la base de datos de especificaciones.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleEditTemplate = async (templateId) => {
-        setEditingTemplateId(templateId);
+    const handleEditSpec = async (specId) => {
+        setEditingSpecId(specId);
         setDrawerTitle("Editar Especificación");
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:8000/api/specs/${templateId}/config`);
+            const response = await fetch(`http://localhost:8000/api/specs/${specId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -49,31 +49,31 @@ export default function Specs() {
             setIsDrawerOpen(true);
         } catch (err) {
             console.error(err);
-            toast.error("No se pudo cargar la configuración de la plantilla.");
+            toast.error("No se pudo cargar la configuración de la especificación.");
         } finally {
             setLoading(false);
         }
     };
 
-    const handleDeleteTemplate = async (templateId) => {
-        if (window.confirm("¿Estás seguro de que deseas eliminar esta plantilla?")) {
+    const handleDeleteSpec = async (specId) => {
+        if (window.confirm("¿Estás seguro de que deseas eliminar esta especificación?")) {
             // TODO: Implement delete logic
-            console.log("Delete template", templateId);
+            console.log("Delete spec", specId);
         }
     }
 
-    const handleOpenNewTemplate = () => {
-        setEditingTemplateId(null);
+    const handleOpenNewSpec = () => {
+        setEditingSpecId(null);
         setDrawerTitle("Nueva Especificación");
         setDrawerData(null);
         setIsDrawerOpen(true);
     };
 
-    const handleSaveTemplate = async (config) => {
-        const isNew = !editingTemplateId;
+    const handleSaveSpec = async (config) => {
+        const isNew = !editingSpecId;
         const url = isNew
             ? `http://localhost:8000/api/specs/config`
-            : `http://localhost:8000/api/specs/${editingTemplateId}/config`;
+            : `http://localhost:8000/api/specs/${editingSpecId}/config`;
 
         try {
             const response = await fetch(url, {
@@ -86,13 +86,13 @@ export default function Specs() {
             if (data.status === 'success') {
                 toast.success(data.message);
                 setIsDrawerOpen(false);
-                fetchTemplates();
+                fetchSpecs();
             } else {
                 throw new Error(data.error || "Error al guardar");
             }
         } catch (err) {
             console.error(err);
-            toast.error("Error al guardar la plantilla: " + err.message);
+            toast.error("Error al guardar la especificación: " + err.message);
         }
     };
 
@@ -104,8 +104,8 @@ export default function Specs() {
         setSortConfig({ key, direction });
     };
 
-    const sortedAndFilteredTemplates = useMemo(() => {
-        let items = [...templates].filter(t =>
+    const sortedAndFilteredSpecs = useMemo(() => {
+        let items = [...specs].filter(t =>
             (t.name?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
             (t.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
         );
@@ -121,7 +121,7 @@ export default function Specs() {
             });
         }
         return items;
-    }, [templates, busqueda, sortConfig]);
+    }, [specs, busqueda, sortConfig]);
 
     const SortIcon = ({ columnKey }) => {
         if (sortConfig.key !== columnKey) return <ArrowUpDown size={14} className="text-slate-300 dark:text-slate-600" />;
@@ -147,14 +147,14 @@ export default function Specs() {
                 </div>
                 <div className="flex items-center gap-2">
                     <button
-                        onClick={fetchTemplates}
+                        onClick={fetchSpecs}
                         className="bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 transition-all shadow-sm"
                         title="Refrescar datos"
                     >
                         <RefreshCcw size={20} className={loading ? "animate-spin" : ""} />
                     </button>
                     <button
-                        onClick={handleOpenNewTemplate}
+                        onClick={handleOpenNewSpec}
                         className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl font-bold transition-all shadow-md shadow-indigo-100 dark:shadow-indigo-900/20 flex items-center gap-2"
                     >
                         <Plus size={20} strokeWidth={3} />
@@ -234,37 +234,37 @@ export default function Specs() {
                                         </div>
                                     </td>
                                 </tr>
-                            ) : sortedAndFilteredTemplates.length > 0 ? (
-                                sortedAndFilteredTemplates.map((template) => (
-                                    <tr key={template.id_template} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
+                            ) : sortedAndFilteredSpecs.length > 0 ? (
+                                sortedAndFilteredSpecs.map((spec) => (
+                                    <tr key={spec.id_template} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
                                         <td className="p-5 text-left">
-                                            <div className="font-bold text-slate-700 dark:text-slate-200">{template.name}</div>
+                                            <div className="font-bold text-slate-700 dark:text-slate-200">{spec.name}</div>
                                         </td>
                                         <td className="p-5 text-slate-500 dark:text-slate-400 text-sm text-left">
-                                            {template.description}
+                                            {spec.description}
                                         </td>
                                         <td className="p-5 text-left">
-                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${template.type === 'Dashboard'
+                                            <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${spec.type === 'Dashboard'
                                                 ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
                                                 : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                                                 }`}>
-                                                {template.type}
+                                                {spec.type}
                                             </span>
                                         </td>
                                         <td className="p-5 text-slate-500 dark:text-slate-400 text-sm font-medium">
-                                            {template.updated_at}
+                                            {spec.updated_at}
                                         </td>
                                         <td className="p-5 text-right flex justify-end gap-1">
                                             <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
-                                                    onClick={() => handleEditTemplate(template.id_template)}
+                                                    onClick={() => handleEditSpec(spec.id_template)}
                                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
                                                     title="Configurar"
                                                 >
                                                     <Settings size={18} />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeleteTemplate(template.id_template)}
+                                                    onClick={() => handleDeleteSpec(spec.id_template)}
                                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
                                                     title="Eliminar"
                                                 >
@@ -285,12 +285,12 @@ export default function Specs() {
                     </table>
                 </div>
             </div>
-            <NewTemplateDrawer
+            <NewSpecDrawer
                 isOpen={isDrawerOpen}
                 onClose={() => setIsDrawerOpen(false)}
                 initialData={drawerData}
                 title={drawerTitle}
-                onSave={handleSaveTemplate}
+                onSave={handleSaveSpec}
             />
         </div>
     );

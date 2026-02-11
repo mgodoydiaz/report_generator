@@ -88,7 +88,7 @@ async def execute_pipeline(pipeline_id: int):
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline para el ID {pipeline_id} en el Excel"}
                 
-            result = run_pipeline(config, workflow_id=pipeline_id)
+            result = run_pipeline(config, pipeline_id=pipeline_id)
 
         if result["status"] == "success":
             _update_last_run(pipeline_id)
@@ -105,7 +105,7 @@ async def execute_pipeline_step(pipeline_id: int):
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline en el Excel"}
                 
-            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, workflow_id=pipeline_id)
+            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id)
 
         runner = ACTIVE_RUNNERS[pipeline_id]
         result = runner.step()
@@ -116,8 +116,8 @@ async def execute_pipeline_step(pipeline_id: int):
 
         return result
     except Exception as e:
-        if workflow_id in ACTIVE_RUNNERS:
-            del ACTIVE_RUNNERS[workflow_id]
+        if pipeline_id in ACTIVE_RUNNERS:
+            del ACTIVE_RUNNERS[pipeline_id]
         return {"error": str(e)}
 
 @router.post("/{pipeline_id}/reset")
