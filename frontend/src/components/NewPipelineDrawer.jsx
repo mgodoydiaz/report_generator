@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-    X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, ChevronUp, ChevronDown
+    X, Database, Settings, Code, PlusCircle, Trash, Trash2, Plus, Minus, ChevronUp, ChevronDown
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Editor from 'react-simple-code-editor';
@@ -28,6 +28,9 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         ],
         pipeline: [{ step: "", description: "", params: "" }]
     });
+
+    // Estado para controlar qué pasos están expandidos (por índice)
+    const [expandedSteps, setExpandedSteps] = useState(new Set());
 
     // Cargar datos iniciales al abrir o cambiar initialData
     useEffect(() => {
@@ -64,6 +67,7 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                     context: [{ key: "base_dir", value: "./backend/tests" }],
                     pipeline: [{ step: "", description: "", params: "" }]
                 });
+                setExpandedSteps(new Set());
             }
         }
     }, [isOpen, initialData]);
@@ -91,9 +95,24 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
 
     // --- Handlers para Pipeline ---
     const addStep = () => {
+        const newIndex = formData.pipeline.length;
         setFormData({
             ...formData,
             pipeline: [...formData.pipeline, { step: "", description: "", params: "" }]
+        });
+        // Auto-expandir el paso recién añadido
+        setExpandedSteps(prev => new Set([...prev, newIndex]));
+    };
+
+    const toggleStep = (index) => {
+        setExpandedSteps(prev => {
+            const next = new Set(prev);
+            if (next.has(index)) {
+                next.delete(index);
+            } else {
+                next.add(index);
+            }
+            return next;
         });
     };
 
@@ -120,6 +139,11 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     };
 
     const handleSave = () => {
+        if (!formData.name.trim()) {
+            toast.error("Debes ingresar un nombre para el proceso.");
+            return;
+        }
+
         // Re-transformar datos al formato JSON del archivo
         const contextObj = {};
         formData.context.forEach(c => {
@@ -291,104 +315,140 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                             <h3 className="text-sm font-semibold text-indigo-600 uppercase tracking-wider flex items-center gap-2">
                                 <Code size={16} /> Pasos del Proceso
                             </h3>
+                        </div>
+
+                        <div className="space-y-3">
+                            {formData.pipeline.map((step, index) => {
+                                const isExpanded = expandedSteps.has(index);
+                                const stepLabel = step.step ? (STEP_TRANSLATIONS[step.step] || step.step) : 'Sin configurar';
+
+                                return (
+                                    <div key={index} className={`border rounded-xl relative group transition-all ${isExpanded
+                                        ? 'border-indigo-200 bg-indigo-50/20 shadow-sm'
+                                        : 'border-slate-200 bg-slate-50/30 hover:border-slate-300'
+                                        }`}>
+                                        {/* Cabecera del Paso (siempre visible) */}
+                                        <div className={`flex items-center justify-between px-4 py-3 ${isExpanded ? 'border-b border-indigo-100' : ''}`}>
+                                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                <button
+                                                    onClick={() => toggleStep(index)}
+                                                    className={`p-1 rounded-md transition-all ${isExpanded
+                                                        ? 'bg-indigo-100 text-indigo-600 hover:bg-indigo-200'
+                                                        : 'bg-slate-100 text-slate-400 hover:bg-slate-200 hover:text-slate-600'
+                                                        }`}
+                                                    title={isExpanded ? 'Minimizar' : 'Maximizar'}
+                                                >
+                                                    {isExpanded ? <Minus size={14} /> : <Plus size={14} />}
+                                                </button>
+                                                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase shrink-0">Paso {index + 1}</span>
+                                                <span className={`text-sm font-medium truncate ${step.step ? 'text-slate-700' : 'text-slate-400 italic'
+                                                    }`}>
+                                                    {stepLabel}
+                                                </span>
+                                                {!isExpanded && step.step && (
+                                                    <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded hidden sm:inline">{step.step}</span>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-1 shrink-0 ml-2">
+                                                <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
+                                                    <button
+                                                        onClick={() => moveStep(index, 'up')}
+                                                        disabled={index === 0}
+                                                        className={`p-1 hover:bg-slate-50 transition-colors ${index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
+                                                        title="Mover arriba"
+                                                    >
+                                                        <ChevronUp size={14} />
+                                                    </button>
+                                                    <div className="w-px h-3 bg-slate-100" />
+                                                    <button
+                                                        onClick={() => moveStep(index, 'down')}
+                                                        disabled={index === formData.pipeline.length - 1}
+                                                        className={`p-1 hover:bg-slate-50 transition-colors ${index === formData.pipeline.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
+                                                        title="Mover abajo"
+                                                    >
+                                                        <ChevronDown size={14} />
+                                                    </button>
+                                                </div>
+                                                <button
+                                                    onClick={() => removeStep(index)}
+                                                    className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Contenido Expandible */}
+                                        {isExpanded && (
+                                            <div className="p-4 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                {/* Selector de Paso Humanizado */}
+                                                <div className="relative">
+                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Nombre del Paso</label>
+                                                    <select
+                                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium outline-none bg-white focus:ring-2 focus:ring-indigo-500 appearance-none shadow-sm transition-all"
+                                                        value={step.step}
+                                                        onChange={(e) => updateStep(index, 'step', e.target.value)}
+                                                    >
+                                                        <option value="" disabled>Selecciona un paso...</option>
+                                                        {STEP_OPTIONS.map(opt => (
+                                                            <option key={opt} value={opt}>
+                                                                {STEP_TRANSLATIONS[opt] || opt}
+                                                            </option>
+                                                        ))}
+                                                    </select>
+                                                    <div className="absolute right-4 bottom-3 pointer-events-none text-slate-400">
+                                                        <ChevronDown size={16} />
+                                                    </div>
+                                                </div>
+
+                                                {/* Instrucciones (Texto normal) */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Instrucciones</label>
+                                                    <textarea
+                                                        placeholder="Ej: Este paso limpia los archivos temporales..."
+                                                        rows="2"
+                                                        className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white transition-all resize-none placeholder:text-slate-300"
+                                                        value={step.description}
+                                                        onChange={(e) => updateStep(index, 'description', e.target.value)}
+                                                    />
+                                                </div>
+
+                                                {/* Parámetros (Code/JSON) con Syntax Highlighting */}
+                                                <div>
+                                                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Parámetros</label>
+                                                    <div className="relative group/params border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
+                                                        <Editor
+                                                            value={step.params}
+                                                            onValueChange={code => updateStep(index, 'params', code)}
+                                                            highlight={code => highlight(code, languages.json)}
+                                                            padding={16}
+                                                            placeholder='{ "key": "value" }'
+                                                            className="font-mono text-[13px] bg-white min-h-[120px] outline-none"
+                                                            textareaClassName="outline-none focus:ring-0"
+                                                            style={{
+                                                                fontFamily: '"Fira Code", "Fira Mono", "Cascadia Code", Menlo, Courier, monospace',
+                                                                fontSize: 13,
+                                                            }}
+                                                        />
+                                                        <div className="absolute right-3 top-3 p-1 bg-slate-100 rounded text-[10px] text-slate-400 font-bold opacity-0 group-hover/params:opacity-100 transition-opacity uppercase tracking-tight pointer-events-none z-10">
+                                                            JSON
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        <div className="flex justify-end pt-1">
                             <button
                                 onClick={addStep}
-                                className="text-xs flex items-center gap-1 text-indigo-600 hover:text-indigo-700 font-bold"
+                                className="text-xs flex items-center gap-1.5 text-indigo-600 hover:text-indigo-700 font-bold px-3 py-2 rounded-lg hover:bg-indigo-50 transition-colors"
                             >
                                 <Plus size={14} /> Añadir Paso
                             </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            {formData.pipeline.map((step, index) => (
-                                <div key={index} className="p-4 border border-slate-200 rounded-xl space-y-3 bg-slate-50/30 relative group">
-                                    <div className="flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full uppercase">Paso {index + 1}</span>
-                                            <div className="flex items-center border border-slate-200 rounded-lg overflow-hidden bg-white">
-                                                <button
-                                                    onClick={() => moveStep(index, 'up')}
-                                                    disabled={index === 0}
-                                                    className={`p-1 hover:bg-slate-50 transition-colors ${index === 0 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
-                                                    title="Mover arriba"
-                                                >
-                                                    <ChevronUp size={14} />
-                                                </button>
-                                                <div className="w-px h-3 bg-slate-100" />
-                                                <button
-                                                    onClick={() => moveStep(index, 'down')}
-                                                    disabled={index === formData.pipeline.length - 1}
-                                                    className={`p-1 hover:bg-slate-50 transition-colors ${index === formData.pipeline.length - 1 ? 'text-slate-200 cursor-not-allowed' : 'text-slate-400 hover:text-indigo-600'}`}
-                                                    title="Mover abajo"
-                                                >
-                                                    <ChevronDown size={14} />
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <button
-                                            onClick={() => removeStep(index)}
-                                            className="text-slate-300 hover:text-red-500 transition-colors"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                    <div className="grid gap-3">
-                                        {/* Selector de Paso Humanizado */}
-                                        <div className="relative">
-                                            <select
-                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm font-medium outline-none bg-white focus:ring-2 focus:ring-indigo-500 appearance-none shadow-sm transition-all"
-                                                value={step.step}
-                                                onChange={(e) => updateStep(index, 'step', e.target.value)}
-                                            >
-                                                <option value="" disabled>Selecciona un paso...</option>
-                                                {STEP_OPTIONS.map(opt => (
-                                                    <option key={opt} value={opt}>
-                                                        {STEP_TRANSLATIONS[opt] || opt}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <div className="absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                                <ChevronDown size={16} />
-                                            </div>
-                                        </div>
-
-                                        {/* Instrucciones (Texto normal) */}
-                                        <div>
-                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Instrucciones</label>
-                                            <textarea
-                                                placeholder="Ej: Este paso limpia los archivos temporales..."
-                                                rows="2"
-                                                className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500 bg-white transition-all resize-none placeholder:text-slate-300"
-                                                value={step.description}
-                                                onChange={(e) => updateStep(index, 'description', e.target.value)}
-                                            />
-                                        </div>
-
-                                        {/* Parámetros (Code/JSON) con Syntax Highlighting */}
-                                        <div>
-                                            <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1 ml-1">Parámetros</label>
-                                            <div className="relative group/params border border-slate-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500 transition-all">
-                                                <Editor
-                                                    value={step.params}
-                                                    onValueChange={code => updateStep(index, 'params', code)}
-                                                    highlight={code => highlight(code, languages.json)}
-                                                    padding={16}
-                                                    placeholder='{ "key": "value" }'
-                                                    className="font-mono text-[13px] bg-white min-h-[120px] outline-none"
-                                                    textareaClassName="outline-none focus:ring-0"
-                                                    style={{
-                                                        fontFamily: '"Fira Code", "Fira Mono", "Cascadia Code", Menlo, Courier, monospace',
-                                                        fontSize: 13,
-                                                    }}
-                                                />
-                                                <div className="absolute right-3 top-3 p-1 bg-slate-100 rounded text-[10px] text-slate-400 font-bold opacity-0 group-hover/params:opacity-100 transition-opacity uppercase tracking-tight pointer-events-none z-10">
-                                                    JSON
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
                         </div>
                     </section>
                 </div>

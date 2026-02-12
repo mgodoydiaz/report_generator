@@ -7,7 +7,7 @@
 export const API_BASE_URL = "http://localhost:8000/api";
 
 // Opciones de formatos de entrada y salida permitidos
-export const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG", "DB"];
+export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
 
 // Lista de pasos disponibles
 export const STEP_OPTIONS = [
