@@ -335,7 +335,7 @@ async def export_metric_data(metric_id: int, format: str = "excel"):
                 except:
                     item['Valor_Raw'] = str(value)
             else:
-                item['Valor'] = value
+                item[metric['name']] = value
                 
             flat_data.append(item)
             
@@ -418,7 +418,7 @@ async def get_metric_template(metric_id: int):
             for f in metric['meta_json']['fields']:
                 columns.append(f['name'])
         else:
-            columns.append("Valor")
+            columns.append(metric['name'])
 
         # Crear DF Vacío
         df_template = pd.DataFrame(columns=columns)
@@ -510,8 +510,9 @@ async def import_metric_data(metric_id: int, files: List[UploadFile] = File(...)
                                 val_obj[fname] = val
                     final_value = json.dumps(val_obj)
                 else:
-                    if "Valor" in df.columns:
-                        v = row["Valor"]
+                    value_col = metric['name']
+                    if value_col in df.columns:
+                        v = row[value_col]
                         if pd.notna(v):
                              if metric['data_type'] == 'int': final_value = int(v)
                              elif metric['data_type'] == 'float': final_value = float(v)
