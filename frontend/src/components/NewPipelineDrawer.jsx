@@ -7,7 +7,7 @@ import Editor from 'react-simple-code-editor';
 import { highlight, languages } from 'prismjs/components/prism-core';
 import 'prismjs/components/prism-json';
 import 'prismjs/themes/prism.css'; // Light theme
-import { STEP_OPTIONS, FORMAT_OPTIONS, STEP_TRANSLATIONS } from '../constants';
+import { STEP_OPTIONS, FORMAT_OPTIONS, STEP_TRANSLATIONS, STEP_DEFAULT_PARAMS, stripJsonComments } from '../constants';
 
 /**
  * Componente NewPipelineDrawer
@@ -124,6 +124,15 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     const updateStep = (index, field, value) => {
         const newPipeline = [...formData.pipeline];
         newPipeline[index][field] = value;
+
+        // Auto-rellenar parámetros al seleccionar un paso (solo si params está vacío)
+        if (field === 'step' && value && !newPipeline[index].params.trim()) {
+            const defaultParams = STEP_DEFAULT_PARAMS[value];
+            if (defaultParams) {
+                newPipeline[index].params = defaultParams;
+            }
+        }
+
         setFormData({ ...formData, pipeline: newPipeline });
     };
 
@@ -155,8 +164,9 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         const pipelineArray = formData.pipeline.map(s => {
             let parsedParams = {};
             try {
-                if (s.params.trim()) {
-                    parsedParams = JSON.parse(s.params);
+                const cleanParams = stripJsonComments(s.params).trim();
+                if (cleanParams) {
+                    parsedParams = JSON.parse(cleanParams);
                 }
             } catch (e) {
                 console.error("Error parsing JSON params for step", s.step, e);

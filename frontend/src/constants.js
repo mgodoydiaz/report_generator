@@ -74,3 +74,87 @@ export const getFormatStyle = (format) => {
     if (!format) return 'bg-slate-50 text-slate-500 border-slate-100';
     return FORMAT_COLORS[format.toUpperCase()] || 'bg-slate-50 text-slate-500 border-slate-100';
 };
+
+/**
+ * Elimina comentarios de línea (//) de un string JSONC,
+ * respetando strings entre comillas.
+ * @param {string} str - String JSONC con comentarios
+ * @returns {string} JSON limpio listo para JSON.parse()
+ */
+export const stripJsonComments = (str) => {
+    return str.replace(/("(?:[^"\\]|\\.)*")|\/\/.*/g, (match, group) => {
+        return group ? group : '';
+    });
+};
+
+/**
+ * Plantillas JSONC con comentarios explicativos para cada paso del pipeline.
+ * Se muestran al usuario al seleccionar un paso en el editor de parámetros.
+ */
+export const STEP_DEFAULT_PARAMS = {
+    "InitRun": `{
+  "evaluation": "nombre_evaluacion", // Nombre de la evaluación
+  "base_dir": "./backend/tests" // Directorio base de trabajo
+}`,
+    "LoadConfig": `{
+  "config_path": "./ruta/config.json" // Ruta al archivo JSON de configuración
+}`,
+    "DiscoverInputs": `{
+  "rules": {
+    "tipo_archivo": {
+      "extension": ".xlsx", // Extensión del archivo
+      "contains": "texto_en_nombre" // Texto que debe contener el nombre
+    }
+  }
+}`,
+    "RequestUserFiles": `{
+  "file_specs": [
+    {
+      "id": "nombre_artifact", // Identificador único del grupo de archivos
+      "label": "Nombre en el Modal", // Título visible para el usuario
+      "description": "Descripción del archivo requerido", // Texto descriptivo
+      "multiple": true, // Permitir múltiples archivos
+      "optional": false // Archivo obligatorio u opcional
+    }
+  ]
+}`,
+    "RunExcelETL": `{
+  "input_key": "nombre_input", // Clave del artifact de entrada
+  "output_key": "nombre_output" // Clave del artifact de salida
+}`,
+    "EnrichWithContext": `{
+  "input_key": "nombre_input", // Clave del artifact de entrada
+  "output_key": "nombre_output", // Clave del artifact de salida
+  "context_mapping": {
+    "columna_nueva": "clave_del_contexto" // Mapa columna → parámetro del contexto
+  }
+}`,
+    "SaveToMetric": `{
+  "metric_id": 1, // ID de la métrica destino
+  "input_key": "nombre_artifact", // Clave del artifact (DataFrame)
+  "value_column": "value", // Columna con el valor de la métrica
+  "dimension_columns": [], // Columnas de dimensiones (vacío = auto-inferir)
+  "clear_existing": false // Borrar datos previos antes de insertar
+}`,
+    "ExportConsolidatedExcel": `{
+  "input_key": "nombre_input", // Clave del artifact de entrada
+  "output_filename": "archivo_salida.xlsx" // Nombre del archivo Excel de salida
+}`,
+    "GenerateGraphics": `{
+  "charts_schema": [] // Lista de definiciones de gráficos
+}`,
+    "GenerateTables": `{
+  "tables_schema": [] // Lista de definiciones de tablas
+}`,
+    "RenderReport": `{
+  "report_schema": {} // Estructura del informe PDF
+}`,
+    "GenerateDocxReport": `{
+  "template_name": "plantilla.docx", // Nombre de la plantilla Word
+  "output_filename": "informe.docx", // Nombre del archivo de salida
+  "convert_to_pdf": true // Convertir a PDF después de generar
+}`,
+    "DeleteTempFiles": `{
+  // Este paso no requiere parámetros
+}`
+};
