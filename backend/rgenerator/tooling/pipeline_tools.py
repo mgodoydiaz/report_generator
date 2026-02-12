@@ -5,6 +5,7 @@ import re
 from rgenerator.etl.core.context import RunContext
 from rgenerator.etl.core.step import Step, WaitingForInputException
 import rgenerator.etl.core.pipeline_steps as ps
+import rgenerator.etl.core.metric_steps as ms
 import os
 
 # Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python
@@ -16,7 +17,8 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "EnrichWithContext": ps.EnrichWithContext,
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
     "DeleteTempFiles": ps.DeleteTempFiles,
-    "RequestUserFiles": ps.RequestUserFiles
+    "RequestUserFiles": ps.RequestUserFiles,
+    "SaveToMetric": ms.SaveToMetric
 }
 
 def load_pipeline_config(config_source: str | Path | dict, pipeline_id: Optional[int] = None) -> tuple[RunContext, List[Step]]:

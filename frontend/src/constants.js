@@ -7,7 +7,7 @@
 export const API_BASE_URL = "http://localhost:8000/api";
 
 // Opciones de formatos de entrada y salida permitidos
-export const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG"];
+export const FORMAT_OPTIONS = ["EXCEL", "PDF", "DOC", "IMG", "DB"];
 
 // Lista de pasos disponibles
 export const STEP_OPTIONS = [
@@ -17,14 +17,14 @@ export const STEP_OPTIONS = [
     "RequestUserFiles",
     "RunExcelETL",
     "EnrichWithContext",
+    "SaveToMetric",
     "ExportConsolidatedExcel",
     "GenerateGraphics",
     "GenerateTables",
     "RenderReport",
     "GenerateDocxReport",
-    "GenerateDocxReport",
     "DeleteTempFiles",
-    "LoadToMetrics"
+
 ];
 
 // Traducciones a lenguaje humano para los pasos técnicos
@@ -32,16 +32,16 @@ export const STEP_TRANSLATIONS = {
     "InitRun": "Inicializar Proceso",
     "LoadConfig": "Cargar Configuración",
     "DiscoverInputs": "Identificar Archivos",
-    "RequestUserFiles": "Cargar Archivos",
+    "RequestUserFiles": "Solicitar Archivos",
     "RunExcelETL": "Procesar Datos",
     "EnrichWithContext": "Enriquecer Información",
+    "SaveToMetric": "Cargar Métricas",
     "ExportConsolidatedExcel": "Exportar Datos",
     "GenerateGraphics": "Crear Gráficos",
     "GenerateTables": "Preparar Tablas",
-    "RenderReport": "Generar Informe",
-    "GenerateDocxReport": "Generar Documento",
-    "DeleteTempFiles": "Limpiar Archivos",
-    "LoadToMetrics": "Cargar Métricas"
+    "RenderReport": "Generar Informe PDF",
+    "GenerateDocxReport": "Generar Documento DOCX",
+    "DeleteTempFiles": "Limpiar Archivos"
 };
 
 // Mapeo de colores y estilos para los formatos de archivo
@@ -49,7 +49,8 @@ export const FORMAT_COLORS = {
     'EXCEL': 'bg-emerald-50 text-emerald-600 border-emerald-100',
     'PDF': 'bg-rose-50 text-rose-600 border-rose-100',
     'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
-    'IMG': 'bg-amber-50 text-amber-600 border-amber-100'
+    'IMG': 'bg-amber-50 text-amber-600 border-amber-100',
+    'DB': 'bg-violet-50 text-violet-600 border-violet-100'
 };
 
 // Tipos de Plantillas
