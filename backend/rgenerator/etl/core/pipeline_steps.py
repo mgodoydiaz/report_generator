@@ -13,6 +13,7 @@ from .step import Step, WaitingForInputException
 from rgenerator.tooling.config_tools import cargar_config_desde_json
 from rgenerator.tooling import plot_tools, report_tools
 from rgenerator.tooling.report_docx_tools import render_docx_report
+from config import UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
 import shutil
 
@@ -72,11 +73,9 @@ class InitRun(Step):
         for k, v in self.params.items():
             context.params[k] = v       
 
-        # carpetas estandar
-        context.base_dir = Path(self.params.get("base_dir", context.base_dir))
-        
-        # Estructura organizada por evaluacion y run_id
-        context.work_dir = context.base_dir / "runs" / context.evaluation / context.run_id
+        # Carpetas estándar - todo centralizado en PIPELINE_RUNS_DIR
+        pipeline_id = context.pipeline_id or "local"
+        context.work_dir = PIPELINE_RUNS_DIR / "runs" / str(pipeline_id) / context.run_id
         context.inputs_dir = context.work_dir / "inputs"
         context.aux_dir = context.work_dir / "aux_files"
         context.outputs_dir = context.work_dir / "outputs"
@@ -802,13 +801,16 @@ class RequestUserFiles(Step):
             self._log("No se encontró pipeline_id en el contexto para RequestUserFiles.")
             return
 
-        # Ruta donde el backend guarda las subidas temporales (ver api.py)
-        # Asumiendo estructura: backend/data/database/pipelines/uploads/{pipeline_id}/{input_key}
-        base_path = Path(__file__).resolve().parent.parent.parent.parent.parent
-        uploads_root = base_path / "data" / "database" / "pipelines" / "uploads" / str(ctx.pipeline_id)
+        # Ruta centralizada de uploads (definida en config.py)
+        uploads_root = UPLOADS_DIR / str(ctx.pipeline_id)
 
         if not uploads_root.exists():
             self._log(f"No se encontró directorio de subidas en {uploads_root}")
+            # Si hay specs no-opcionales, pedir los archivos al usuario
+            for spec in self.file_specs:
+                if not spec.get("optional", False):
+                    self._log(f"Solicitando input usuario para '{spec.get('id')}'")
+                    raise WaitingForInputException(self.name, {"input_key": spec.get("id"), "spec": spec})
             return
 
         for spec in self.file_specs:
@@ -835,6 +837,11 @@ class RequestUserFiles(Step):
                 if not spec.get("optional", False):
                     self._log(f"Solicitando input usuario para '{input_key}'")
                     raise WaitingForInputException(self.name, {"input_key": input_key, "spec": spec})
+
+        # Limpiar uploads temporales después de copiar exitosamente
+        if uploads_root.exists():
+            shutil.rmtree(uploads_root)
+            self._log(f"Limpiado directorio de uploads temporales: {uploads_root}")
 
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)

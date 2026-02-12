@@ -15,6 +15,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const [error, setError] = useState(null);
     const [userFiles, setUserFiles] = useState({}); // { input_key: File[] }
     const [executionResult, setExecutionResult] = useState(null);
+    const [executionMode, setExecutionMode] = useState('normal'); // normal | fast
 
     const stepsViewportRef = useRef(null);
     const activeStepRef = useRef(null);
@@ -72,13 +73,14 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     };
 
     const startExecution = async (mode = 'normal') => {
-        // 1. Manejo de inputs pendientes (Si estamos en estado de espera)
-        if (status === 'waiting_input') {
-            const currentStep = steps[currentStepIndex];
+        // 1. Si el paso actual es RequestUserFiles y hay archivos seleccionados, subirlos primero
+        const currentStep = steps[currentStepIndex];
+        if (currentStep && currentStep.step === 'RequestUserFiles') {
+            const specs = currentStep.params.file_specs || [];
+            const hasFiles = Object.values(userFiles).some(files => files && files.length > 0);
 
-            // Caso especial: RequestUserFiles
-            if (currentStep && currentStep.step === 'RequestUserFiles') {
-                const specs = currentStep.params.file_specs || [];
+            if (hasFiles) {
+                // Validar que no falten archivos obligatorios
                 const missing = specs.filter(spec =>
                     !spec.optional && (!userFiles[spec.id] || userFiles[spec.id].length === 0)
                 );
@@ -102,22 +104,28 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     });
 
                     await Promise.all(uploadPromises);
-                    // Archivos subidos, continuamos con el flujo normal (backend re-ejecutará el paso)
                 } catch (e) {
                     setError("Error subiendo archivos: " + e.message);
                     setStatus('error');
                     return;
                 }
+            } else if (status !== 'waiting_input') {
+                // No hay archivos seleccionados y no estamos en waiting_input:
+                // dejar que el backend lance WaitingForInputException para mostrar la UI
             }
         }
 
         setStatus('executing');
 
+        // Recordar el modo para poder retomar después de un waiting_input
+        const effectiveMode = status === 'waiting_input' ? executionMode : mode;
+        setExecutionMode(effectiveMode);
+
         try {
             let result;
             let finalState = false;
 
-            if (mode === 'fast') {
+            if (effectiveMode === 'fast') {
                 // Modo rápido
                 const progressInterval = setInterval(() => {
                     setCurrentStepIndex(prev => (prev < steps.length - 1 ? prev + 1 : prev));
@@ -126,6 +134,17 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                 const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
                 result = await response.json();
                 clearInterval(progressInterval);
+
+                // Si el pipeline se detuvo porque necesita input del usuario
+                if (result.status === 'waiting_input') {
+                    setStatus('waiting_input');
+                    if (result.step_index !== undefined) {
+                        setCurrentStepIndex(result.step_index);
+                    }
+                    if (result.message) toast(result.message, { icon: '👋' });
+                    return;
+                }
+
                 finalState = true;
             } else {
                 // Modo paso a paso
@@ -141,6 +160,16 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     }
                     if (result.message) toast(result.message, { icon: '👋' });
                     return; // Terminamos aquí por ahora
+                }
+
+                // Si acabamos de resolver un RequestUserFiles (post-upload),
+                // ejecutar automáticamente el siguiente paso para no requerir doble clic
+                if (result.status === 'success' && !result.finished && result.step_name === 'RequestUserFiles') {
+                    if (result.next_index !== undefined) {
+                        setCurrentStepIndex(result.next_index);
+                    }
+                    const nextResponse = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
+                    result = await nextResponse.json();
                 }
 
                 if (result.status === 'success') {

@@ -149,15 +149,25 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
                     <div className="space-y-6">
                         {/* Basic Info */}
                         <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Nombre de la Métrica</label>
-                                <input
-                                    type="text"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                    placeholder="Ej: Matrícula Total, Venta Neta"
-                                    className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200"
-                                />
+                            <div className="flex items-end gap-2">
+                                <div className="flex-1">
+                                    <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Nombre de la Métrica</label>
+                                    <input
+                                        type="text"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        placeholder="Ej: Matrícula Total, Venta Neta"
+                                        className="w-full px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-bold text-slate-700 dark:text-slate-200"
+                                    />
+                                </div>
+                                {initialData?.id_metric && (
+                                    <div className="shrink-0">
+                                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2 text-center">ID</label>
+                                        <span className="flex items-center justify-center px-3 h-[46px] rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-sm font-mono font-bold text-slate-400 select-all" title="ID de la métrica (no editable)">
+                                            #{initialData.id_metric}
+                                        </span>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-2">Descripción</label>

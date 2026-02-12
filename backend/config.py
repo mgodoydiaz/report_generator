@@ -18,4 +18,7 @@ METRIC_DATA_DB_PATH = DB_DIR / "metric_data.xlsx"
 # Directorios de Almacenamiento
 PIPELINES_DIR = DB_DIR / "pipelines"
 TEMPLATES_DIR = DB_DIR / "reports_templates"
-UPLOADS_DIR = PIPELINES_DIR / "uploads"
+
+# Directorio centralizado para ejecuciones de pipelines
+PIPELINE_RUNS_DIR = BASE_DIR / "data" / "pipeline_runs"
+UPLOADS_DIR = PIPELINE_RUNS_DIR / "uploads"

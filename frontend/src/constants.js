@@ -11,46 +11,46 @@ export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
 
 // Lista de pasos disponibles
 export const STEP_OPTIONS = [
-    "InitRun",
-    "LoadConfig",
-    "DiscoverInputs",
-    "RequestUserFiles",
-    "RunExcelETL",
-    "EnrichWithContext",
-    "SaveToMetric",
-    "ExportConsolidatedExcel",
-    "GenerateGraphics",
-    "GenerateTables",
-    "RenderReport",
-    "GenerateDocxReport",
-    "DeleteTempFiles",
+  "InitRun",
+  "LoadConfig",
+  "DiscoverInputs",
+  "RequestUserFiles",
+  "RunExcelETL",
+  "EnrichWithContext",
+  "SaveToMetric",
+  "ExportConsolidatedExcel",
+  "GenerateGraphics",
+  "GenerateTables",
+  "RenderReport",
+  "GenerateDocxReport",
+  "DeleteTempFiles",
 
 ];
 
 // Traducciones a lenguaje humano para los pasos técnicos
 export const STEP_TRANSLATIONS = {
-    "InitRun": "Inicializar Proceso",
-    "LoadConfig": "Cargar Configuración",
-    "DiscoverInputs": "Identificar Archivos",
-    "RequestUserFiles": "Solicitar Archivos",
-    "RunExcelETL": "Procesar Datos",
-    "EnrichWithContext": "Enriquecer Información",
-    "SaveToMetric": "Cargar Métricas",
-    "ExportConsolidatedExcel": "Exportar Datos",
-    "GenerateGraphics": "Crear Gráficos",
-    "GenerateTables": "Preparar Tablas",
-    "RenderReport": "Generar Informe PDF",
-    "GenerateDocxReport": "Generar Documento DOCX",
-    "DeleteTempFiles": "Limpiar Archivos"
+  "InitRun": "Inicializar Proceso",
+  "LoadConfig": "Cargar Configuración",
+  "DiscoverInputs": "Identificar Archivos",
+  "RequestUserFiles": "Solicitar Archivos",
+  "RunExcelETL": "Procesar Datos",
+  "EnrichWithContext": "Enriquecer Información",
+  "SaveToMetric": "Cargar Métricas",
+  "ExportConsolidatedExcel": "Exportar Datos",
+  "GenerateGraphics": "Crear Gráficos",
+  "GenerateTables": "Preparar Tablas",
+  "RenderReport": "Generar Informe PDF",
+  "GenerateDocxReport": "Generar Documento DOCX",
+  "DeleteTempFiles": "Limpiar Archivos"
 };
 
 // Mapeo de colores y estilos para los formatos de archivo
 export const FORMAT_COLORS = {
-    'EXCEL': 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    'PDF': 'bg-rose-50 text-rose-600 border-rose-100',
-    'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
-    'IMG': 'bg-amber-50 text-amber-600 border-amber-100',
-    'DB': 'bg-violet-50 text-violet-600 border-violet-100'
+  'EXCEL': 'bg-emerald-50 text-emerald-600 border-emerald-100',
+  'PDF': 'bg-rose-50 text-rose-600 border-rose-100',
+  'DOC': 'bg-sky-50 text-sky-600 border-sky-100',
+  'IMG': 'bg-amber-50 text-amber-600 border-amber-100',
+  'DB': 'bg-violet-50 text-violet-600 border-violet-100'
 };
 
 // Tipos de Plantillas
@@ -58,11 +58,11 @@ export const TEMPLATE_TYPES = ["Reporte", "Dashboard", "ETL Archivo"];
 
 // Opciones de parámetros para ETL
 export const ETL_PARAMETER_OPTIONS = [
-    { id: 'header_row', label: 'Fila Encabezado', type: 'text', limit: 1 },
-    { id: 'output_name', label: 'Nombre Salida', type: 'text', limit: 1 },
-    { id: 'select_columns', label: 'Seleccionar Columnas', type: 'list_text', limit: 0 },
-    { id: 'rename_columns', label: 'Renombrar Columnas', type: 'list_pair', limit: 0, fields: ['Original', 'Final'] },
-    { id: 'enrich_data', label: 'Enriquecer Data', type: 'list_pair', limit: 0, fields: ['Columna', 'Valor'] }
+  { id: 'header_row', label: 'Fila Encabezado', type: 'text', limit: 1 },
+  { id: 'output_name', label: 'Nombre Salida', type: 'text', limit: 1 },
+  { id: 'select_columns', label: 'Seleccionar Columnas', type: 'list_text', limit: 0 },
+  { id: 'rename_columns', label: 'Renombrar Columnas', type: 'list_pair', limit: 0, fields: ['Original', 'Final'] },
+  { id: 'enrich_data', label: 'Enriquecer Data', type: 'list_pair', limit: 0, fields: ['Columna', 'Valor'] }
 ];
 
 /**
@@ -71,8 +71,8 @@ export const ETL_PARAMETER_OPTIONS = [
  * @returns {string} Clases de Tailwind para el estilo
  */
 export const getFormatStyle = (format) => {
-    if (!format) return 'bg-slate-50 text-slate-500 border-slate-100';
-    return FORMAT_COLORS[format.toUpperCase()] || 'bg-slate-50 text-slate-500 border-slate-100';
+  if (!format) return 'bg-slate-50 text-slate-500 border-slate-100';
+  return FORMAT_COLORS[format.toUpperCase()] || 'bg-slate-50 text-slate-500 border-slate-100';
 };
 
 /**
@@ -82,9 +82,9 @@ export const getFormatStyle = (format) => {
  * @returns {string} JSON limpio listo para JSON.parse()
  */
 export const stripJsonComments = (str) => {
-    return str.replace(/("(?:[^"\\]|\\.)*")|\/\/.*/g, (match, group) => {
-        return group ? group : '';
-    });
+  return str.replace(/("(?:[^"\\]|\\.)*")|\/\/.*/g, (match, group) => {
+    return group ? group : '';
+  });
 };
 
 /**
@@ -92,14 +92,14 @@ export const stripJsonComments = (str) => {
  * Se muestran al usuario al seleccionar un paso en el editor de parámetros.
  */
 export const STEP_DEFAULT_PARAMS = {
-    "InitRun": `{
+  "InitRun": `{
   "evaluation": "nombre_evaluacion", // Nombre de la evaluación
   "base_dir": "./backend/tests" // Directorio base de trabajo
 }`,
-    "LoadConfig": `{
+  "LoadConfig": `{
   "config_path": "./ruta/config.json" // Ruta al archivo JSON de configuración
 }`,
-    "DiscoverInputs": `{
+  "DiscoverInputs": `{
   "rules": {
     "tipo_archivo": {
       "extension": ".xlsx", // Extensión del archivo
@@ -107,7 +107,7 @@ export const STEP_DEFAULT_PARAMS = {
     }
   }
 }`,
-    "RequestUserFiles": `{
+  "RequestUserFiles": `{
   "file_specs": [
     {
       "id": "nombre_artifact", // Identificador único del grupo de archivos
@@ -118,43 +118,41 @@ export const STEP_DEFAULT_PARAMS = {
     }
   ]
 }`,
-    "RunExcelETL": `{
+  "RunExcelETL": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output" // Clave del artifact de salida
 }`,
-    "EnrichWithContext": `{
+  "EnrichWithContext": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output", // Clave del artifact de salida
   "context_mapping": {
     "columna_nueva": "clave_del_contexto" // Mapa columna → parámetro del contexto
   }
 }`,
-    "SaveToMetric": `{
+  "SaveToMetric": `{
   "metric_id": 1, // ID de la métrica destino
   "input_key": "nombre_artifact", // Clave del artifact (DataFrame)
-  "value_column": "value", // Columna con el valor de la métrica
-  "dimension_columns": [], // Columnas de dimensiones (vacío = auto-inferir)
   "clear_existing": false // Borrar datos previos antes de insertar
 }`,
-    "ExportConsolidatedExcel": `{
+  "ExportConsolidatedExcel": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_filename": "archivo_salida.xlsx" // Nombre del archivo Excel de salida
 }`,
-    "GenerateGraphics": `{
+  "GenerateGraphics": `{
   "charts_schema": [] // Lista de definiciones de gráficos
 }`,
-    "GenerateTables": `{
+  "GenerateTables": `{
   "tables_schema": [] // Lista de definiciones de tablas
 }`,
-    "RenderReport": `{
+  "RenderReport": `{
   "report_schema": {} // Estructura del informe PDF
 }`,
-    "GenerateDocxReport": `{
+  "GenerateDocxReport": `{
   "template_name": "plantilla.docx", // Nombre de la plantilla Word
   "output_filename": "informe.docx", // Nombre del archivo de salida
   "convert_to_pdf": true // Convertir a PDF después de generar
 }`,
-    "DeleteTempFiles": `{
+  "DeleteTempFiles": `{
   // Este paso no requiere parámetros
 }`
 };

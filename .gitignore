@@ -50,3 +50,7 @@ data/tmp/*
 codex-review.md 
 comunicacion_agente.md
 agents/
+
+# Archivos locales
+backend/tests/runs/*
+data/pipeline_runs/*

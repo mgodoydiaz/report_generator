@@ -4,7 +4,7 @@ import pandas as pd
 import shutil
 import os
 import json
-from config import BASE_DIR, PIPELINES_DB_PATH, PIPELINES_DIR, UPLOADS_DIR
+from config import BASE_DIR, PIPELINES_DB_PATH, PIPELINES_DIR, UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json, get_json_safe_df
 
@@ -78,23 +78,28 @@ async def execute_pipeline(pipeline_id: int):
     try:
         os.system("cls") # Limpiar consola del servidor windows
         
-        if pipeline_id in ACTIVE_RUNNERS:
-            runner = ACTIVE_RUNNERS[pipeline_id]
-            runner.run_all()
-            result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
-            del ACTIVE_RUNNERS[pipeline_id]
-        else:
+        if pipeline_id not in ACTIVE_RUNNERS:
             config = _get_pipeline_config_from_excel(pipeline_id)
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline para el ID {pipeline_id} en el Excel"}
-                
-            result = run_pipeline(config, pipeline_id=pipeline_id)
+            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id)
 
-        if result["status"] == "success":
-            _update_last_run(pipeline_id)
+        runner = ACTIVE_RUNNERS[pipeline_id]
+        results = runner.run_all()
+        last_result = results[-1] if results else {}
 
+        # Si un paso necesita input del usuario, mantener el runner activo
+        if last_result.get("status") == "waiting_input":
+            return last_result
+
+        # Pipeline completado
+        result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
+        del ACTIVE_RUNNERS[pipeline_id]
+        _update_last_run(pipeline_id)
         return result
     except Exception as e:
+        if pipeline_id in ACTIVE_RUNNERS:
+            del ACTIVE_RUNNERS[pipeline_id]
         return {"error": str(e)}
 
 @router.post("/{pipeline_id}/step")

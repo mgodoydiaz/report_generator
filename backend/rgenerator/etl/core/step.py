@@ -11,7 +11,7 @@ class WaitingForInputException(Exception):
     def __init__(self, step_name: str, input_details: Dict):
         self.step_name = step_name
         self.input_details = input_details
-        super().__init__(f"Step '{step_name}' waiting for input.") 
+        super().__init__(f"Paso '{step_name}' necesita una entrada del usuario.")
 
 @dataclass
 class Step:

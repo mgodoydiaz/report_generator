@@ -114,11 +114,14 @@ class PipelineRunner:
             raise e
 
     def run_all(self):
-        """Ejecuta todos los pasos restantes."""
+        """Ejecuta todos los pasos restantes. Se detiene si un paso necesita input del usuario."""
         results = []
         while self.current_step_index < self.total_steps:
             res = self.step()
             results.append(res)
+            # Si un paso necesita input del usuario, detenerse aquí
+            if res.get("status") == "waiting_input":
+                break
         return results
 
 def run_pipeline(config_source: str | Path | dict, pipeline_id: Optional[int] = None):
