@@ -17,6 +17,7 @@ export const STEP_OPTIONS = [
   "DiscoverInputs",
   "RequestUserFiles",
   "RunExcelETL",
+  "EnrichWithUserInput",
   "EnrichWithContext",
   "SaveToMetric",
   "ExportConsolidatedExcel",
@@ -36,7 +37,8 @@ export const STEP_TRANSLATIONS = {
   "DiscoverInputs": "Identificar Archivos",
   "RequestUserFiles": "Solicitar Archivos",
   "RunExcelETL": "Procesar Datos",
-  "EnrichWithContext": "Enriquecer Información",
+  "EnrichWithUserInput": "Enriquecer por Usuario",
+  "EnrichWithContext": "Enriquecer por Contexto",
   "SaveToMetric": "Cargar Métricas",
   "ExportConsolidatedExcel": "Exportar Datos",
   "GenerateGraphics": "Crear Gráficos",
@@ -126,6 +128,10 @@ export const STEP_DEFAULT_PARAMS = {
   "RunExcelETL": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output" // Clave del artifact de salida
+}`,
+  "EnrichWithUserInput": `{
+  "input_key": "nombre_input" // Clave del artifact de entrada (opcional, se auto-detecta)
+  // Los campos a solicitar se leen desde enrich_data del spec (user_input: true)
 }`,
   "EnrichWithContext": `{
   "input_key": "nombre_input", // Clave del artifact de entrada

@@ -1,8 +1,9 @@
 import React from 'react';
 import RequestUserFiles from './RequestUserFiles';
+import EnrichWithUserInput from './EnrichWithUserInput';
 import GenericStep from './GenericStep';
 
-const StepRenderer = ({ stepData, status, userFiles, onFileChange }) => {
+const StepRenderer = ({ stepData, status, userFiles, onFileChange, inputDetails, onSubmitInput }) => {
     if (!stepData) return null;
 
     // Si el paso es RequestUserFiles, mostramos SIEMPRE el componente interactivo
@@ -13,6 +14,17 @@ const StepRenderer = ({ stepData, status, userFiles, onFileChange }) => {
                 stepParams={stepData.params}
                 files={userFiles}
                 onFileChange={onFileChange}
+            />
+        );
+    }
+
+    // Si el paso es EnrichWithUserInput y estamos esperando input
+    if (stepData.step === 'EnrichWithUserInput' && status === 'waiting_input' && inputDetails) {
+        return (
+            <EnrichWithUserInput
+                inputDetails={inputDetails}
+                onSubmit={onSubmitInput}
+                status={status}
             />
         );
     }

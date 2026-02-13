@@ -192,7 +192,11 @@ class LoadConfigFromSpec(Step):
                 continue  # Se omite output_filename
 
             if param_type == "list_pair" and isinstance(value, list):
-                result[param_id] = {item["key"]: item["val"] for item in value if "key" in item and "val" in item}
+                if param_id == "enrich_data":
+                    # Conservar lista completa para preservar flags como user_input
+                    result[param_id] = value
+                else:
+                    result[param_id] = {item["key"]: item["val"] for item in value if "key" in item and "val" in item}
             elif param_type == "text" and isinstance(value, str):
                 try:
                     result[param_id] = int(value)
@@ -242,11 +246,13 @@ class LoadConfigFromSpec(Step):
 
         # --- etlParams: transformar a formato plano ---
         etl_params = config.get("etlParams", [])
+        
         if etl_params:
             flat_params = self._transform_etl_params(etl_params)
             for k, v in flat_params.items():
-                if k not in ctx.params:
-                    ctx.params[k] = v
+                
+                # Forzar actualización desde el Spec (sobrescribir si existe)
+                ctx.params[k] = v
             loaded_keys.append(f"etlParams({len(flat_params)})")
 
         # --- Otras secciones: copiar tal cual ---
@@ -497,7 +503,12 @@ class EnrichWithUserInput(Step):
 
         # 1. Obtener campos que requieren input del usuario
         enrich_data = ctx.params.get("enrich_data", [])
-        user_input_fields = [p for p in enrich_data if p.get("user_input")]
+        
+        if isinstance(enrich_data, list):
+            user_input_fields = [p for p in enrich_data if isinstance(p, dict) and p.get("user_input")]
+        else:
+            # Fallback seguro
+            user_input_fields = []
 
         if not user_input_fields:
             self._log(f"[{self.name}] No hay campos que requieran input del usuario. Saltando.")

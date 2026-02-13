@@ -16,6 +16,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const [userFiles, setUserFiles] = useState({}); // { input_key: File[] }
     const [executionResult, setExecutionResult] = useState(null);
     const [executionMode, setExecutionMode] = useState('normal'); // normal | fast
+    const [inputDetails, setInputDetails] = useState(null); // Detalles de input requerido por un paso
 
     const stepsViewportRef = useRef(null);
     const activeStepRef = useRef(null);
@@ -43,6 +44,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         setError(null);
         setUserFiles({});
         setExecutionResult(null);
+        setInputDetails(null);
         if (pipelineId) {
             fetch(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
         }
@@ -94,6 +96,45 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         } catch (error) {
             console.error(error);
             toast.error("No se pudo copiar el contenido.");
+        }
+    };
+
+    // Manejo de envío de datos de usuario (EnrichWithUserInput)
+    const handleSubmitInput = async (userData) => {
+        setStatus('executing');
+        try {
+            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/input`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    type: 'enrich_per_file',
+                    data: userData
+                })
+            });
+            const result = await response.json();
+
+            if (result.status === 'waiting_input') {
+                // Otro paso necesita más input
+                setInputDetails(result.input_details || null);
+                setStatus('waiting_input');
+                if (result.step_index !== undefined) setCurrentStepIndex(result.step_index);
+                if (result.message) toast(result.message, { icon: '👋' });
+                return;
+            }
+
+            if (result.status === 'success') {
+                setInputDetails(null);
+                setCurrentStepIndex(steps.length);
+                setExecutionResult(result);
+                setStatus('success');
+                toast.success('¡Pipeline completado con éxito!');
+                return;
+            }
+
+            throw new Error(result.error || result.message || 'Error desconocido');
+        } catch (err) {
+            setError(err.message);
+            setStatus('error');
         }
     };
 
@@ -162,6 +203,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
                 // Si el pipeline se detuvo porque necesita input del usuario
                 if (result.status === 'waiting_input') {
+                    setInputDetails(result.input_details || null);
                     setStatus('waiting_input');
                     if (result.step_index !== undefined) {
                         setCurrentStepIndex(result.step_index);
@@ -178,6 +220,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
                 // Caso especial: Backend pide input
                 if (result.status === 'waiting_input') {
+                    setInputDetails(result.input_details || null);
                     setStatus('waiting_input');
                     // Asegurarnos de que el índice visual coincida
                     if (result.step_index !== undefined) {
@@ -296,6 +339,8 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                                 status={status}
                                 userFiles={userFiles}
                                 onFileChange={handleFileChange}
+                                inputDetails={inputDetails}
+                                onSubmitInput={handleSubmitInput}
                             />
                         )}
 
