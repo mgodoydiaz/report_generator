@@ -22,14 +22,14 @@ def _update_last_run(pipeline_id):
         print(f"Error actualizando Excel: {ex}")
 
 def _get_pipeline_config_from_excel(pipeline_id: int) -> Optional[dict]:
-    """Lee la configuración JSON desde la columna 'jsonb' del Excel."""
+    """Lee la configuración JSON desde la columna 'config_json' del Excel."""
     try:
         if not PIPELINES_DB_PATH.exists():
             return None
         df = pd.read_excel(PIPELINES_DB_PATH)
         row = df[df['id_evaluation'] == pipeline_id]
-        if not row.empty and 'jsonb' in row.columns:
-            json_text = row.iloc[0]['jsonb']
+        if not row.empty and 'config_json' in row.columns:
+            json_text = row.iloc[0]['config_json']
             if json_text is not None and pd.notna(json_text) and str(json_text).strip():
                 return safe_text_to_json(json_text)
     except Exception as e:
@@ -155,9 +155,9 @@ async def get_pipeline_config(pipeline_id: int):
         config["pipeline_metadata"]["input"] = str(row.iloc[0]['input']) if 'input' in row.columns and pd.notna(row.iloc[0]['input']) else "EXCEL"
         config["pipeline_metadata"]["output"] = str(row.iloc[0]['output']) if 'output' in row.columns and pd.notna(row.iloc[0]['output']) else "XLSX"
 
-        # Población desde jsonb
-        if 'jsonb' in row.columns:
-            json_config = safe_text_to_json(row.iloc[0]['jsonb'])
+        # Población desde config_json
+        if 'config_json' in row.columns:
+            json_config = safe_text_to_json(row.iloc[0]['config_json'])
             if json_config and isinstance(json_config, dict):
                 config["context"] = json_config.get("context", config["context"])
                 config["pipeline"] = json_config.get("pipeline", config["pipeline"])
@@ -212,7 +212,7 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
                 'pipeline': metadata.get("name", "Nuevo Proceso"),
                 'description': metadata.get("description", ""),
                 'steps': steps_text,
-                'jsonb': config_json_text,
+                'config_json': config_json_text,
                 'input': str(metadata.get("input", "EXCEL")).upper(),
                 'output': str(metadata.get("output", "XLSX")).upper(),
                 'last_run': ''
@@ -222,7 +222,7 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
             if metadata.get("name"): df.loc[df['id_evaluation'] == target_id, 'pipeline'] = metadata.get("name")
             if metadata.get("description"): df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
             df.loc[df['id_evaluation'] == target_id, 'steps'] = steps_text
-            df.loc[df['id_evaluation'] == target_id, 'jsonb'] = config_json_text
+            df.loc[df['id_evaluation'] == target_id, 'config_json'] = config_json_text
             if metadata.get("input"): df.loc[df['id_evaluation'] == target_id, 'input'] = str(metadata.get("input")).upper()
             if metadata.get("output"): df.loc[df['id_evaluation'] == target_id, 'output'] = str(metadata.get("output")).upper()
         

@@ -13,7 +13,7 @@ from .step import Step, WaitingForInputException
 from rgenerator.tooling.config_tools import cargar_config_desde_json
 from rgenerator.tooling import plot_tools, report_tools
 from rgenerator.tooling.report_docx_tools import render_docx_report
-from config import UPLOADS_DIR, PIPELINE_RUNS_DIR
+from config import UPLOADS_DIR, PIPELINE_RUNS_DIR, TEMPLATES_DB_PATH
 from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
 import shutil
 
@@ -143,6 +143,119 @@ class LoadConfig(Step):
             ctx.outputs["consolidated_excel"] = ctx.outputs_dir / output_filename
 
         # Deja una marca simple para debug
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
+class LoadConfigFromSpec(Step):
+    """
+    Carga configuración desde la base de datos de specs (templates.xlsx).
+
+    Lee la columna 'config_json' del spec indicado y carga todas las
+    secciones al contexto del pipeline. Es genérico: funciona con specs
+    de tipo ETL, Reporte, Dashboard, etc.
+
+    Parámetros:
+        spec_id (int): ID del spec/template en templates.xlsx.
+
+    Efectos en ctx.params:
+        - etlParams → se transforman a formato plano (header_row, select_columns, etc.)
+        - variables_documento → ctx.params["variables_documento"]
+        - secciones_fijas → ctx.params["secciones_fijas"]
+        - secciones_dinamicas → ctx.params["secciones_dinamicas"]
+        - Cualquier otra sección presente se copia tal cual.
+
+    Ejemplo:
+        LoadConfigFromSpec(spec_id=1)
+    """
+    def __init__(self, spec_id: int):
+        super().__init__(name="LoadConfigFromSpec")
+        self.spec_id = spec_id
+
+    def _transform_etl_params(self, etl_params: list) -> dict:
+        """
+        Transforma etlParams del formato spec al formato plano.
+
+        Formatos soportados:
+          - text:      {"id": "header_row", "value": "23"}           → {"header_row": 23}
+          - list_text:  {"id": "select_columns", "value": ["A","B"]} → {"select_columns": ["A","B"]}
+          - list_pair:  {"id": "rename_columns", "value": [{"key":"B","val":"Buenas"},...]} → {"rename_columns": {"B":"Buenas",...}}
+        """
+        result = {}
+        for param in etl_params:
+            param_id = param.get("id")
+            value = param.get("value")
+            param_type = param.get("type", "text")
+
+            if param_id == "output_name":
+                continue  # Se omite output_filename
+
+            if param_type == "list_pair" and isinstance(value, list):
+                result[param_id] = {item["key"]: item["val"] for item in value if "key" in item and "val" in item}
+            elif param_type == "text" and isinstance(value, str):
+                try:
+                    result[param_id] = int(value)
+                except ValueError:
+                    try:
+                        result[param_id] = float(value)
+                    except ValueError:
+                        result[param_id] = value
+            else:
+                result[param_id] = value
+
+        return result
+
+    def run(self, ctx):
+        """Lee el spec desde Excel y carga todas las secciones al contexto."""
+        before = self._snapshot_artifacts(ctx)
+
+        if not TEMPLATES_DB_PATH.exists():
+            raise FileNotFoundError(f"No se encontró la base de datos de specs: {TEMPLATES_DB_PATH}")
+
+        import json
+        df = pd.read_excel(TEMPLATES_DB_PATH)
+        row = df[df['id_template'] == self.spec_id]
+
+        if row.empty:
+            raise ValueError(f"No se encontró spec con id_template={self.spec_id}")
+
+        config_raw = row.iloc[0].get('config_json', '')
+        if not config_raw or (isinstance(config_raw, float) and pd.isna(config_raw)):
+            raise ValueError(f"Spec {self.spec_id} no tiene config_json")
+
+        config = json.loads(str(config_raw))
+
+        # Asegurar que ctx.params exista
+        if not hasattr(ctx, "params") or ctx.params is None:
+            ctx.params = {}
+
+        loaded_keys = []
+
+        # --- etlParams: transformar a formato plano ---
+        etl_params = config.get("etlParams", [])
+        if etl_params:
+            flat_params = self._transform_etl_params(etl_params)
+            for k, v in flat_params.items():
+                if k not in ctx.params:
+                    ctx.params[k] = v
+            loaded_keys.append(f"etlParams({len(flat_params)})")
+
+        # --- Otras secciones: copiar tal cual ---
+        direct_sections = ["variables_documento", "secciones_fijas", "secciones_dinamicas"]
+        for section in direct_sections:
+            if section in config and config[section]:
+                ctx.params[section] = config[section]
+                loaded_keys.append(section)
+
+        # --- Secciones desconocidas: copiar también ---
+        known_keys = {"etlParams"} | set(direct_sections)
+        for k, v in config.items():
+            if k not in known_keys and k not in ctx.params:
+                ctx.params[k] = v
+                loaded_keys.append(k)
+
+        self._log(f"Spec {self.spec_id} cargado: {', '.join(loaded_keys) if loaded_keys else 'vacío'}")
+
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 

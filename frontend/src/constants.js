@@ -13,6 +13,7 @@ export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
 export const STEP_OPTIONS = [
   "InitRun",
   "LoadConfig",
+  "LoadConfigFromSpec",
   "DiscoverInputs",
   "RequestUserFiles",
   "RunExcelETL",
@@ -31,6 +32,7 @@ export const STEP_OPTIONS = [
 export const STEP_TRANSLATIONS = {
   "InitRun": "Inicializar Proceso",
   "LoadConfig": "Cargar Configuración",
+  "LoadConfigFromSpec": "Cargar Especificación",
   "DiscoverInputs": "Identificar Archivos",
   "RequestUserFiles": "Solicitar Archivos",
   "RunExcelETL": "Procesar Datos",
@@ -98,6 +100,9 @@ export const STEP_DEFAULT_PARAMS = {
 }`,
   "LoadConfig": `{
   "config_path": "./ruta/config.json" // Ruta al archivo JSON de configuración
+}`,
+  "LoadConfigFromSpec": `{
+  "spec_id": 1 // ID del spec/template en la base de datos (obligatorio)
 }`,
   "DiscoverInputs": `{
   "rules": {

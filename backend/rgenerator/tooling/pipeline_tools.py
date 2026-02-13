@@ -12,6 +12,7 @@ import os
 STEP_MAPPING: Dict[str, Type[Step]] = {
     "InitRun": ps.InitRun,
     "LoadConfig": ps.LoadConfig,
+    "LoadConfigFromSpec": ps.LoadConfigFromSpec,
     "DiscoverInputs": ps.DiscoverInputs,
     "RunExcelETL": ps.RunExcelETL,
     "EnrichWithContext": ps.EnrichWithContext,
