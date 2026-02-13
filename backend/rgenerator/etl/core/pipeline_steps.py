@@ -13,9 +13,10 @@ from .step import Step, WaitingForInputException
 from rgenerator.tooling.config_tools import cargar_config_desde_json
 from rgenerator.tooling import plot_tools, report_tools
 from rgenerator.tooling.report_docx_tools import render_docx_report
-from config import UPLOADS_DIR, PIPELINE_RUNS_DIR, TEMPLATES_DB_PATH
+from config import UPLOADS_DIR, PIPELINE_RUNS_DIR, SPECS_DB_PATH, REPORTS_TEMPLATES_DIR
 from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
 import shutil
+from rgenerator.tooling.data_tools import safe_text_to_json
 
 ##### Steps definidos para SIMCE 
 
@@ -209,21 +210,29 @@ class LoadConfigFromSpec(Step):
         """Lee el spec desde Excel y carga todas las secciones al contexto."""
         before = self._snapshot_artifacts(ctx)
 
-        if not TEMPLATES_DB_PATH.exists():
-            raise FileNotFoundError(f"No se encontró la base de datos de specs: {TEMPLATES_DB_PATH}")
+        if not SPECS_DB_PATH.exists():
+            raise FileNotFoundError(f"No se encontró la base de datos de specs: {SPECS_DB_PATH}")
 
-        import json
-        df = pd.read_excel(TEMPLATES_DB_PATH)
-        row = df[df['id_template'] == self.spec_id]
+        df = pd.read_excel(SPECS_DB_PATH)
+        # Buscar por id_spec
+        if 'id_spec' not in df.columns:
+            # Fallback si por alguna razón no se renombró
+            col_id = 'id_template'
+        else:
+            col_id = 'id_spec'
+            
+        row = df[df[col_id] == self.spec_id]
 
         if row.empty:
-            raise ValueError(f"No se encontró spec con id_template={self.spec_id}")
+            raise ValueError(f"No se encontró spec con {col_id}={self.spec_id}")
 
         config_raw = row.iloc[0].get('config_json', '')
-        if not config_raw or (isinstance(config_raw, float) and pd.isna(config_raw)):
-            raise ValueError(f"Spec {self.spec_id} no tiene config_json")
-
-        config = json.loads(str(config_raw))
+        # Intentar cargar JSON seguro
+        config = safe_text_to_json(config_raw)
+        
+        if not config:
+             # Si no hay config_json valido, quizas es un spec antiguo sin migrar
+             raise ValueError(f"Spec {self.spec_id} no tiene configuración válida en config_json")
 
         # Asegurar que ctx.params exista
         if not hasattr(ctx, "params") or ctx.params is None:
@@ -424,11 +433,9 @@ class RunExcelETL(Step):
 
             try:
                 # 3.1: Determinar fila del header
-                # Buscamos nombre exacto, si no esta, usamos 'default'
                 header_row = header_conf.get(nombre_archivo, header_conf.get("default", 0))
 
                 # 3.2: Lectura del Excel
-                # header=header_row le dice a pandas donde leer los titulos
                 temp_df = pd.read_excel(ruta_archivo, header=header_row)
 
                 # 3.3: Select columns
@@ -436,10 +443,14 @@ class RunExcelETL(Step):
                     temp_df = temp_df[[col for col in select_columns if col in temp_df.columns]]
 
                 # 3.4: Renombrar columnas (Estandarizacion)
-                # Esto es vital para que el concat posterior funcione bien
                 if column_mapping:
-                    # rename solo cambia las que encuentra, ignora las que no existen
                     temp_df.rename(columns=column_mapping, inplace=True)
+
+                # 3.5: Enriquecimiento POR ARCHIVO (datos recopilados por EnrichWithUserInput)
+                user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
+                file_user_data = user_inputs_store.get(nombre_archivo, {})
+                for col, val in file_user_data.items():
+                    temp_df[col] = val
 
                 df_list.append(temp_df)
 
@@ -454,6 +465,92 @@ class RunExcelETL(Step):
         else:
             ctx.artifacts[output_key] = pd.DataFrame()
         ctx.last_artifact_key = output_key
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+class EnrichWithUserInput(Step):
+    """
+    Solicita datos de enriquecimiento al usuario durante la ejecución del pipeline.
+
+    Este paso detecta campos de enrich_data marcados con user_input=True,
+    identifica los archivos a procesar, y pausa la ejecución para solicitar
+    valores específicos por archivo al usuario.
+
+    Debe colocarse ANTES de RunExcelETL en el pipeline.
+
+    Flujo:
+        1. Lee enrich_data de ctx.params y filtra campos con user_input=True.
+        2. Descubre los archivos subidos en ctx.inputs.
+        3. Verifica si ctx.user_inputs ya tiene los valores necesarios.
+        4. Si faltan valores -> lanza WaitingForInputException (pausa el pipeline).
+        5. Si todos los valores están -> pasa sin hacer nada (RunExcelETL los aplicará).
+    """
+    def __init__(self, input_key: Optional[str] = None):
+        super().__init__(
+            name="EnrichWithUserInput",
+            description="Solicita datos de enriquecimiento por archivo al usuario"
+        )
+        self.input_key = input_key
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+
+        # 1. Obtener campos que requieren input del usuario
+        enrich_data = ctx.params.get("enrich_data", [])
+        user_input_fields = [p for p in enrich_data if p.get("user_input")]
+
+        if not user_input_fields:
+            self._log(f"[{self.name}] No hay campos que requieran input del usuario. Saltando.")
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 2. Descubrir archivos a procesar
+        input_key = self.input_key
+        if not input_key:
+            input_key = ctx.params.get("input_key") or ctx.params.get("default_input_key")
+            if not input_key and hasattr(ctx, "inputs") and len(ctx.inputs) == 1:
+                input_key = next(iter(ctx.inputs.keys()))
+
+        if not input_key or input_key not in getattr(ctx, "inputs", {}):
+            raise ValueError(f"[{self.name}] No se encontró input_key '{input_key}' en ctx.inputs.")
+
+        archivos = ctx.inputs.get(input_key, [])
+        file_names = [os.path.basename(f) for f in archivos]
+
+        if not file_names:
+            self._log(f"[{self.name}] No hay archivos para procesar. Saltando.")
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3. Verificar si ya tenemos todos los inputs
+        user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
+
+        missing_data = False
+        for fname in file_names:
+            for field in user_input_fields:
+                col_key = field.get("key")
+                if not user_inputs_store.get(fname, {}).get(col_key):
+                    missing_data = True
+                    break
+            if missing_data:
+                break
+
+        if missing_data:
+            # 4. Pausar ejecución y solicitar datos al frontend
+            input_details = {
+                "type": "enrich_per_file",
+                "files": file_names,
+                "fields": [
+                    {"key": f.get("key"), "label": f.get("val") or f.get("key")}
+                    for f in user_input_fields
+                ]
+            }
+            raise WaitingForInputException(self.name, input_details)
+
+        # 5. Todos los inputs disponibles, continuar
+        self._log(f"[{self.name}] Inputs recibidos para {len(file_names)} archivos. Continuando.")
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
@@ -535,7 +632,19 @@ class EnrichWithContext(Step):
         
         # Si self.context_mapping es diccionario vacío, se importa del contexto
         if not self.context_mapping:
-            self.context_mapping = ctx.params.get("enrich_data", {})
+            # Importar enrich_data del contexto, EXCLUYENDO campos user_input
+            # (esos se manejan en RunExcelETL por archivo)
+            raw_enrich = ctx.params.get("enrich_data", {})
+            if isinstance(raw_enrich, list):
+                # Formato lista de {key, val, user_input?}
+                self.context_mapping = {
+                    p.get("key"): p.get("val") 
+                    for p in raw_enrich 
+                    if p.get("key") and not p.get("user_input")
+                }
+            else:
+                # Formato dict legacy {col: val}
+                self.context_mapping = raw_enrich
 
         if df is None or df.empty:
             self._log(f"[{self.name}] Advertencia: DataFrame de entrada vacio o inexistente.")
@@ -1183,25 +1292,24 @@ class GenerateDocxReport(Step):
         self.convert_to_pdf = convert_to_pdf
 
     def run(self, ctx):
+        """Renderiza reporte Word/PDF usando un .docx como plantilla."""
         before = self._snapshot_artifacts(ctx)
-        if not getattr(self, "name", None):
-            self.name = self.__class__.__name__
-            
-        # 1. Resolver Paths
-        # Si template_name es absoluto lo usa
+        
+        # 1. Resolver ruta de plantilla docx
         p = Path(self.template_name)
         if p.exists():
             template_path = p
         else:
-            # Try to find in backend/templates
-            template_path = Path("backend/templates") / self.template_name
+            # 2. Buscar en carpeta centralizada (REPORTS_TEMPLATES_DIR)
+            template_path = REPORTS_TEMPLATES_DIR / self.template_name
             if not template_path.exists():
-                 # Try relative to base_dir
-                 if hasattr(ctx, "base_dir"):
+                 # 3. Fallback: carpeta 'templates' del contexto
+                if hasattr(ctx, "base_dir"):
                      template_path = ctx.base_dir / "templates" / self.template_name
-                 
+
         if not template_path.exists():
-            self._log(f"[{self.name}] Error: Plantilla no encontrada: {self.template_name}")
+            self._log(f"[{self.name}] Error: Plantilla DOCX no encontrada: {self.template_name}")
+            return
             return
 
         # 2. Construir Contexto

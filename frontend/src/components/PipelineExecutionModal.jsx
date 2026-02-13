@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, FastForward, Square, StepForward, FileText } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, FastForward, Square, StepForward, FileText, Download, Copy } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import StepRenderer from './pipeline-steps/StepRenderer';
 import '../assets/pipeline-execution.css';
@@ -70,6 +70,31 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
             ...prev,
             [id]: Array.from(files)
         }));
+    };
+    // Función de limpieza al cerrar
+    const handleClose = () => {
+        // Enviar señal de reset al backend para liberar memoria
+        if (pipelineId) {
+            fetch(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+        }
+        onClose();
+    };
+
+    const downloadArtifact = (artifactName) => {
+        window.open(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}`, '_blank');
+    };
+
+    const copyArtifact = async (artifactName) => {
+        try {
+            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}/preview`);
+            if (!response.ok) throw new Error("Error obteniendo vista previa");
+            const text = await response.text();
+            await navigator.clipboard.writeText(text);
+            toast.success("¡Copiado al portapapeles! Listo para pegar en Excel.");
+        } catch (error) {
+            console.error(error);
+            toast.error("No se pudo copiar el contenido.");
+        }
     };
 
     const startExecution = async (mode = 'normal') => {
@@ -207,7 +232,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={onClose} />
+            <div className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" onClick={handleClose} />
             <div id="pipeline-popup" className="bg-white w-full max-w-4xl h-[600px] rounded-2xl shadow-2xl overflow-hidden flex flex-col md:flex-row relative z-10 transition-all duration-300">
 
                 {/* Sidebar: Visualizador de Pasos */}
@@ -287,9 +312,27 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                                     <p className="text-[10px] font-bold text-slate-400 uppercase mb-3">Artefactos Generados</p>
                                     <div className="space-y-2">
                                         {executionResult?.artifacts?.map((art, i) => (
-                                            <div key={i} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-slate-100 shadow-sm text-sm text-slate-700">
-                                                <FileText size={16} className="text-indigo-500" />
-                                                <span className="truncate">{art}</span>
+                                            <div key={i} className="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 shadow-sm text-sm text-slate-700">
+                                                <div className="flex items-center gap-3">
+                                                    <FileText size={16} className="text-indigo-500" />
+                                                    <span className="truncate max-w-[200px]">{art}</span>
+                                                </div>
+                                                <div className="flex items-center gap-1">
+                                                    <button
+                                                        onClick={() => copyArtifact(art)}
+                                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                                        title="Copiar contenido"
+                                                    >
+                                                        <Copy size={16} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => downloadArtifact(art)}
+                                                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                                        title="Descargar"
+                                                    >
+                                                        <Download size={16} />
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -310,9 +353,9 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
                     {/* Footer Buttons */}
                     <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-6 mt-6">
-                        <button onClick={onClose} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
+                        <button onClick={handleClose} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all">
                             <Square size={16} fill="currentColor" className="opacity-80" />
-                            <span>{status === 'success' ? 'Cerrar' : 'Cancelar'}</span>
+                            <span>Cerrar</span>
                         </button>
 
                         <div className="flex gap-2">
@@ -338,8 +381,8 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                             )}
 
                             {status === 'success' && (
-                                <button onClick={onClose} className="px-6 py-2 bg-slate-900 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-all shadow-lg active:scale-95">
-                                    Finalizar
+                                <button onClick={handleClose} className="flex items-center gap-2 pl-3 pr-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold uppercase tracking-wider rounded-lg shadow-lg shadow-slate-200 transition-all hover:scale-105 active:scale-95">
+                                    <span>Finalizar</span>
                                 </button>
                             )}
                         </div>

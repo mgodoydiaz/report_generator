@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
     X, FileText, Settings, Layers, PlusCircle, Trash, Trash2, Plus, LayoutTemplate
 } from 'lucide-react';
-import { TEMPLATE_TYPES, ETL_PARAMETER_OPTIONS } from '../constants';
+import { SPEC_TYPES, ETL_PARAMETER_OPTIONS } from '../constants';
 
 const SECTION_TYPES = ["tabla", "imagen", "texto"]; // Expanded types just in case
 
@@ -21,6 +21,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
         sections: [],
         etlParams: []
     });
+    const [specId, setSpecId] = useState(null);
 
     // Estado para el select de "Nuevo Parámetro"
     const [selectedEtlParam, setSelectedEtlParam] = useState("");
@@ -43,6 +44,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                     sections: initialData.secciones_fijas || [],
                     etlParams: initialData.etlParams || []
                 });
+                setSpecId(initialData.id);
             } else {
                 // Reset for new template
                 setFormData({
@@ -53,6 +55,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                     sections: [],
                     etlParams: []
                 });
+                setSpecId(null);
             }
             setSelectedEtlParam("");
         }
@@ -208,13 +211,20 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                         <div className="grid gap-4">
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Nombre Especificación</label>
-                                <input
-                                    type="text"
-                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                                    placeholder="Ej: Informe Ejecutivo Mensual"
-                                    value={formData.name}
-                                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none pr-16"
+                                        placeholder="Ej: Informe Ejecutivo Mensual"
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                    />
+                                    {specId && (
+                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-slate-400 bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded pointer-events-none">
+                                            #{specId}
+                                        </span>
+                                    )}
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Tipo</label>
@@ -223,7 +233,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                                     value={formData.type}
                                     onChange={(e) => setFormData({ ...formData, type: e.target.value })}
                                 >
-                                    {TEMPLATE_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                    {SPEC_TYPES.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                 </select>
                             </div>
                             <div>
@@ -352,7 +362,9 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                                                 <div className="space-y-2">
                                                     <div className="grid grid-cols-2 gap-2 mb-2">
                                                         <span className="text-[10px] font-bold text-slate-400">{param.config.fields[0]}</span>
-                                                        <span className="text-[10px] font-bold text-slate-400">{param.config.fields[1]}</span>
+                                                        <span className="text-[10px] font-bold text-slate-400">
+                                                            {param.id === 'enrich_data' ? "Valor / Pregunta" : param.config.fields[1]}
+                                                        </span>
                                                     </div>
 
                                                     {param.value.map((item, i) => (
@@ -360,7 +372,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                                                             {/* Si es rename_columns y hay columnas seleccionadas, mostramos un select */}
                                                             {param.id === 'rename_columns' && selectedColumns.length > 0 ? (
                                                                 <select
-                                                                    className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                                                    className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full"
                                                                     value={item.key || ""}
                                                                     onChange={(e) => updateListItem(index, i, 'key', e.target.value)}
                                                                 >
@@ -372,7 +384,7 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                                                             ) : (
                                                                 <input
                                                                     type="text"
-                                                                    className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                                                    className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full"
                                                                     value={item.key || ""}
                                                                     onChange={(e) => updateListItem(index, i, 'key', e.target.value)}
                                                                     placeholder={param.config.fields[0]}
@@ -381,12 +393,26 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
 
                                                             <input
                                                                 type="text"
-                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full"
                                                                 value={item.val || ""}
                                                                 onChange={(e) => updateListItem(index, i, 'val', e.target.value)}
-                                                                placeholder={param.config.fields[1]}
+                                                                placeholder={param.id === 'enrich_data' && item.user_input ? "Ej: Ingrese el curso..." : param.config.fields[1]}
                                                             />
-                                                            <button onClick={() => removeListItem(index, i)} className="text-slate-400 hover:text-red-500"><X size={14} /></button>
+
+                                                            {/* Checkbox para User Input en Enrich Data */}
+                                                            {param.id === 'enrich_data' && (
+                                                                <label className="flex items-center gap-1 cursor-pointer select-none" title="Solicitar al usuario al ejecutar">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        className="accent-indigo-600 w-4 h-4"
+                                                                        checked={item.user_input || false}
+                                                                        onChange={(e) => updateListItem(index, i, 'user_input', e.target.checked)}
+                                                                    />
+                                                                    <span className="text-[9px] font-bold text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded uppercase">User</span>
+                                                                </label>
+                                                            )}
+
+                                                            <button onClick={() => removeListItem(index, i)} className="text-slate-400 hover:text-red-500 shrink-0"><X size={14} /></button>
                                                         </div>
                                                     ))}
 

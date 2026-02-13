@@ -55,8 +55,8 @@ export const FORMAT_COLORS = {
   'DB': 'bg-violet-50 text-violet-600 border-violet-100'
 };
 
-// Tipos de Plantillas
-export const TEMPLATE_TYPES = ["Reporte", "Dashboard", "ETL Archivo"];
+// Tipos de Especificaciones
+export const SPEC_TYPES = ["Reporte", "Dashboard", "ETL Archivo"];
 
 // Opciones de parámetros para ETL
 export const ETL_PARAMETER_OPTIONS = [

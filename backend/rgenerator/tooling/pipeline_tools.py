@@ -15,6 +15,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "LoadConfigFromSpec": ps.LoadConfigFromSpec,
     "DiscoverInputs": ps.DiscoverInputs,
     "RunExcelETL": ps.RunExcelETL,
+    "EnrichWithUserInput": ps.EnrichWithUserInput,
     "EnrichWithContext": ps.EnrichWithContext,
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
     "DeleteTempFiles": ps.DeleteTempFiles,

@@ -1,9 +1,12 @@
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from typing import List, Dict, Optional
 import pandas as pd
 import shutil
 import os
 import json
+from typing import List, Dict, Optional
+from io import BytesIO
+from pathlib import Path
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi.responses import StreamingResponse, FileResponse
 from config import BASE_DIR, PIPELINES_DB_PATH, PIPELINES_DIR, UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json, get_json_safe_df
@@ -94,12 +97,51 @@ async def execute_pipeline(pipeline_id: int):
 
         # Pipeline completado
         result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
-        del ACTIVE_RUNNERS[pipeline_id]
+        # No eliminamos el runner aún para permitir la descarga de artefactos
+        # del ACTIVE_RUNNERS[pipeline_id]
         _update_last_run(pipeline_id)
         return result
     except Exception as e:
         if pipeline_id in ACTIVE_RUNNERS:
             del ACTIVE_RUNNERS[pipeline_id]
+        return {"error": str(e)}
+
+@router.post("/{pipeline_id}/input")
+async def submit_pipeline_input(pipeline_id: int, input_data: dict):
+    """
+    Recibe input del usuario para reanudar un pipeline pausado.
+    input_data structure: { "type": "enrich_per_file", "data": { ... } }
+    """
+    try:
+        if pipeline_id not in ACTIVE_RUNNERS:
+             return {"error": "La sesión del pipeline no está activa."}
+             
+        runner = ACTIVE_RUNNERS[pipeline_id]
+        
+        # Actualizar contexto con inputs
+        if input_data.get("type") == "enrich_per_file":
+            if not hasattr(runner.ctx, "user_inputs"):
+                runner.ctx.user_inputs = {}
+            
+            enrich_store = runner.ctx.user_inputs.get("enrich_per_file", {})
+            enrich_store.update(input_data.get("data", {}))
+            runner.ctx.user_inputs["enrich_per_file"] = enrich_store
+            
+        # Reanudar ejecución
+        results = runner.run_all()
+        last_result = results[-1] if results else {}
+        
+        # Verificar nuevamente si quedo pausado o termino
+        if last_result.get("status") == "waiting_input":
+             return last_result
+             
+        # Si termino exitosamente
+        result = {"status": "success", "message": "Pipeline completado", "artifacts": list(runner.ctx.artifacts.keys())}
+        _update_last_run(pipeline_id)
+        return result
+
+    except Exception as e:
+        # No matamos el runner aqui por si fue un error de input valido
         return {"error": str(e)}
 
 @router.post("/{pipeline_id}/step")
@@ -117,7 +159,8 @@ async def execute_pipeline_step(pipeline_id: int):
 
         if result.get("finished"):
             _update_last_run(pipeline_id)
-            del ACTIVE_RUNNERS[pipeline_id]
+            # No eliminamos el runner aún para permitir la descarga de artefactos
+            # del ACTIVE_RUNNERS[pipeline_id]
 
         return result
     except Exception as e:
@@ -130,6 +173,78 @@ async def reset_pipeline_session(pipeline_id: int):
     if pipeline_id in ACTIVE_RUNNERS:
         del ACTIVE_RUNNERS[pipeline_id]
     return {"status": "success"}
+
+@router.get("/{pipeline_id}/artifact/{artifact_key}")
+async def download_artifact(pipeline_id: int, artifact_key: str):
+    """
+    Descarga un artefacto generado por el pipeline.
+    Si es un DataFrame, lo convierte a Excel en vuelo.
+    Si es un archivo, lo descarga directamente.
+    """
+    if pipeline_id not in ACTIVE_RUNNERS:
+        raise HTTPException(status_code=404, detail="La sesión del pipeline ha expirado o no existe.")
+
+    runner = ACTIVE_RUNNERS[pipeline_id]
+    artifact = runner.ctx.artifacts.get(artifact_key)
+
+    if artifact is None:
+        raise HTTPException(status_code=404, detail=f"Artefacto '{artifact_key}' no encontrado.")
+
+    # Caso 1: DataFrame de Pandas -> Excel
+    if isinstance(artifact, pd.DataFrame):
+        output = BytesIO()
+        try:
+            # Usamos openpyxl explícitamente ya que xlsxwriter no está instalado
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                artifact.to_excel(writer, index=False)
+        except Exception as e:
+            # Fallback a csv si openpyxl falla
+            print(f"Error generando Excel: {e}")
+            output = BytesIO()
+            artifact.to_csv(output, index=False)
+            output.seek(0)
+            headers = {"Content-Disposition": f'attachment; filename="{artifact_key}.csv"'}
+            return StreamingResponse(output, headers=headers, media_type='text/csv')
+            
+        output.seek(0)
+        headers = {"Content-Disposition": f'attachment; filename="{artifact_key}.xlsx"'}
+        return StreamingResponse(output, headers=headers, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    # Caso 2: Ruta a archivo existente
+    elif isinstance(artifact, (str, Path)) and os.path.exists(artifact):
+        file_path = Path(artifact)
+        return FileResponse(path=file_path, filename=file_path.name, media_type='application/octet-stream')
+    
+    # Caso 3: Otros tipos (Strings, dicts) -> JSON
+    else:
+        try:
+            json_str = json.dumps(artifact, default=str, indent=2)
+            return StreamingResponse(BytesIO(json_str.encode()), media_type="application/json", headers={"Content-Disposition": f'attachment; filename="{artifact_key}.json"'})
+        except:
+            raise HTTPException(status_code=400, detail="El tipo de artefacto no se puede descargar.")
+
+@router.get("/{pipeline_id}/artifact/{artifact_key}/preview")
+async def preview_artifact(pipeline_id: int, artifact_key: str):
+    """
+    Retorna una vista previa en texto del artefacto para copiar al portapapeles.
+    """
+    if pipeline_id not in ACTIVE_RUNNERS:
+        raise HTTPException(status_code=404, detail="La sesión del pipeline ha expirado.")
+
+    runner = ACTIVE_RUNNERS[pipeline_id]
+    artifact = runner.ctx.artifacts.get(artifact_key)
+
+    if artifact is None:
+        raise HTTPException(status_code=404, detail="Artefacto no encontrado.")
+
+    if isinstance(artifact, pd.DataFrame):
+        # Retorna TSV (Tab Separated Values) que es ideal para pegar en Excel/Sheets
+        return artifact.to_csv(sep='\t', index=False)
+    
+    elif isinstance(artifact, (dict, list)):
+        return json.dumps(artifact, indent=2, default=str)
+        
+    return str(artifact)
 
 @router.get("/{pipeline_id}/config")
 async def get_pipeline_config(pipeline_id: int):

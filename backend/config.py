@@ -8,7 +8,7 @@ DB_DIR = BASE_DIR / "data" / "database"
 
 # Archivos Excel Principales
 PIPELINES_DB_PATH = DB_DIR / "pipelines.xlsx"
-TEMPLATES_DB_PATH = DB_DIR / "templates.xlsx"
+SPECS_DB_PATH = DB_DIR / "specs.xlsx"
 DIMENSIONS_DB_PATH = DB_DIR / "dimensions.xlsx"
 DIMENSION_VALUES_DB_PATH = DB_DIR / "dimension_values.xlsx"
 METRICS_DB_PATH = DB_DIR / "metrics.xlsx"
@@ -17,7 +17,7 @@ METRIC_DATA_DB_PATH = DB_DIR / "metric_data.xlsx"
 
 # Directorios de Almacenamiento
 PIPELINES_DIR = DB_DIR / "pipelines"
-TEMPLATES_DIR = DB_DIR / "reports_templates"
+REPORTS_TEMPLATES_DIR = DB_DIR / "reports_templates"
 
 # Directorio centralizado para ejecuciones de pipelines
 PIPELINE_RUNS_DIR = BASE_DIR / "data" / "pipeline_runs"

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout } from 'lucide-react';
+import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NewSpecDrawer from '../components/NewSpecDrawer';
 
@@ -38,14 +38,14 @@ export default function Specs() {
 
     const handleEditSpec = async (specId) => {
         setEditingSpecId(specId);
-        setDrawerTitle("Editar Especificación");
+        setDrawerTitle(`Editar Especificación #${specId}`);
         setLoading(true);
         try {
             const response = await fetch(`http://localhost:8000/api/specs/${specId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
-            setDrawerData(data);
+            setDrawerData({ ...data, id: specId });
             setIsDrawerOpen(true);
         } catch (err) {
             console.error(err);
@@ -56,9 +56,48 @@ export default function Specs() {
     };
 
     const handleDeleteSpec = async (specId) => {
-        if (window.confirm("¿Estás seguro de que deseas eliminar esta especificación?")) {
-            // TODO: Implement delete logic
-            console.log("Delete spec", specId);
+        if (!window.confirm("¿Estás seguro de que deseas eliminar esta especificación?")) return;
+
+        setLoading(true);
+        try {
+            const response = await fetch(`http://localhost:8000/api/specs/${specId}`, {
+                method: 'DELETE'
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                toast.success("Especificación eliminada.");
+                fetchSpecs();
+            } else {
+                throw new Error(data.error || "Error al eliminar");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Error al eliminar: " + err.message);
+            setLoading(false);
+        }
+    }
+
+    const handleDuplicateSpec = async (specId) => {
+        if (!window.confirm("¿Deseas duplicar esta especificación?")) return;
+
+        setLoading(true);
+        try {
+            const response = await fetch(`http://localhost:8000/api/specs/${specId}/duplicate`, {
+                method: 'POST'
+            });
+            const data = await response.json();
+
+            if (data.status === 'success') {
+                toast.success("Especificación duplicada correctamente.");
+                fetchSpecs();
+            } else {
+                throw new Error(data.error || "Error al duplicar");
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error("Error al duplicar: " + err.message);
+            setLoading(false);
         }
     }
 
@@ -236,7 +275,7 @@ export default function Specs() {
                                 </tr>
                             ) : sortedAndFilteredSpecs.length > 0 ? (
                                 sortedAndFilteredSpecs.map((spec) => (
-                                    <tr key={spec.id_template} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
+                                    <tr key={spec.id_spec} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
                                         <td className="p-5 text-left">
                                             <div className="font-bold text-slate-700 dark:text-slate-200">{spec.name}</div>
                                         </td>
@@ -246,7 +285,9 @@ export default function Specs() {
                                         <td className="p-5 text-left">
                                             <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-tighter ${spec.type === 'Dashboard'
                                                 ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400'
-                                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
+                                                : spec.type === 'ETL Archivo'
+                                                    ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'
+                                                    : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'
                                                 }`}>
                                                 {spec.type}
                                             </span>
@@ -257,14 +298,21 @@ export default function Specs() {
                                         <td className="p-5 text-right flex justify-end gap-1">
                                             <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                                                 <button
-                                                    onClick={() => handleEditSpec(spec.id_template)}
+                                                    onClick={() => handleEditSpec(spec.id_spec)}
                                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
                                                     title="Configurar"
                                                 >
                                                     <Settings size={18} />
                                                 </button>
                                                 <button
-                                                    onClick={() => handleDeleteSpec(spec.id_template)}
+                                                    onClick={() => handleDuplicateSpec(spec.id_spec)}
+                                                    className="p-2 text-slate-400 dark:text-slate-500 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/30 rounded-xl transition-all"
+                                                    title="Duplicar"
+                                                >
+                                                    <Copy size={18} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteSpec(spec.id_spec)}
                                                     className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
                                                     title="Eliminar"
                                                 >
