@@ -20,7 +20,11 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
     "DeleteTempFiles": ps.DeleteTempFiles,
     "RequestUserFiles": ps.RequestUserFiles,
-    "SaveToMetric": ms.SaveToMetric
+    "SaveToMetric": ms.SaveToMetric,
+    "GenerateGraphics": ps.GenerateGraphics,
+    "GenerateTables": ps.GenerateTables,
+    "RenderReport": ps.RenderReport,
+    "GenerateDocxReport": ps.GenerateDocxReport,
 }
 
 def load_pipeline_config(config_source: str | Path | dict, pipeline_id: Optional[int] = None) -> tuple[RunContext, List[Step]]:

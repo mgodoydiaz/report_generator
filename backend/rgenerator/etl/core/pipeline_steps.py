@@ -4,7 +4,8 @@
 from datetime import datetime
 from pathlib import Path
 import pandas as pd
-import os 
+import json
+import os
 import shutil
 from typing import Callable, Optional, Dict, List
 
@@ -792,41 +793,42 @@ class GenerateGraphics(Step):
     """
     Genera gráficos utilizando herramientas de matplotlib definidas en plot_tools.
 
-    Recibe u obtiene del contexto un esquema de gráficos (lista de definiones) y genera
-    las imágenes correspondientes en el directorio auxiliar.
+    Lee el esquema de gráficos desde ctx.params["charts_schema"] (cargado por un step
+    previo como LoadConfigFromSpec) o directamente desde el constructor.
 
-    Parametros:
-        charts_schema (opcional): lista de diccionarios con la definición de gráficos.
-                                  Si no se entrega, se busca en ctx.params["charts_schema"].
-        
+    Cada entrada del esquema tiene:
+        - type: nombre de la función en plot_tools (ej: "grafico_barras_promedio_por")
+        - input_key: clave del DataFrame en ctx.artifacts
+        - output_filename: nombre del archivo de salida (ej: "logro_por_curso.png")
+        - params: kwargs adicionales para la función
+
     Efectos:
-        - Crea archivos .png (u otros) en ctx.aux_dir.
+        - Crea archivos .png en ctx.aux_dir.
+        - Registra rutas generadas en ctx.artifacts["generated_charts"].
     """
     def __init__(self, charts_schema: Optional[List[Dict]] = None):
-        """Inicializa el step."""
+        """Inicializa el step, opcionalmente con esquema directo."""
         super().__init__(name="GenerateGraphics")
         self.charts_schema = charts_schema
 
     def run(self, ctx):
-        """Genera los gráficos solicitados."""
+        """Genera los gráficos solicitados y registra las rutas en ctx.artifacts."""
         before = self._snapshot_artifacts(ctx)
         if not getattr(self, "name", None):
             self.name = self.__class__.__name__
 
-        # 1. Resolver esquema de gráficos
+        # 1. Resolver esquema: constructor directo o ctx.params
         schema = self.charts_schema
         if not schema:
             schema = ctx.params.get("charts_schema", [])
-        
+
         if not schema:
-            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de gráficos (charts_schema).")
-            # No retornamos error, solo no hacemos nada
+            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de gráficos.")
             ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
 
         # 2. Resolver directorio auxiliar
-        # Se intenta usar ctx.aux_dir, si no existe se define por defecto
         aux_dir = getattr(ctx, "aux_dir", None)
         if not aux_dir:
             if hasattr(ctx, "base_dir"):
@@ -839,7 +841,9 @@ class GenerateGraphics(Step):
             aux_dir.mkdir(parents=True, exist_ok=True)
 
         # 3. Iterar sobre el esquema y generar gráficos
+        generated_charts = {}
         charts_generated = 0
+
         for chart_def in schema:
             chart_type = chart_def.get("type")
             input_key = chart_def.get("input_key")
@@ -866,17 +870,19 @@ class GenerateGraphics(Step):
             # Preparar argumentos
             output_path = aux_dir / output_filename
             kwargs = params.copy()
-            # Inyectamos nombre_grafico
             kwargs["nombre_grafico"] = str(output_path)
 
             try:
-                # invocamos la funcion: func(df, **kwargs)
                 func(df, **kwargs)
+                generated_charts[output_filename] = output_path
                 charts_generated += 1
             except Exception as e:
                 self._log(f"[{self.name}] Error al generar gráfico '{output_filename}': {e}")
 
-        #self._log(f"[{self.name}] Se generaron {charts_generated} gráficos en {aux_dir}")
+        # 4. Registrar rutas generadas en el contexto
+        ctx.artifacts["generated_charts"] = generated_charts
+        self._log(f"[{self.name}] {charts_generated}/{len(schema)} gráficos generados en {aux_dir}")
+
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
@@ -885,34 +891,40 @@ class GenerateTables(Step):
     """
     Genera tablas utilizando funciones de report_tools.
 
-    Recibe u obtiene del contexto un esquema de tablas (lista de definiciones) y genera
-    los archivos Excel correspondientes en el directorio auxiliar.
+    Lee el esquema de tablas desde ctx.params["tables_schema"] (cargado por un step
+    previo) o directamente desde el constructor.
 
-    Parametros:
-        tables_schema (opcional): lista de diccionarios con la definición de tablas.
-                                  Si no se entrega, se busca en ctx.params["tables_schema"].
-        
+    Cada entrada del esquema tiene:
+        - type: nombre de la función en report_tools (ej: "resumen_estadistico_basico")
+        - input_key: clave del DataFrame en ctx.artifacts
+        - output_filename: nombre del archivo de salida (ej: "resumen.xlsx")
+          Usa {val} como placeholder cuando se usa iterate_by.
+        - params: kwargs adicionales para la función
+        - iterate_by (opcional): columna para generar una tabla por cada valor único.
+          Inyecta el valor en params["parametros"][columna] y como kwarg raíz.
+
     Efectos:
         - Crea archivos .xlsx en ctx.aux_dir.
+        - Registra rutas generadas en ctx.artifacts["generated_tables"].
     """
     def __init__(self, tables_schema: Optional[List[Dict]] = None):
-        """Inicializa el step."""
+        """Inicializa el step, opcionalmente con esquema directo."""
         super().__init__(name="GenerateTables")
         self.tables_schema = tables_schema
 
     def run(self, ctx):
-        """Genera las tablas solicitadas."""
+        """Genera las tablas solicitadas y registra las rutas en ctx.artifacts."""
         before = self._snapshot_artifacts(ctx)
         if not getattr(self, "name", None):
             self.name = self.__class__.__name__
 
-        # 1. Resolver esquema de tablas
+        # 1. Resolver esquema: constructor directo o ctx.params
         schema = self.tables_schema
         if not schema:
             schema = ctx.params.get("tables_schema", [])
-        
+
         if not schema:
-            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de tablas (tables_schema).")
+            self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de tablas.")
             ctx.last_step = self.name
             self._log_artifacts_delta(ctx, before)
             return
@@ -930,41 +942,38 @@ class GenerateTables(Step):
             aux_dir.mkdir(parents=True, exist_ok=True)
 
         # 3. Iterar sobre el esquema y generar tablas
+        generated_tables = {}
         tables_generated = 0
+
         for table_def in schema:
             func_name = table_def.get("type")
             input_key = table_def.get("input_key")
             output_filename = table_def.get("output_filename")
             params = table_def.get("params", {})
-            iterate_by = table_def.get("iterate_by", None) # Optional: columna para iterar
+            iterate_by = table_def.get("iterate_by", None)
 
             # Validar definición mínima
             if not func_name or not input_key or not output_filename:
                 self._log(f"[{self.name}] Error: Definición incompleta: {table_def}")
                 continue
 
-            # Obtener la función desde report_tools
             func = getattr(report_tools, func_name, None)
             if not func:
                 self._log(f"[{self.name}] Error: La función '{func_name}' no existe en report_tools.")
                 continue
 
-            # Obtener el DataFrame desde artifacts
             df_full = ctx.artifacts.get(input_key)
             if df_full is None:
                 self._log(f"[{self.name}] Error: El artifact '{input_key}' no existe en el contexto.")
                 continue
 
-            # Función helper para procesar un dataframe y guardar
-            def process_and_save(df_k, filename_k, params_k):
+            # Helper: ejecuta la función y guarda el resultado como Excel
+            def process_and_save(df_k, filename_k, params_k, _func=func):
                 try:
-                    # report_tools utiliza mayormente kwargs, pero algunos pueden esperar 'parametros'
-                    # Asumimos que params_k se pasa como kwargs.
-                    # Si una función espera explícitamente 'parametros', el usuario debe incluirlo en el json
-                    # Ejemplo json: "params": { "parametros": {"Asignatura": "LENGUAJE"} }
-                    df_res = func(df_k, **params_k) 
+                    df_res = _func(df_k, **params_k)
                     output_path = aux_dir / filename_k
                     df_res.to_excel(output_path, index=False)
+                    generated_tables[filename_k] = output_path
                     return True
                 except Exception as e:
                     self._log(f"[{self.name}] Error generando tabla '{filename_k}': {e}")
@@ -973,39 +982,35 @@ class GenerateTables(Step):
             if iterate_by:
                 # Caso iterativo (ej: generar tabla por cada Curso)
                 if iterate_by not in df_full.columns:
-                     self._log(f"[{self.name}] Error: Columna '{iterate_by}' no existe en DataFrame.")
-                     continue
-                
-                uniques = df_full[iterate_by].unique()
-                for val in uniques:
-                    # Preparamos nombre de archivo
+                    self._log(f"[{self.name}] Error: Columna '{iterate_by}' no existe en DataFrame.")
+                    continue
+
+                for val in sorted(df_full[iterate_by].unique(), key=str):
                     if "{val}" in output_filename:
                         fname = output_filename.replace("{val}", str(val))
                     else:
-                        fname = f"{output_filename}_{val}.xlsx"
+                        base, ext = os.path.splitext(output_filename)
+                        fname = f"{base}_{val}{ext}"
 
-                    # Preparamos params
                     iter_params = params.copy()
-                    
-                    # Inyectamos el valor de filtro. 
-                    # IMPORTANTE: Muchas funciones de report_tools (crear_tabla, etc) filtran usando el dict 'parametros'.
-                    if "parametros" not in iter_params: 
-                         iter_params["parametros"] = {}
-                    # Aseguramos que 'parametros' sea dict
+                    # Inyectar valor en parametros dict (para funciones que filtran con parametros)
+                    if "parametros" not in iter_params:
+                        iter_params["parametros"] = {}
                     if isinstance(iter_params.get("parametros"), dict):
                         iter_params["parametros"][iterate_by] = val
-                    
-                    # Tambien lo pasamos como kwarg raiz por si la función filtra directamenente (resumen_estadistico_basico)
+                    # También como kwarg raíz (para funciones como resumen_estadistico_basico)
                     iter_params[iterate_by] = val
 
                     if process_and_save(df_full, fname, iter_params):
                         tables_generated += 1
             else:
-                # Caso simple: una sola tabla
                 if process_and_save(df_full, output_filename, params):
                     tables_generated += 1
 
-        #self._log(f"[{self.name}] Se generaron {tables_generated} tablas en {aux_dir}")
+        # 4. Registrar rutas generadas en el contexto
+        ctx.artifacts["generated_tables"] = generated_tables
+        self._log(f"[{self.name}] {tables_generated}/{len(schema)} tablas generadas en {aux_dir}")
+
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 

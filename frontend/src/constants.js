@@ -150,10 +150,12 @@ export const STEP_DEFAULT_PARAMS = {
   "output_filename": "archivo_salida.xlsx" // Nombre del archivo Excel de salida
 }`,
   "GenerateGraphics": `{
-  "charts_schema": [] // Lista de definiciones de gráficos
+  // Lee charts_schema desde ctx.params (cargado por un step previo)
+  // No requiere parámetros directos
 }`,
   "GenerateTables": `{
-  "tables_schema": [] // Lista de definiciones de tablas
+  // Lee tables_schema desde ctx.params (cargado por un step previo)
+  // No requiere parámetros directos
 }`,
   "RenderReport": `{
   "report_schema": {} // Estructura del informe PDF

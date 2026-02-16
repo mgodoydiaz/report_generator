@@ -1,0 +1,49 @@
+[
+    {
+        "type": "resumen_estadistico_basico",
+        "input_key": "df_enriched_estudiantes",
+        "output_filename": "resumen_logro_por_curso.xlsx",
+        "params": {
+            "columna": "Rendimiento",
+            "formato": "percent",
+            "agrupar_por": "Curso"
+        }
+    },
+    {
+        "type": "resumen_estadistico_basico",
+        "input_key": "df_enriched_estudiantes",
+        "output_filename": "resumen_simce_por_curso.xlsx",
+        "params": {
+            "columna": "SIMCE",
+            "formato": "number",
+            "agrupar_por": "Curso"
+        }
+    },
+    {
+        "type": "crear_tabla_estadistica_por_pregunta",
+        "input_key": "df_enriched_preguntas",
+        "output_filename": "reporte_preguntas.xlsx",
+        "params": {
+            "parametros": {}
+        }
+    },
+    {
+        "type": "tabla_logro_por_alumno",
+        "input_key": "df_enriched_estudiantes",
+        "output_filename": "logro_por_alumno_{val}.xlsx",
+        "iterate_by": "Curso",
+        "params": {
+            "parametros": {},
+            "sort_by": "Rend"
+        }
+    },
+    {
+        "type": "tabla_logro_por_pregunta",
+        "input_key": "df_enriched_preguntas",
+        "output_filename": "logro_por_pregunta_{val}.xlsx",
+        "iterate_by": "Curso",
+        "params": {
+            "sort_by": "Logro"
+        }
+    }
+]
