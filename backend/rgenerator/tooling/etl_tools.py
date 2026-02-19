@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import re
 
 
 def agregar_columnas_dataframe(df, datos):
@@ -94,3 +95,58 @@ def crear_tabla(df_estudiantes, parametros):
             df_estudiantes, row["RUT"], row["Asignatura"], numero_prueba
         )
     return df_filtrado
+
+
+def modificar_valores_columna(df, config_transformaciones):
+    """
+    Modifica valores de columnas basado en una lista de configuraciones.
+    
+    Args:
+        df (pd.DataFrame): DataFrame a modificar
+        config_transformaciones (list): Lista de diccionarios con reglas de transformación.
+            Ejemplo de regla:
+            {
+                "columna": "Curso",
+                "operacion": "regex" | "replace" | "map" | "strip",
+                "parametros": { ... }
+            }
+            
+    Returns:
+        pd.DataFrame: DataFrame modificado
+    """
+    if not config_transformaciones:
+        return df
+        
+    for regla in config_transformaciones:
+        col = regla.get("columna")
+        operacion = regla.get("operacion")
+        params = regla.get("parametros", {})
+        
+        if col not in df.columns:
+            continue
+            
+        if operacion == "regex":
+            patron = params.get("patron")
+            reemplazo = params.get("reemplazo", "")
+            if patron:
+                df[col] = df[col].astype(str).str.replace(patron, reemplazo, regex=True)
+                
+        elif operacion == "replace":
+            valor_original = params.get("valor_original")
+            valor_nuevo = params.get("valor_nuevo")
+            df[col] = df[col].replace(valor_original, valor_nuevo)
+            
+        elif operacion == "map":
+            mapa = params.get("mapa", {})
+            default = params.get("default", None)
+            if default is not None:
+                df[col] = df[col].map(mapa).fillna(default)
+            else:
+                # Si no hay default, mantiene valores originales si no estan en el mapa
+                df[col] = df[col].map(mapa).fillna(df[col])
+                
+        elif operacion == "strip":
+            if pd.api.types.is_string_dtype(df[col]):
+                 df[col] = df[col].str.strip()
+
+    return df

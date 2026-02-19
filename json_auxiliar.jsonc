@@ -18,7 +18,7 @@
             "id": "header_row",
             "type": "text",
             "label": "Fila Encabezado",
-            "value": "23",
+            "value": "55",
             "config": {
                 "id": "header_row",
                 "label": "Fila Encabezado",
@@ -31,17 +31,14 @@
             "type": "list_text",
             "label": "Seleccionar Columnas",
             "value": [
-                "Nombre",
-                "RUT",
-                "Curso",
-                "B",
-                "M",
-                "O",
-                "Puntaje",
-                "Rend",
-                "SIMCE",
-                "Nota",
-                "Logro"
+                "Pregunta",
+                "Cant.",
+                "Cant..1",
+                "Cant..2",
+                "Cant..3",
+                "Cant..4",
+                "Correcta",
+                "Distractor"
             ],
             "config": {
                 "id": "select_columns",
@@ -56,24 +53,24 @@
             "label": "Renombrar Columnas",
             "value": [
                 {
-                    "key": "B",
-                    "val": "Buenas"
+                    "key": "Cant.",
+                    "val": "A"
                 },
                 {
-                    "key": "M",
-                    "val": "Malas"
+                    "key": "Cant..1",
+                    "val": "B"
                 },
                 {
-                    "key": "O",
-                    "val": "Omitidas"
+                    "key": "Cant..2",
+                    "val": "C"
                 },
                 {
-                    "key": "SIMCE",
-                    "val": "SIMCE"
+                    "key": "Cant..3",
+                    "val": "D"
                 },
                 {
-                    "key": "Nota",
-                    "val": "Nota"
+                    "key": "Cant..4",
+                    "val": "E"
                 }
             ],
             "config": {
@@ -107,6 +104,11 @@
                 {
                     "key": "N Prueba",
                     "val": "5"
+                },
+                {
+                    "key": "Curso",
+                    "val": "",
+                    "user_input": true
                 }
             ],
             "config": {

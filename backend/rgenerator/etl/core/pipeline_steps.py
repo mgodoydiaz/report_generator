@@ -692,6 +692,87 @@ class EnrichWithContext(Step):
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
 
+class ModifyColumnValues(Step):
+    """
+    Modifica valores de columnas usando reglas definidas (regex, replace, map, strip).
+    
+    Parametros:
+        input_key (opcional): clave del artifact de entrada.
+            Si no se entrega, usa ctx.last_artifact_key o ctx.params["default_artifact_key"].
+        output_key (opcional): clave del artifact de salida.
+            Si no se entrega, se deriva desde input_key (ej: df_modified_...).
+        transformations (opcional): lista de reglas de transformación.
+            Si no se entrega, busca en ctx.params["transformations"].
+            
+    Ejemplo de regla:
+        {
+            "columna": "Curso",
+            "operacion": "regex",
+            "parametros": {"patron": "° medio ", "reemplazo": " "}
+        }
+    """
+    def __init__(
+        self,
+        input_key: Optional[str] = None,
+        output_key: Optional[str] = None,
+        transformations: Optional[List[Dict]] = None
+    ):
+        resolved_output_key = output_key
+        if input_key and not resolved_output_key:
+             resolved_output_key = f"df_modified_{input_key}"
+             
+        super().__init__(
+            name="ModifyColumnValues",
+            requires=[input_key] if input_key else [],
+            produces=[resolved_output_key] if resolved_output_key else []
+        )
+        self.input_key = input_key
+        self.output_key = resolved_output_key
+        self.transformations = transformations or []
+        
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+        
+        # 1. Resolver input/output
+        input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key.")
+            
+        output_key = self.output_key or f"df_modified_{input_key}"
+        self.input_key = input_key
+        self.output_key = output_key
+        
+        # 2. Obtener Dataframe
+        df = ctx.artifacts.get(input_key)
+        if df is None or df.empty:
+            self._log(f"[{self.name}] Warning: DataFrame vacío o inexistente en {input_key}")
+            ctx.artifacts[output_key] = pd.DataFrame()
+            ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3. Obtener transformaciones (desde init o context)
+        transforms = self.transformations
+        if not transforms:
+            transforms = ctx.params.get("transformations", [])
+            
+        # 4. Aplicar transformaciones usando etl_tools
+        from rgenerator.tooling.etl_tools import modificar_valores_columna
+        
+        # Trabajamos sobre copia
+        df_mod = df.copy()
+        try:
+             df_mod = modificar_valores_columna(df_mod, transforms)
+        except Exception as e:
+            raise ValueError(f"[{self.name}] Error aplicando transformaciones: {e}")
+            
+        # 5. Guardar
+        ctx.artifacts[output_key] = df_mod
+        ctx.last_artifact_key = output_key
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
 class ExportConsolidatedExcel(Step):
     """
     Exporta un DataFrame a un archivo Excel.
