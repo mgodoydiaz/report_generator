@@ -157,4 +157,3 @@ Chart/table template definitions for `GenerateGraphics`/`GenerateTables` live in
 - Routers `dimensions.py` and `metrics.py` have duplicated `get_df`/`save_df` helpers
 - `Results` and `Help` pages in the frontend are unimplemented placeholders
 - No authentication or RBAC exists yet
-- Legacy Streamlit app (`streamlit_app.py`, `streamlit_utils.py`) remains at root but is no longer the primary UI
