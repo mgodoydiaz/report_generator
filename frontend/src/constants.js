@@ -12,7 +12,7 @@ export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
 // Lista de pasos disponibles
 export const STEP_OPTIONS = [
   "InitRun",
-  "LoadConfig",
+  // "LoadConfig",  // DEPRECADO: usar LoadConfigFromSpec
   "LoadConfigFromSpec",
   "DiscoverInputs",
   "RequestUserFiles",
@@ -32,7 +32,7 @@ export const STEP_OPTIONS = [
 // Traducciones a lenguaje humano para los pasos técnicos
 export const STEP_TRANSLATIONS = {
   "InitRun": "Inicializar Proceso",
-  "LoadConfig": "Cargar Configuración",
+  // "LoadConfig": "Cargar Configuración",  // DEPRECADO
   "LoadConfigFromSpec": "Cargar Especificación",
   "DiscoverInputs": "Identificar Archivos",
   "RequestUserFiles": "Solicitar Archivos",
@@ -100,9 +100,7 @@ export const STEP_DEFAULT_PARAMS = {
   "evaluation": "nombre_evaluacion", // Nombre de la evaluación
   "base_dir": "./backend/tests" // Directorio base de trabajo
 }`,
-  "LoadConfig": `{
-  "config_path": "./ruta/config.json" // Ruta al archivo JSON de configuración
-}`,
+  // "LoadConfig": DEPRECADO - usar LoadConfigFromSpec
   "LoadConfigFromSpec": `{
   "spec_id": 1 // ID del spec/template en la base de datos (obligatorio)
 }`,

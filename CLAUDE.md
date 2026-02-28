@@ -29,13 +29,11 @@ npm run dev
 
 ```bash
 # Run unit tests
-pytest backend/tests/steps/test_pipeline_steps.py -v
+pytest tests/steps/test_pipeline_steps.py -v
 
 # With coverage
-pytest backend/tests/steps/test_pipeline_steps.py --cov=rgenerator
+pytest tests/steps/test_pipeline_steps.py --cov=rgenerator
 
-# Manual pipeline integration test
-python backend/tests/test_manual_pipeline.py
 ```
 
 ## ETL Scripts
@@ -92,7 +90,11 @@ backend/
     │   ├── core/
     │   │   ├── context.py        - RunContext dataclass (pipeline execution state)
     │   │   ├── step.py           - Abstract Step base class + WaitingForInputException
-    │   │   ├── pipeline_steps.py - 14 concrete step implementations (~1,465 lines)
+    │   │   ├── pipeline_steps.py - Re-exportaciones de compatibilidad (agrupa módulos especializados)
+    │   │   ├── init_steps.py     - InitRun, LoadConfigFromSpec
+    │   │   ├── io_steps.py       - DiscoverInputs, RequestUserFiles, ExportConsolidatedExcel, DeleteTempFiles
+    │   │   ├── etl_steps.py      - RunExcelETL, EnrichWithUserInput, EnrichWithContext, ModifyColumnValues
+    │   │   ├── report_steps.py   - GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport
     │   │   └── metric_steps.py   - SaveToMetric step
     │   └── evaluaciones/
     │       └── simce_input_rules.py
@@ -118,12 +120,12 @@ Steps can raise `WaitingForInputException` to pause execution and request user-p
 - `status: str` — `NEW | RUNNING | NEEDS_REVIEW | DONE | FAILED`
 - `last_artifact_key` — key of the most recently produced artifact
 
-**Key step categories** (all in `etl/core/pipeline_steps.py`):
-- **Init/Config**: `InitRun`, `LoadConfig`, `LoadConfigFromSpec`
-- **I/O**: `DiscoverInputs`, `RequestUserFiles`
-- **ETL**: `RunExcelETL`, `EnrichWithContext`, `EnrichWithUserInput`
-- **Export**: `ExportConsolidatedExcel`, `DeleteTempFiles`
-- **Reporting**: `GenerateGraphics`, `GenerateTables`, `RenderReport`, `GenerateDocxReport`
+**Key step categories** (definidos en módulos especializados bajo `etl/core/`):
+- **Init/Config** (`init_steps.py`): `InitRun`, `LoadConfigFromSpec`
+- **I/O** (`io_steps.py`): `DiscoverInputs`, `RequestUserFiles`, `ExportConsolidatedExcel`, `DeleteTempFiles`
+- **ETL** (`etl_steps.py`): `RunExcelETL`, `EnrichWithContext`, `EnrichWithUserInput`, `ModifyColumnValues`
+- **Reporting** (`report_steps.py`): `GenerateGraphics`, `GenerateTables`, `RenderReport`, `GenerateDocxReport`
+- **Metrics** (`metric_steps.py`): `SaveToMetric`
 
 ### Frontend structure
 
@@ -152,8 +154,8 @@ Chart/table template definitions for `GenerateGraphics`/`GenerateTables` live in
 
 ## Known Issues / Tech Debt
 
-- `pipeline_steps.py` is ~1,465 lines with 14 classes — planned refactor into per-responsibility files
 - Excel database has no concurrency or transaction support — migration to PostgreSQL/SQLite planned
 - Routers `dimensions.py` and `metrics.py` have duplicated `get_df`/`save_df` helpers
 - `Results` and `Help` pages in the frontend are unimplemented placeholders
 - No authentication or RBAC exists yet
+- Tests en `tests/` (manual_qa.py, test_manual_pipeline.py, pipeline.py) están desactualizados y usan `LoadConfig` (deprecado)

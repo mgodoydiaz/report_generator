@@ -45,6 +45,7 @@ modulo.zip
 #data/input/*
 data/output/*
 data/tmp/*
+tests/runs/*
 
 # Codex, Gemini and rovodev things
 codex-review.md 
@@ -52,5 +53,5 @@ comunicacion_agente.md
 agents/
 
 # Archivos locales
-backend/tests/runs/*
+# backend/tests/runs/*  # movido a tests/runs/
 data/pipeline_runs/*

@@ -11,7 +11,7 @@ import os
 # Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python
 STEP_MAPPING: Dict[str, Type[Step]] = {
     "InitRun": ps.InitRun,
-    "LoadConfig": ps.LoadConfig,
+    # "LoadConfig": ps.LoadConfig,  # DEPRECADO: usar LoadConfigFromSpec
     "LoadConfigFromSpec": ps.LoadConfigFromSpec,
     "DiscoverInputs": ps.DiscoverInputs,
     "RunExcelETL": ps.RunExcelETL,

@@ -2,12 +2,10 @@
 
 # Librerias estandar
 from datetime import datetime
-from pathlib import Path
 import pandas as pd
 
 # Importaciones internas de RGenerator
 from .step import Step
-from rgenerator.tooling.config_tools import cargar_config_desde_json
 from config import PIPELINE_RUNS_DIR, SPECS_DB_PATH
 from rgenerator.tooling.data_tools import safe_text_to_json
 
@@ -82,62 +80,35 @@ class InitRun(Step):
         self._log_artifacts_delta(context, before)
 
 
-class LoadConfig(Step):
-    """
-    Carga configuracion desde JSON y normaliza parametros en el contexto.
-
-    Parametros:
-        config_path (obligatorio): ruta al archivo JSON.
-
-    Efectos:
-        - ctx.params["config_path"] y ctx.params["output_filename"].
-        - copia el resto del JSON a ctx.params sin sobrescribir lo anterior.
-        - si existe ctx.outputs_dir, define ctx.outputs["consolidated_excel"].
-
-    Ejemplo:
-        LoadConfig("config/simce_estudiantes_lenguaje.json")
-    """
-    def __init__(
-        self,
-        config_path: Path | str,
-    ):
-        """Normaliza config_path a Path y guarda la ruta."""
-        super().__init__(name="LoadConfig")
-        self.config_path = Path(config_path)
-
-    def run(self, ctx):
-        """Lee el JSON, actualiza ctx.params y prepara la salida estandar."""
-        before = self._snapshot_artifacts(ctx)
-        if not getattr(self, "name", None):
-            self.name = self.__class__.__name__
-        if not self.config_path.exists():
-            raise FileNotFoundError(f"No se encontró config: {self.config_path}")
-
-        config = cargar_config_desde_json(str(self.config_path))
-
-        # Normaliza defaults
-        output_filename = str(config.get("output_filename")).strip()
-
-        # Asegura params en el contexto
-        if not hasattr(ctx, "params") or ctx.params is None:
-            ctx.params = {}
-
-        # Guarda config cruda y params normalizados
-        ctx.params["config_path"] = str(self.config_path)
-        ctx.params["output_filename"] = output_filename
-
-        # Copia el resto tal cual, sin pisar lo ya normalizado
-        for k, v in config.items():
-            if k not in ctx.params:
-                ctx.params[k] = v
-
-        # Define ruta de salida estándar de esta corrida
-        if hasattr(ctx, "outputs_dir"):
-            ctx.outputs["consolidated_excel"] = ctx.outputs_dir / output_filename
-
-        # Deja una marca simple para debug
-        ctx.last_step = self.name
-        self._log_artifacts_delta(ctx, before)
+# DEPRECADO: LoadConfig ha sido reemplazado por LoadConfigFromSpec.
+# Se comenta para conservar historial. No usar en nuevos pipelines.
+#
+# class LoadConfig(Step):
+#     """
+#     Carga configuracion desde JSON y normaliza parametros en el contexto.
+#     DEPRECADO: usar LoadConfigFromSpec (carga desde la BD de specs).
+#     """
+#     def __init__(self, config_path: Path | str):
+#         super().__init__(name="LoadConfig")
+#         self.config_path = Path(config_path)
+#
+#     def run(self, ctx):
+#         before = self._snapshot_artifacts(ctx)
+#         if not self.config_path.exists():
+#             raise FileNotFoundError(f"No se encontró config: {self.config_path}")
+#         config = cargar_config_desde_json(str(self.config_path))
+#         output_filename = str(config.get("output_filename")).strip()
+#         if not hasattr(ctx, "params") or ctx.params is None:
+#             ctx.params = {}
+#         ctx.params["config_path"] = str(self.config_path)
+#         ctx.params["output_filename"] = output_filename
+#         for k, v in config.items():
+#             if k not in ctx.params:
+#                 ctx.params[k] = v
+#         if hasattr(ctx, "outputs_dir"):
+#             ctx.outputs["consolidated_excel"] = ctx.outputs_dir / output_filename
+#         ctx.last_step = self.name
+#         self._log_artifacts_delta(ctx, before)
 
 
 class LoadConfigFromSpec(Step):
