@@ -34,14 +34,16 @@ export default function Execution() {
     };
 
     const filteredPipelines = useMemo(() => {
-        return pipelines.filter(p =>
-            (p.pipeline?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
-            (p.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
-        );
+        return pipelines
+            .filter(p =>
+                (p.pipeline?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
+                (p.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
+            )
+            .sort((a, b) => (a.pipeline || "").localeCompare(b.pipeline || ""));
     }, [pipelines, busqueda]);
 
     return (
-        <div className="max-w-5xl mx-auto space-y-8 animate-in fade-in duration-500">
+        <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
             {/* Header Profesional */}
             <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
@@ -80,17 +82,17 @@ export default function Execution() {
 
             {/* Grid de Pipelines */}
             {loading ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {[1, 2, 3, 4].map(i => (
                         <div key={i} className="h-48 bg-white rounded-3xl animate-pulse border border-slate-100" />
                     ))}
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredPipelines.map((p) => (
                         <div
                             key={p.id_evaluation}
-                            className="group bg-white rounded-3xl border border-slate-100 p-6 shadow-sm hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
+                            className="group bg-white rounded-3xl border border-slate-100 p-4 shadow-sm hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
                         >
                             <div className="space-y-4">
                                 <div className="flex items-start justify-between">
