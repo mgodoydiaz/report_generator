@@ -23,9 +23,8 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
         description: "",
         input: "EXCEL",
         output: "XLSX",
-        context: [
-            { key: "base_dir", value: "./backend/tests" }
-        ],
+        evaluation: "",
+        context: [],
         pipeline: [{ step: "", description: "", params: "" }]
     });
 
@@ -36,13 +35,12 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
     useEffect(() => {
         if (isOpen) {
             if (initialData) {
-                // Transformar contexto de objeto a array de pairs
-                const contextArray = Object.entries(initialData.context || {}).map(([key, value]) => ({
-                    key,
-                    value: String(value)
-                }));
+                const rawContext = initialData.context || {};
+                const evaluationValue = rawContext.evaluation || "";
+                const contextArray = Object.entries(rawContext)
+                    .filter(([key]) => key !== 'evaluation' && key !== 'base_dir')
+                    .map(([key, value]) => ({ key, value: String(value) }));
 
-                // Transformar pipeline para pasar params a string JSON
                 const pipelineArray = (initialData.pipeline || []).map(s => ({
                     step: s.step || "",
                     description: s.description || "",
@@ -54,17 +52,18 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                     description: initialData.pipeline_metadata?.description || "",
                     input: initialData.pipeline_metadata?.input || "EXCEL",
                     output: initialData.pipeline_metadata?.output || "XLSX",
-                    context: contextArray.length > 0 ? contextArray : [{ key: "base_dir", value: "./backend/tests" }],
+                    evaluation: evaluationValue,
+                    context: contextArray,
                     pipeline: pipelineArray.length > 0 ? pipelineArray : [{ step: "", description: "", params: "" }]
                 });
             } else {
-                // Reset format for new pipeline
                 setFormData({
                     name: "",
                     description: "",
                     input: "EXCEL",
                     output: "XLSX",
-                    context: [{ key: "base_dir", value: "./backend/tests" }],
+                    evaluation: "",
+                    context: [],
                     pipeline: [{ step: "", description: "", params: "" }]
                 });
                 setExpandedSteps(new Set());
@@ -153,8 +152,10 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
             return;
         }
 
-        // Re-transformar datos al formato JSON del archivo
         const contextObj = {};
+        if (formData.evaluation.trim()) {
+            contextObj.evaluation = formData.evaluation.trim();
+        }
         formData.context.forEach(c => {
             if (c.key.trim()) {
                 contextObj[c.key] = c.value;
@@ -292,6 +293,25 @@ const NewPipelineDrawer = ({ isOpen, onClose, initialData = null, title = "Confi
                         </div>
 
                         <div className="space-y-3">
+                            {/* Campo fijo: nombre de evaluación */}
+                            <div>
+                                <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                                    Nombre de Evaluación
+                                </label>
+                                <input
+                                    type="text"
+                                    placeholder="ej: simce_lenguaje_2025"
+                                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-mono bg-slate-50 focus:bg-white outline-none focus:ring-1 focus:ring-indigo-500"
+                                    value={formData.evaluation}
+                                    onChange={(e) => setFormData({ ...formData, evaluation: e.target.value })}
+                                />
+                                <p className="text-[10px] text-slate-400 mt-1 ml-1">
+                                    Identifica la corrida; se usa como nombre de carpetas temporales.
+                                </p>
+                            </div>
+
+                            {formData.context.length > 0 && <div className="border-t border-slate-100 pt-2" />}
+
                             {formData.context.map((ctx, index) => (
                                 <div key={index} className="flex items-center gap-2 group">
                                     <input

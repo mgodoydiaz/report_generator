@@ -48,9 +48,11 @@ def load_pipeline_config(config_source: str | Path | dict, pipeline_id: Optional
         config = config_source
 
     # 1. Configurar el contexto
-    json_base_dir = config.get("context", {}).get("base_dir", ".")
-    ctx = RunContext(base_dir=Path(json_base_dir))
+    json_context = config.get("context", {})
+    ctx = RunContext()
     ctx.pipeline_id = pipeline_id
+    if json_context.get("evaluation"):
+        ctx.evaluation = json_context["evaluation"]
 
 
     # 2. Construir el pipeline
