@@ -350,6 +350,173 @@ class EnrichWithContext(Step):
         self._log_artifacts_delta(ctx, before)
 
 
+class EnrichWithLookup(Step):
+    """
+    Enriquece un DataFrame haciendo un lookup (join) contra otro artifact del contexto.
+
+    Parametros:
+        input_key (str): Clave del artifact principal en ctx.artifacts.
+        lookup_key (str): Clave del artifact de lookup en ctx.artifacts.
+        on (str): Columna llave compartida por ambos DataFrames.
+            Usar cuando la columna tiene el mismo nombre en ambos lados.
+            Mutuamente excluyente con left_on/right_on.
+        left_on (str): Columna llave en el DataFrame principal.
+            Usar junto con right_on cuando la llave tiene distinto nombre en cada lado.
+        right_on (str): Columna llave en el DataFrame de lookup.
+            Usar junto con left_on cuando la llave tiene distinto nombre en cada lado.
+        columns (list): Columnas del lookup a incorporar al DataFrame principal.
+            Debe incluir la columna llave si se usa right_on.
+        output_key (str): Clave del artifact de salida en ctx.artifacts.
+        how (str): Tipo de join. Default: "inner".
+
+    Efectos:
+        - ctx.artifacts[output_key] con DataFrame enriquecido.
+        - ctx.last_artifact_key actualizado con output_key.
+
+    Ejemplo con on:
+        EnrichWithLookup(
+            input_key="df_estudiantes",
+            lookup_key="df_cursos",
+            on="Curso",
+            columns=["Nivel", "Jefe_UTP"],
+            output_key="df_estudiantes_enriquecido",
+        )
+
+    Ejemplo con left_on/right_on:
+        EnrichWithLookup(
+            input_key="df_estudiantes",
+            lookup_key="df_cursos",
+            left_on="CursoID",
+            right_on="ID_Curso",
+            columns=["ID_Curso", "Nivel", "Jefe_UTP"],
+            output_key="df_estudiantes_enriquecido",
+        )
+    """
+    def __init__(
+        self,
+        input_key: str,
+        lookup_key: str,
+        columns: List[str],
+        output_key: str,
+        on: Optional[str] = None,
+        left_on: Optional[str] = None,
+        right_on: Optional[str] = None,
+        how: str = "inner",
+    ):
+        super().__init__(
+            name=f"EnrichWithLookup_{input_key}",
+            requires=[input_key, lookup_key],
+            produces=[output_key],
+        )
+        self.input_key = input_key
+        self.lookup_key = lookup_key
+        self.on = on
+        self.left_on = left_on
+        self.right_on = right_on
+        self.columns = columns
+        self.output_key = output_key
+        self.how = how
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+
+        # 1. Validar configuracion de llaves
+        has_on = self.on is not None
+        has_pair = self.left_on is not None and self.right_on is not None
+
+        if not has_on and not has_pair:
+            raise ValueError(
+                f"[{self.name}] Debes especificar 'on' o el par 'left_on'/'right_on'."
+            )
+        if has_on and (self.left_on is not None or self.right_on is not None):
+            raise ValueError(
+                f"[{self.name}] Usa 'on' o 'left_on'/'right_on', no ambos a la vez."
+            )
+        if (self.left_on is None) != (self.right_on is None):
+            raise ValueError(
+                f"[{self.name}] 'left_on' y 'right_on' deben usarse juntos."
+            )
+
+        # 2. Obtener DataFrames
+        df_main = ctx.artifacts.get(self.input_key)
+        df_lookup = ctx.artifacts.get(self.lookup_key)
+
+        if df_main is None:
+            raise ValueError(f"[{self.name}] Artifact '{self.input_key}' no encontrado en ctx.artifacts.")
+        if df_lookup is None:
+            raise ValueError(f"[{self.name}] Artifact '{self.lookup_key}' no encontrado en ctx.artifacts.")
+
+        if df_main.empty:
+            self._log(f"[{self.name}] Advertencia: DataFrame principal '{self.input_key}' está vacío.")
+            ctx.artifacts[self.output_key] = df_main.copy()
+            ctx.last_artifact_key = self.output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        if df_lookup.empty:
+            self._log(f"[{self.name}] Advertencia: DataFrame de lookup '{self.lookup_key}' está vacío.")
+            ctx.artifacts[self.output_key] = df_main.copy()
+            ctx.last_artifact_key = self.output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3. Validar que las columnas llave existen
+        if has_on:
+            if self.on not in df_main.columns:
+                raise ValueError(f"[{self.name}] Columna llave '{self.on}' no existe en '{self.input_key}'.")
+            if self.on not in df_lookup.columns:
+                raise ValueError(f"[{self.name}] Columna llave '{self.on}' no existe en '{self.lookup_key}'.")
+        else:
+            if self.left_on not in df_main.columns:
+                raise ValueError(f"[{self.name}] Columna '{self.left_on}' no existe en '{self.input_key}'.")
+            if self.right_on not in df_lookup.columns:
+                raise ValueError(f"[{self.name}] Columna '{self.right_on}' no existe en '{self.lookup_key}'.")
+
+        # 4. Validar columnas del lookup
+        missing_cols = [c for c in self.columns if c not in df_lookup.columns]
+        if missing_cols:
+            raise ValueError(
+                f"[{self.name}] Columnas no encontradas en '{self.lookup_key}': {missing_cols}. "
+                f"Disponibles: {df_lookup.columns.tolist()}"
+            )
+
+        # 5. Recortar lookup a las columnas solicitadas
+        df_lookup_slim = df_lookup[self.columns].copy()
+
+        # 6. Ejecutar merge
+        try:
+            if has_on:
+                df_result = df_main.merge(df_lookup_slim, on=self.on, how=self.how)
+            else:
+                df_result = df_main.merge(
+                    df_lookup_slim,
+                    left_on=self.left_on,
+                    right_on=self.right_on,
+                    how=self.how,
+                )
+        except Exception as e:
+            raise ValueError(f"[{self.name}] Error ejecutando merge: {e}")
+
+        # 7. Log informativo
+        rows_before = len(df_main)
+        rows_after = len(df_result)
+        if rows_after < rows_before:
+            self._log(
+                f"[{self.name}] Advertencia: el join redujo filas de {rows_before} a {rows_after}. "
+                f"Verifica que las llaves coincidan correctamente."
+            )
+        else:
+            self._log(f"[{self.name}] Join completado: {rows_before} → {rows_after} filas.")
+
+        # 8. Guardar resultado
+        ctx.artifacts[self.output_key] = df_result
+        ctx.last_artifact_key = self.output_key
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+        
+
 class ModifyColumnValues(Step):
     """
     Modifica valores de columnas usando reglas definidas (regex, replace, map, strip).

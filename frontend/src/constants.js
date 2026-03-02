@@ -19,6 +19,7 @@ export const STEP_OPTIONS = [
   "RunExcelETL",
   "EnrichWithUserInput",
   "EnrichWithContext",
+  "EnrichWithLookup",
   "SaveToMetric",
   "ExportConsolidatedExcel",
   "GenerateGraphics",
@@ -39,6 +40,7 @@ export const STEP_TRANSLATIONS = {
   "RunExcelETL": "Procesar Datos",
   "EnrichWithUserInput": "Enriquecer por Usuario",
   "EnrichWithContext": "Enriquecer por Contexto",
+  "EnrichWithLookup": "Enriquecer con Lookup",
   "SaveToMetric": "Cargar Métricas",
   "ExportConsolidatedExcel": "Exportar Datos",
   "GenerateGraphics": "Crear Gráficos",
@@ -96,14 +98,17 @@ export const stripJsonComments = (str) => {
  * Se muestran al usuario al seleccionar un paso en el editor de parámetros.
  */
 export const STEP_DEFAULT_PARAMS = {
+
   "InitRun": `{
   "evaluation": "nombre_evaluacion", // Nombre de la evaluación
   "base_dir": "./backend/tests" // Directorio base de trabajo
 }`,
+
   // "LoadConfig": DEPRECADO - usar LoadConfigFromSpec
   "LoadConfigFromSpec": `{
   "spec_id": 1 // ID del spec/template en la base de datos (obligatorio)
 }`,
+
   "DiscoverInputs": `{
   "rules": {
     "tipo_archivo": {
@@ -112,6 +117,7 @@ export const STEP_DEFAULT_PARAMS = {
     }
   }
 }`,
+
   "RequestUserFiles": `{
   "file_specs": [
     {
@@ -123,14 +129,17 @@ export const STEP_DEFAULT_PARAMS = {
     }
   ]
 }`,
+
   "RunExcelETL": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output" // Clave del artifact de salida
 }`,
+
   "EnrichWithUserInput": `{
   "input_key": "nombre_input" // Clave del artifact de entrada (opcional, se auto-detecta)
   // Los campos a solicitar se leen desde enrich_data del spec (user_input: true)
 }`,
+
   "EnrichWithContext": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output", // Clave del artifact de salida
@@ -138,32 +147,51 @@ export const STEP_DEFAULT_PARAMS = {
     "columna_nueva": "clave_del_contexto" // Mapa columna → parámetro del contexto
   }
 }`,
+
+  "EnrichWithLookup": `{
+  "input_key": "df_principal", // Clave del artifact principal en ctx.artifacts
+  "lookup_key": "df_lookup", // Clave del artifact de lookup en ctx.artifacts
+  "on": "ColumnaLlave", // Columna llave compartida (usar si tiene el mismo nombre en ambos lados)
+  // "left_on": "ID_Principal", // Columna llave en el artifact principal (usar con right_on)
+  // "right_on": "ID_Lookup", // Columna llave en el artifact de lookup (usar con left_on)
+  "columns": ["Col1", "Col2"], // Columnas del lookup a incorporar al artifact principal
+  "output_key": "df_enriquecido", // Clave del artifact de salida
+  "how": "inner" // Tipo de join: inner, left, right, outer
+}`,
+
   "SaveToMetric": `{
   "metric_id": 1, // ID de la métrica destino
   "input_key": "nombre_artifact", // Clave del artifact (DataFrame)
   "clear_existing": false // Borrar datos previos antes de insertar
 }`,
+
   "ExportConsolidatedExcel": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_filename": "archivo_salida.xlsx" // Nombre del archivo Excel de salida
 }`,
+
   "GenerateGraphics": `{
   // Lee charts_schema desde ctx.params (cargado por un step previo)
   // No requiere parámetros directos
 }`,
+
   "GenerateTables": `{
   // Lee tables_schema desde ctx.params (cargado por un step previo)
   // No requiere parámetros directos
 }`,
+
   "RenderReport": `{
   "report_schema": {} // Estructura del informe PDF
 }`,
+
   "GenerateDocxReport": `{
   "template_name": "plantilla.docx", // Nombre de la plantilla Word
   "output_filename": "informe.docx", // Nombre del archivo de salida
   "convert_to_pdf": true // Convertir a PDF después de generar
 }`,
+
   "DeleteTempFiles": `{
   // Este paso no requiere parámetros
 }`
+
 };
