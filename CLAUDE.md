@@ -152,6 +152,130 @@ data/
 ETL config examples (column mappings, header rows, enrichment values) live in `config/`.
 Chart/table template definitions for `GenerateGraphics`/`GenerateTables` live in `data/database/reports_templates/`.
 
+## How-To: Crear una métrica desde el chat de Claude
+
+Para crear una nueva métrica sin usar el frontend, sigue estos pasos. Requiere editar directamente los archivos Excel de la base de datos.
+
+### Archivos involucrados
+
+| Archivo | Propósito |
+|---|---|
+| `data/database/dimensions.xlsx` | Catálogo de dimensiones (columnas de segmentación) |
+| `data/database/metrics.xlsx` | Definición de métricas |
+| `data/database/metric_dimensions.xlsx` | Relación M-N entre métricas y dimensiones |
+
+### Paso 1 — Definir el esquema de la métrica
+
+Recopilar del usuario:
+- **Nombre** de la métrica
+- **Tipo de dato** (`int`, `float`, `str`, u `object` si hay múltiples campos de valor)
+- **Campos de valor**: las columnas numéricas o textuales que se guardarán como dato. Si son más de uno, el tipo es `object` y se listan en `meta_json.fields`.
+- **Dimensiones**: las columnas de segmentación (ej. Año, Curso, Asignatura). Estas **no** son el valor medido, sino los ejes por los que se filtra/agrega.
+
+### Paso 2 — Verificar dimensiones existentes
+
+Leer `data/database/dimensions.xlsx` y comparar las dimensiones requeridas contra las ya existentes. Identificar cuáles hay que crear.
+
+Columnas del archivo: `id_dimension`, `name`, `data_type`, `validation_mode`.
+
+- `data_type`: tipo del valor de la dimensión (`str`, `int`, `float`)
+- `validation_mode`: `'free'` (cualquier valor) o `'list'` (valores controlados desde `dimension_values.xlsx`)
+
+### Paso 3 — Crear dimensiones faltantes
+
+Usando un script Python con `pandas`, agregar las filas faltantes al archivo. El `id_dimension` debe ser `max(id_dimension) + 1` para cada nueva dimensión.
+
+```python
+import pandas as pd
+from pathlib import Path
+
+DB = Path("data/database")
+df = pd.read_excel(DB / "dimensions.xlsx")
+
+nuevas = [
+    {"id_dimension": 14, "name": "Nueva Dimension", "data_type": "str", "validation_mode": "free"},
+]
+df = pd.concat([df, pd.DataFrame(nuevas)], ignore_index=True)
+df.to_excel(DB / "dimensions.xlsx", index=False)
+```
+
+### Paso 4 — Crear la métrica en metrics.xlsx
+
+Columnas del archivo: `id_metric`, `name`, `data_type`, `meta_json`, `description`, `unit`, `created_at`.
+
+- Para métricas tipo `object`, `meta_json` debe ser un JSON string con la clave `"fields"`:
+  ```json
+  {"fields": [{"name": "A", "type": "float"}, {"name": "Correcta", "type": "str"}]}
+  ```
+- Para métricas simples (`int`, `float`, `str`), `meta_json` puede quedar vacío (`{}`).
+
+```python
+import json
+from datetime import datetime
+
+df_m = pd.read_excel(DB / "metrics.xlsx")
+nueva_metrica = {
+    "id_metric": int(df_m["id_metric"].max()) + 1,
+    "name": "Nombre Métrica",
+    "data_type": "object",  # o 'int', 'float', 'str'
+    "meta_json": json.dumps({"fields": [
+        {"name": "CampoA", "type": "float"},
+        {"name": "CampoB", "type": "str"},
+    ]}),
+    "description": "Descripción opcional",
+    "unit": "",
+    "created_at": datetime.now().isoformat(),
+}
+df_m = pd.concat([df_m, pd.DataFrame([nueva_metrica])], ignore_index=True)
+df_m.to_excel(DB / "metrics.xlsx", index=False)
+```
+
+### Paso 5 — Relacionar métrica con sus dimensiones en metric_dimensions.xlsx
+
+Columnas del archivo: `id`, `id_metric`, `id_dimension`.
+
+```python
+df_md = pd.read_excel(DB / "metric_dimensions.xlsx")
+metric_id = 5  # ID de la métrica recién creada
+dim_ids = [4, 5, 8, 11, 12]  # IDs de las dimensiones a asociar
+
+nuevas_rels = [{"id_metric": metric_id, "id_dimension": d} for d in dim_ids]
+# Asignar IDs correlativos
+start_id = int(df_md["id"].max()) + 1 if not df_md.empty else 1
+for i, rel in enumerate(nuevas_rels):
+    rel["id"] = start_id + i
+
+df_md = pd.concat([df_md, pd.DataFrame(nuevas_rels)], ignore_index=True)
+df_md.to_excel(DB / "metric_dimensions.xlsx", index=False)
+```
+
+### Paso 6 — Verificar
+
+Confirmar que la métrica es accesible desde la API:
+```
+GET http://localhost:8000/api/metrics
+```
+O leer directamente el Excel para verificar que los IDs y relaciones quedaron correctos.
+
+### Usar la métrica en un pipeline
+
+Agregar el paso `SaveToMetric` en el JSON del pipeline:
+```json
+{
+  "step": "SaveToMetric",
+  "params": {
+    "metric_id": 5,
+    "input_key": "nombre_del_artifact",
+    "clear_existing": false
+  }
+}
+```
+El artifact referenciado debe ser un DataFrame cuyas columnas incluyan:
+- Los nombres de las dimensiones asociadas (ej. `"Año"`, `"Curso"`)
+- Los campos de valor (para tipo `object`: `"CampoA"`, `"CampoB"`; para tipo simple: el nombre exacto de la métrica)
+
+---
+
 ## Known Issues / Tech Debt
 
 - Excel database has no concurrency or transaction support — migration to PostgreSQL/SQLite planned
