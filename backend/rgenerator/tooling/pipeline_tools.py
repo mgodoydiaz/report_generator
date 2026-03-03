@@ -18,6 +18,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "EnrichWithUserInput": ps.EnrichWithUserInput,
     "EnrichWithContext": ps.EnrichWithContext,
     "EnrichWithLookup": ps.EnrichWithLookup,
+    "ModifyColumnValues": ps.ModifyColumnValues,
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
     "DeleteTempFiles": ps.DeleteTempFiles,
     "RequestUserFiles": ps.RequestUserFiles,

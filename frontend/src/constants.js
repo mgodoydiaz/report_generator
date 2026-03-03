@@ -20,6 +20,7 @@ export const STEP_OPTIONS = [
   "EnrichWithUserInput",
   "EnrichWithContext",
   "EnrichWithLookup",
+  "ModifyColumnValues",
   "SaveToMetric",
   "ExportConsolidatedExcel",
   "GenerateGraphics",
@@ -41,6 +42,7 @@ export const STEP_TRANSLATIONS = {
   "EnrichWithUserInput": "Enriquecer por Usuario",
   "EnrichWithContext": "Enriquecer por Contexto",
   "EnrichWithLookup": "Enriquecer con Lookup",
+  "ModifyColumnValues": "Modificar Valores",
   "SaveToMetric": "Cargar Métricas",
   "ExportConsolidatedExcel": "Exportar Datos",
   "GenerateGraphics": "Crear Gráficos",
@@ -157,6 +159,30 @@ export const STEP_DEFAULT_PARAMS = {
   "columns": ["Col1", "Col2"], // Columnas del lookup a incorporar al artifact principal
   "output_key": "df_enriquecido", // Clave del artifact de salida
   "how": "inner" // Tipo de join: inner, left, right, outer
+}`,
+
+  "ModifyColumnValues": `{
+  "input_key": "nombre_input", // Clave del artifact de entrada
+  "output_key": "nombre_output", // Clave del artifact de salida
+  "transformations": [
+    {
+      "columna": "NombreColumna", // Columna a modificar
+      "operacion": "replace", // replace | math
+      "valor_completo": false, // false (default): busca patron en cualquier parte (regex) | true: coincidencia exacta
+      "default": null, // Solo con valor_completo=true. null mantiene el valor original si no hay coincidencia
+      "valores": [
+        { "patron": "texto_a_buscar", "reemplazo": "texto_nuevo" }
+      ]
+    }
+    // {
+    //   "columna": "NombreColumna",
+    //   "operacion": "math",
+    //   "valores": [
+    //     { "condicion": "x > 1", "expresion": "x / 100" }, // condicion booleana con "x"
+    //     { "condicion": "*",     "expresion": "x" }        // "*" aplica a todos los valores
+    //   ]
+    // }
+  ]
 }`,
 
   "SaveToMetric": `{

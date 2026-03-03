@@ -100,53 +100,84 @@ def crear_tabla(df_estudiantes, parametros):
 def modificar_valores_columna(df, config_transformaciones):
     """
     Modifica valores de columnas basado en una lista de configuraciones.
-    
+
     Args:
         df (pd.DataFrame): DataFrame a modificar
         config_transformaciones (list): Lista de diccionarios con reglas de transformación.
-            Ejemplo de regla:
+
+            Operacion "replace":
             {
                 "columna": "Curso",
-                "operacion": "regex" | "replace" | "map" | "strip",
-                "parametros": { ... }
+                "operacion": "replace",
+                "valores": [
+                    {"patron": "° medio ", "reemplazo": ""},
+                    {"patron": "° básico ", "reemplazo": ""}
+                ],
+                "valor_completo": false,  // false (default): busca en cualquier parte del string (regex)
+                                          // true: el patron debe coincidir con el valor entero de la celda
+                "default": null           // Solo aplica con valor_completo=true.
+                                          // null (default): mantiene el valor original si no hay coincidencia
+                                          // "Otro": reemplaza con ese valor si no hay coincidencia
             }
-            
+
+            Operacion "math":
+            {
+                "columna": "Rend",
+                "operacion": "math",
+                "valores": [
+                    {"condicion": "x > 1", "expresion": "x / 100"},
+                    {"condicion": "*",     "expresion": "x"}
+                ]
+                // condicion: "*" aplica a todos los valores, o expresion booleana con "x"
+                // expresion: operacion matematica en terminos de "x" (valor actual de la celda)
+                // Las reglas se evaluan en orden; la primera condicion que se cumpla se aplica
+            }
+
     Returns:
         pd.DataFrame: DataFrame modificado
     """
     if not config_transformaciones:
         return df
-        
+
     for regla in config_transformaciones:
         col = regla.get("columna")
-        operacion = regla.get("operacion")
-        params = regla.get("parametros", {})
-        
         if col not in df.columns:
             continue
-            
-        if operacion == "regex":
-            patron = params.get("patron")
-            reemplazo = params.get("reemplazo", "")
-            if patron:
-                df[col] = df[col].astype(str).str.replace(patron, reemplazo, regex=True)
-                
-        elif operacion == "replace":
-            valor_original = params.get("valor_original")
-            valor_nuevo = params.get("valor_nuevo")
-            df[col] = df[col].replace(valor_original, valor_nuevo)
-            
-        elif operacion == "map":
-            mapa = params.get("mapa", {})
-            default = params.get("default", None)
-            if default is not None:
-                df[col] = df[col].map(mapa).fillna(default)
+
+        operacion = regla.get("operacion", "replace")
+        valores = regla.get("valores", [])
+
+        if operacion == "replace":
+            valor_completo = regla.get("valor_completo", False)
+            default = regla.get("default", None)
+
+            if valor_completo:
+                mapa = {par.get("patron"): par.get("reemplazo", "") for par in valores if par.get("patron") is not None}
+                if default is not None:
+                    df[col] = df[col].map(mapa).fillna(default)
+                else:
+                    df[col] = df[col].map(mapa).fillna(df[col])
             else:
-                # Si no hay default, mantiene valores originales si no estan en el mapa
-                df[col] = df[col].map(mapa).fillna(df[col])
-                
-        elif operacion == "strip":
-            if pd.api.types.is_string_dtype(df[col]):
-                 df[col] = df[col].str.strip()
+                for par in valores:
+                    patron = par.get("patron")
+                    reemplazo = par.get("reemplazo", "")
+                    if patron is None:
+                        continue
+                    df[col] = df[col].astype(str).str.replace(patron, reemplazo, regex=True)
+
+        elif operacion == "math":
+            _math_ns = {"__builtins__": {}, "abs": abs, "round": round, "min": min, "max": max}
+
+            def aplicar_math(x, reglas):
+                for regla in reglas:
+                    condicion = regla.get("condicion", "*")
+                    expresion = regla.get("expresion")
+                    if expresion is None:
+                        continue
+                    cumple = condicion == "*" or bool(eval(condicion, {**_math_ns, "x": x}))
+                    if cumple:
+                        return eval(expresion, {**_math_ns, "x": x})
+                return x
+            df[col] = df[col].apply(lambda x: aplicar_math(x, valores))
 
     return df

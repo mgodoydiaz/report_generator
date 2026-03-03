@@ -519,7 +519,7 @@ class EnrichWithLookup(Step):
 
 class ModifyColumnValues(Step):
     """
-    Modifica valores de columnas usando reglas definidas (regex, replace, map, strip).
+    Modifica valores de columnas usando reglas definidas (replace, map).
 
     Parametros:
         input_key (opcional): clave del artifact de entrada.
@@ -529,11 +529,26 @@ class ModifyColumnValues(Step):
         transformations (opcional): lista de reglas de transformación.
             Si no se entrega, busca en ctx.params["transformations"].
 
-    Ejemplo de regla:
+    Ejemplo de regla replace:
         {
             "columna": "Curso",
-            "operacion": "regex",
-            "parametros": {"patron": "° medio ", "reemplazo": " "}
+            "operacion": "replace",
+            "valores": [
+                {"patron": "° medio ", "reemplazo": ""},
+                {"patron": "° básico ", "reemplazo": ""}
+            ],
+            "valor_completo": false,
+            "default": null
+        }
+
+    Ejemplo de regla math:
+        {
+            "columna": "Rend",
+            "operacion": "math",
+            "valores": [
+                {"condicion": "x > 1", "expresion": "x / 100"},
+                {"condicion": "*",     "expresion": "x"}
+            ]
         }
     """
     def __init__(
