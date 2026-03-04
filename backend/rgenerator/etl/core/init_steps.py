@@ -121,20 +121,34 @@ class LoadConfigFromSpec(Step):
 
     Parámetros:
         spec_id (int): ID del spec/template en templates.xlsx.
+        config_key (str, opcional): Si se especifica, los etlParams se guardan
+            bajo ctx.params["_config"][config_key] en lugar de aplanarse
+            directamente en ctx.params. Útil cuando el pipeline procesa
+            múltiples tipos de archivo con configuraciones distintas.
+            RunExcelETL buscará primero en ctx.params["_config"][input_key]
+            antes de caer al ctx.params global.
 
-    Efectos en ctx.params:
+    Efectos en ctx.params (sin config_key):
         - etlParams → se transforman a formato plano (header_row, select_columns, etc.)
         - variables_documento → ctx.params["variables_documento"]
         - secciones_fijas → ctx.params["secciones_fijas"]
         - secciones_dinamicas → ctx.params["secciones_dinamicas"]
         - Cualquier otra sección presente se copia tal cual.
 
-    Ejemplo:
+    Efectos en ctx.params (con config_key):
+        - etlParams → ctx.params["_config"][config_key]
+        - El resto de secciones se copia igual al global.
+
+    Ejemplo sin config_key (comportamiento anterior):
         LoadConfigFromSpec(spec_id=1)
+
+    Ejemplo con config_key (config aislada por artifact):
+        LoadConfigFromSpec(spec_id=3, config_key="habilidades")
     """
-    def __init__(self, spec_id: int):
+    def __init__(self, spec_id: int, config_key: str = None):
         super().__init__(name="LoadConfigFromSpec")
         self.spec_id = spec_id
+        self.config_key = config_key
 
     def _transform_etl_params(self, etl_params: list) -> dict:
         """
@@ -212,11 +226,17 @@ class LoadConfigFromSpec(Step):
 
         if etl_params:
             flat_params = self._transform_etl_params(etl_params)
-            for k, v in flat_params.items():
-
-                # Forzar actualización desde el Spec (sobrescribir si existe)
-                ctx.params[k] = v
-            loaded_keys.append(f"etlParams({len(flat_params)})")
+            if self.config_key:
+                # Guardar config aislada por artifact, sin tocar el ctx.params global
+                if "_config" not in ctx.params:
+                    ctx.params["_config"] = {}
+                ctx.params["_config"][self.config_key] = flat_params
+                loaded_keys.append(f"etlParams({len(flat_params)}) -> _config[{self.config_key}]")
+            else:
+                # Comportamiento original: aplanar directo en ctx.params
+                for k, v in flat_params.items():
+                    ctx.params[k] = v
+                loaded_keys.append(f"etlParams({len(flat_params)})")
 
         # --- Otras secciones: copiar tal cual ---
         direct_sections = ["variables_documento", "secciones_fijas", "secciones_dinamicas"]

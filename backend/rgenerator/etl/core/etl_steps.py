@@ -70,14 +70,21 @@ class RunExcelETL(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
+        # Buscar config aislada por input_key (cargada con config_key en LoadConfigFromSpec)
+        # Si no existe, caer al ctx.params global como fallback
+        _artifact_config = ctx.params.get("_config", {}).get(input_key, {})
+
+        def _resolve(key, default):
+            return _artifact_config.get(key, ctx.params.get(key, default))
+
         # Obtenemos la config de headers (puede venir del json cargado en LoadConfig)
         # Default global es 0 si no se especifica nada
-        raw_header_config = ctx.params.get("header_row", 0)
+        raw_header_config = _resolve("header_row", 0)
 
         # Se obtienen los nombres de las columnas a mantener o seleccionar
-        select_columns = ctx.params.get("select_columns", [])
+        select_columns = _resolve("select_columns", [])
         # Obtenemos el mapeo de columnas (renames)
-        column_mapping = ctx.params.get("rename_columns", {})
+        column_mapping = _resolve("rename_columns", {})
 
         # --- PASO 2: Normalizar la configuracion del header ---
         # Si el usuario paso un solo entero, lo convertimos a la estructura de diccionario
@@ -161,7 +168,9 @@ class EnrichWithUserInput(Step):
         before = self._snapshot_artifacts(ctx)
 
         # 1. Obtener campos que requieren input del usuario
-        enrich_data = ctx.params.get("enrich_data", [])
+        # Buscar primero en config aislada por input_key, luego caer al global
+        _artifact_config = ctx.params.get("_config", {}).get(self.input_key, {})
+        enrich_data = _artifact_config.get("enrich_data", ctx.params.get("enrich_data", []))
 
         if isinstance(enrich_data, list):
             user_input_fields = [p for p in enrich_data if isinstance(p, dict) and p.get("user_input")]
@@ -305,7 +314,9 @@ class EnrichWithContext(Step):
         if not self.context_mapping:
             # Importar enrich_data del contexto, EXCLUYENDO campos user_input
             # (esos se manejan en RunExcelETL por archivo)
-            raw_enrich = ctx.params.get("enrich_data", {})
+            # Buscar primero en config aislada por input_key, luego caer al global
+            _artifact_config = ctx.params.get("_config", {}).get(input_key, {})
+            raw_enrich = _artifact_config.get("enrich_data", ctx.params.get("enrich_data", {}))
             if isinstance(raw_enrich, list):
                 # Formato lista de {key, val, user_input?}
                 self.context_mapping = {
@@ -483,7 +494,13 @@ class EnrichWithLookup(Step):
             )
 
         # 5. Recortar lookup a las columnas solicitadas
-        df_lookup_slim = df_lookup[self.columns].copy()
+        # Si se usa right_on, incluirlo en el slice aunque no esté en columns
+        # (es necesario para el merge). Se eliminará del resultado si no estaba en columns.
+        if has_pair and self.right_on not in self.columns:
+            cols_para_slim = [self.right_on] + self.columns
+        else:
+            cols_para_slim = self.columns
+        df_lookup_slim = df_lookup[cols_para_slim].copy()
 
         # 6. Ejecutar merge
         try:
@@ -496,6 +513,9 @@ class EnrichWithLookup(Step):
                     right_on=self.right_on,
                     how=self.how,
                 )
+                # Eliminar la columna right_on del resultado si no fue pedida en columns
+                if self.right_on not in self.columns and self.right_on in df_result.columns:
+                    df_result = df_result.drop(columns=[self.right_on])
         except Exception as e:
             raise ValueError(f"[{self.name}] Error ejecutando merge: {e}")
 
