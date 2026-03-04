@@ -54,7 +54,7 @@ Pendientes, deuda técnica y mejoras planificadas para Report Generator.
 
 ### Calidad y documentación
 - [ ] Escribir suite de tests automatizados
-- [ ] Crear documentación de pasos y guía de uso
+- [x] Crear documentación de pasos y guía de uso — ver `skills.md` (`/add-step`, `/add-metric`, `/new-pipeline`)
 
 ---
 

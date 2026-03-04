@@ -276,6 +276,14 @@ El artifact referenciado debe ser un DataFrame cuyas columnas incluyan:
 
 ---
 
+## Skills de administración
+
+Tareas recurrentes de desarrollo y administración del proyecto están documentadas como skills ejecutables en **[skills.md](./skills.md)**:
+
+- `/add-step` — Crear o modificar un paso de pipeline (guía de referencia)
+- `/add-metric` — Crear una nueva métrica interactivamente
+- `/new-pipeline` — Construir un nuevo pipeline JSON desde cero
+
 ## Roadmap y Pendientes
 
 Los pendientes, deuda técnica y mejoras planificadas se mantienen en **[ROADMAP.md](./ROADMAP.md)**.
