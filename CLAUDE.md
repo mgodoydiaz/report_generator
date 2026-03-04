@@ -276,10 +276,6 @@ El artifact referenciado debe ser un DataFrame cuyas columnas incluyan:
 
 ---
 
-## Known Issues / Tech Debt
+## Roadmap y Pendientes
 
-- Excel database has no concurrency or transaction support — migration to PostgreSQL/SQLite planned
-- Routers `dimensions.py` and `metrics.py` have duplicated `get_df`/`save_df` helpers
-- `Results` and `Help` pages in the frontend are unimplemented placeholders
-- No authentication or RBAC exists yet
-- Tests en `tests/` (manual_qa.py, test_manual_pipeline.py, pipeline.py) están desactualizados y usan `LoadConfig` (deprecado)
+Los pendientes, deuda técnica y mejoras planificadas se mantienen en **[ROADMAP.md](./ROADMAP.md)**.
