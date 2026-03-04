@@ -7,7 +7,7 @@ import json
 import io
 from datetime import datetime
 from config import METRICS_DB_PATH, METRIC_DIMENSIONS_DB_PATH, METRIC_DATA_DB_PATH, DIMENSIONS_DB_PATH
-from rgenerator.tooling.data_tools import get_json_safe_df
+from routers._db import get_df, save_df
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -27,18 +27,6 @@ class MetricUpdate(MetricBase):
 class MetricDataPoint(BaseModel):
     value: Any
     dimensions_json: Dict[str, Any] # {"id_dimension": "valor"}
-
-# --- Helpers ---
-def get_df(path):
-    if not path.exists(): return pd.DataFrame()
-    df = pd.read_excel(path)
-    return get_json_safe_df(df)
-    if not path.exists(): return pd.DataFrame()
-    df = pd.read_excel(path)
-    return get_json_safe_df(df)
-
-def save_df(df, path):
-    df.to_excel(path, index=False)
 
 # --- Endpoints: Metrics Definitions ---
 
