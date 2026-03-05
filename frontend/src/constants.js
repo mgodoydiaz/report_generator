@@ -64,7 +64,7 @@ export const FORMAT_COLORS = {
 };
 
 // Tipos de Especificaciones
-export const SPEC_TYPES = ["Reporte", "Dashboard", "ETL Archivo"];
+export const SPEC_TYPES = ["Reporte", "Dashboard", "ETL Archivo", "Gráficos", "Tablas"];
 
 // Opciones de parámetros para ETL
 export const ETL_PARAMETER_OPTIONS = [

@@ -44,10 +44,10 @@ class GenerateGraphics(Step):
         if not getattr(self, "name", None):
             self.name = self.__class__.__name__
 
-        # 1. Resolver esquema: constructor directo o ctx.params
+        # 1. Resolver esquema: constructor directo, nuevo formato (charts_list) o legacy (charts_schema)
         schema = self.charts_schema
         if not schema:
-            schema = ctx.params.get("charts_schema", [])
+            schema = ctx.params.get("charts_list") or ctx.params.get("charts_schema", [])
 
         if not schema:
             self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de gráficos.")
@@ -88,16 +88,26 @@ class GenerateGraphics(Step):
                 self._log(f"[{self.name}] Error: La función '{chart_type}' no existe en plot_tools.")
                 continue
 
-            # Obtener el DataFrame desde artifacts
-            df = ctx.artifacts.get(input_key)
-            if df is None:
-                self._log(f"[{self.name}] Error: El artifact '{input_key}' no existe en el contexto.")
+            # Obtener el DataFrame desde artifacts (input_key puede ser string o list[string])
+            if isinstance(input_key, list):
+                keys = input_key
+            else:
+                keys = [input_key]
+
+            dfs = [ctx.artifacts.get(k) for k in keys]
+            missing = [k for k, d in zip(keys, dfs) if d is None]
+            if missing:
+                self._log(f"[{self.name}] Error: Artifacts no encontrados: {missing}")
                 continue
+
+            df = dfs[0]
+            extra_dfs = {k: d for k, d in zip(keys[1:], dfs[1:])}
 
             # Preparar argumentos
             output_path = aux_dir / output_filename
             kwargs = params.copy()
             kwargs["nombre_grafico"] = str(output_path)
+            kwargs.update(extra_dfs)
 
             try:
                 func(df, **kwargs)
@@ -145,10 +155,10 @@ class GenerateTables(Step):
         if not getattr(self, "name", None):
             self.name = self.__class__.__name__
 
-        # 1. Resolver esquema: constructor directo o ctx.params
+        # 1. Resolver esquema: constructor directo, nuevo formato (tables_list) o legacy (tables_schema)
         schema = self.tables_schema
         if not schema:
-            schema = ctx.params.get("tables_schema", [])
+            schema = ctx.params.get("tables_list") or ctx.params.get("tables_schema", [])
 
         if not schema:
             self._log(f"[{self.name}] Advertencia: No se encontraron definiciones de tablas.")
@@ -189,15 +199,25 @@ class GenerateTables(Step):
                 self._log(f"[{self.name}] Error: La función '{func_name}' no existe en report_tools.")
                 continue
 
-            df_full = ctx.artifacts.get(input_key)
-            if df_full is None:
-                self._log(f"[{self.name}] Error: El artifact '{input_key}' no existe en el contexto.")
+            # Obtener DataFrame(s) desde artifacts (input_key puede ser string o list[string])
+            if isinstance(input_key, list):
+                keys = input_key
+            else:
+                keys = [input_key]
+
+            dfs = [ctx.artifacts.get(k) for k in keys]
+            missing = [k for k, d in zip(keys, dfs) if d is None]
+            if missing:
+                self._log(f"[{self.name}] Error: Artifacts no encontrados: {missing}")
                 continue
 
+            df_full = dfs[0]
+            extra_dfs = {k: d for k, d in zip(keys[1:], dfs[1:])}
+
             # Helper: ejecuta la función y guarda el resultado como Excel
-            def process_and_save(df_k, filename_k, params_k, _func=func):
+            def process_and_save(df_k, filename_k, params_k, _func=func, _extra=extra_dfs):
                 try:
-                    df_res = _func(df_k, **params_k)
+                    df_res = _func(df_k, **params_k, **_extra)
                     output_path = aux_dir / filename_k
                     df_res.to_excel(output_path, index=False)
                     generated_tables[filename_k] = output_path

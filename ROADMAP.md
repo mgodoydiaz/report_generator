@@ -39,6 +39,11 @@ Pendientes, deuda técnica y mejoras planificadas para Report Generator.
 - [ ] Integrar Celery para procesamiento de tareas en segundo plano (batch jobs)
 - [ ] Implementar logging estructurado de acciones y errores
 
+### Especificaciones (Specs)
+- [ ] `NewSpecDrawer.jsx`: agregar sección de edición para tipo `Gráficos` — formulario para `metadata` y `charts_list`
+- [ ] `NewSpecDrawer.jsx`: agregar sección de edición para tipo `Tablas` — formulario para `metadata` y `tables_list`
+- [ ] `NewSpecDrawer.jsx`: agregar sección de edición para tipo `Dashboard`
+
 ### Frontend / UX
 - [ ] Corregir modo oscuro: legibilidad de texto y estados de botones
 - [ ] Implementar sistema de internacionalización (i18n) con archivo de mensajes por idioma

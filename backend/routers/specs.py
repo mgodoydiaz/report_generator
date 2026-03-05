@@ -38,15 +38,11 @@ async def get_spec_config(spec_id: int):
         config_raw = row.iloc[0].get('config_json')
         config = safe_text_to_json(config_raw) if pd.notna(config_raw) else {}
         
-        # Estructura base
         return {
             "name": str(row.iloc[0]['name']) if pd.notna(row.iloc[0]['name']) else "Sin nombre",
             "description": str(row.iloc[0]['description']) if pd.notna(row.iloc[0]['description']) else "",
             "type": str(row.iloc[0]['type']) if pd.notna(row.iloc[0]['type']) else "Reporte",
-            "variables_documento": config.get("variables_documento", {}),
-            "secciones_fijas": config.get("secciones_fijas", []),
-            "secciones_dinamicas": config.get("secciones_dinamicas", []),
-            "etlParams": config.get("etlParams", [])
+            **config
         }
     except Exception as e:
         return {"error": str(e)}
@@ -69,13 +65,9 @@ async def save_spec_config_logic(spec_id: int, config: dict):
             # Calcular nuevo ID
             target_id = int(df['id_spec'].max()) + 1 if len(df) > 0 else 1
             
-        # Preparar JSON
-        json_data = {
-            "variables_documento": config.get("variables_documento", {}),
-            "secciones_fijas": config.get("secciones_fijas", []),
-            "secciones_dinamicas": config.get("secciones_dinamicas", []),
-            "etlParams": config.get("etlParams", [])
-        }
+        # Preparar JSON — pasar config completo, excluyendo claves que van en columnas separadas
+        _meta_keys = {"name", "description", "type"}
+        json_data = {k: v for k, v in config.items() if k not in _meta_keys}
         
         json_str = json.dumps(json_data, ensure_ascii=False)
             
