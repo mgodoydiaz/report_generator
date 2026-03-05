@@ -21,6 +21,7 @@ export const STEP_OPTIONS = [
   "EnrichWithContext",
   "EnrichWithLookup",
   "ModifyColumnValues",
+  "LoadMetricToDF",
   "SaveToMetric",
   "ExportConsolidatedExcel",
   "GenerateGraphics",
@@ -43,6 +44,7 @@ export const STEP_TRANSLATIONS = {
   "EnrichWithContext": "Enriquecer por Contexto",
   "EnrichWithLookup": "Enriquecer con Lookup",
   "ModifyColumnValues": "Modificar Valores",
+  "LoadMetricToDF": "Cargar Métrica como DataFrame",
   "SaveToMetric": "Cargar Métricas",
   "ExportConsolidatedExcel": "Exportar Datos",
   "GenerateGraphics": "Crear Gráficos",
@@ -183,6 +185,15 @@ export const STEP_DEFAULT_PARAMS = {
     //   ]
     // }
   ]
+}`,
+
+  "LoadMetricToDF": `{
+  "metric_id": 1, // ID de la métrica a cargar
+  "output_key": "nombre_artifact", // Clave del artifact de salida (DataFrame)
+  "filters": { // (opcional) Filtros exactos por nombre de dimensión
+    // "Año": "2024",
+    // "Curso": "4B"
+  }
 }`,
 
   "SaveToMetric": `{

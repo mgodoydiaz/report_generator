@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 import json
 import os
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any
 from rgenerator.etl.core.step import Step
 from config import METRICS_DB_PATH, METRIC_DATA_DB_PATH, METRIC_DIMENSIONS_DB_PATH, DIMENSIONS_DB_PATH
 
@@ -170,3 +170,121 @@ class SaveToMetric(Step):
             print(f"[{self.name}] Se guardaron {len(new_rows)} registros en metric_data.xlsx")
         else:
             print(f"[{self.name}] No se generaron registros nuevos.")
+
+
+class LoadMetricToDF(Step):
+    """
+    Carga los datos de una métrica desde metric_data.xlsx y los convierte en un
+    DataFrame plano, guardándolo como artifact en el contexto.
+
+    El DataFrame resultante tiene la misma estructura que el template de importación:
+    columnas de dimensión (por nombre) + columna(s) de valor.
+
+    Parámetros:
+        metric_id (int): ID de la métrica a cargar.
+        output_key (str): Clave del artifact donde se guardará el DataFrame.
+        filters (dict, opcional): Filtros por nombre de dimensión.
+                                  Ej: {"Año": "2024", "Curso": "4B"}
+                                  Se aplica filtrado exacto (comparación como string).
+    """
+    def __init__(
+        self,
+        metric_id: int,
+        output_key: str,
+        filters: Optional[Dict[str, Any]] = None,
+    ):
+        super().__init__(name="LoadMetricToDF")
+        self.metric_id = metric_id
+        self.output_key = output_key
+        self.filters = filters or {}
+
+    def run(self, ctx):
+        print(f"[{self.name}] Cargando métrica ID {self.metric_id} → artifact '{self.output_key}'")
+
+        # 1. Cargar definición de la métrica
+        if not METRICS_DB_PATH.exists():
+            raise FileNotFoundError(f"No se encontró: {METRICS_DB_PATH}")
+
+        metrics_df = pd.read_excel(METRICS_DB_PATH)
+        metric_row = metrics_df[metrics_df['id_metric'] == self.metric_id]
+        if metric_row.empty:
+            raise ValueError(f"Métrica ID {self.metric_id} no encontrada en metrics.xlsx")
+
+        metric = metric_row.iloc[0].to_dict()
+        try:
+            if isinstance(metric.get('meta_json'), str) and metric['meta_json']:
+                metric['meta_json'] = json.loads(metric['meta_json'].replace("'", '"'))
+        except Exception:
+            metric['meta_json'] = {}
+
+        # 2. Construir mapa ID dimensión → nombre
+        dims_map: Dict[int, str] = {}
+        try:
+            if METRIC_DIMENSIONS_DB_PATH.exists() and DIMENSIONS_DB_PATH.exists():
+                md_df = pd.read_excel(METRIC_DIMENSIONS_DB_PATH)
+                dim_df = pd.read_excel(DIMENSIONS_DB_PATH)
+                rel_dim_ids = md_df[md_df['id_metric'] == self.metric_id]['id_dimension'].tolist()
+                for dim_id in rel_dim_ids:
+                    row = dim_df[dim_df['id_dimension'] == dim_id]
+                    if not row.empty:
+                        dims_map[dim_id] = row.iloc[0]['name']
+        except Exception as e:
+            print(f"[{self.name}] Advertencia al cargar dimensiones: {e}")
+
+        print(f"[{self.name}] Dimensiones: {list(dims_map.values())}")
+
+        # 3. Cargar datos de la métrica
+        if not METRIC_DATA_DB_PATH.exists():
+            raise FileNotFoundError(f"No se encontró: {METRIC_DATA_DB_PATH}")
+
+        df_data = pd.read_excel(METRIC_DATA_DB_PATH)
+        df_data = df_data[df_data['id_metric'] == self.metric_id].copy()
+        print(f"[{self.name}] Registros encontrados: {len(df_data)}")
+
+        # 4. Aplanar a DataFrame legible
+        flat_data = []
+        for _, row in df_data.iterrows():
+            item: Dict[str, Any] = {}
+
+            # Dimensiones
+            dims_json: Dict[str, Any] = {}
+            try:
+                val = row['dimensions_json']
+                if isinstance(val, str):
+                    dims_json = json.loads(val.replace("'", '"'))
+                elif isinstance(val, dict):
+                    dims_json = val
+            except Exception:
+                pass
+
+            for dim_id, name in dims_map.items():
+                item[name] = dims_json.get(str(dim_id))
+
+            # Valor(es)
+            value = row['value']
+            if metric['data_type'] == 'object':
+                try:
+                    val_obj = json.loads(value) if isinstance(value, str) else value
+                    for k, v in val_obj.items():
+                        item[k] = v
+                except Exception:
+                    item['Valor_Raw'] = str(value)
+            else:
+                item[metric['name']] = value
+
+            flat_data.append(item)
+
+        df_result = pd.DataFrame(flat_data)
+
+        # 5. Aplicar filtros (comparación como string para evitar problemas de tipo)
+        if self.filters and not df_result.empty:
+            for col, val in self.filters.items():
+                if col in df_result.columns:
+                    df_result = df_result[df_result[col].astype(str) == str(val)]
+                else:
+                    print(f"[{self.name}] Advertencia: columna de filtro '{col}' no existe en el DataFrame.")
+            print(f"[{self.name}] Registros tras filtros: {len(df_result)}")
+
+        ctx.artifacts[self.output_key] = df_result
+        ctx.last_artifact_key = self.output_key
+        print(f"[{self.name}] DataFrame guardado en artifact '{self.output_key}' — shape: {df_result.shape}")

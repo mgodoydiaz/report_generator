@@ -23,6 +23,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "DeleteTempFiles": ps.DeleteTempFiles,
     "RequestUserFiles": ps.RequestUserFiles,
     "SaveToMetric": ms.SaveToMetric,
+    "LoadMetricToDF": ms.LoadMetricToDF,
     "GenerateGraphics": ps.GenerateGraphics,
     "GenerateTables": ps.GenerateTables,
     "RenderReport": ps.RenderReport,
