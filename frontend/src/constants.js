@@ -213,8 +213,26 @@ export const STEP_DEFAULT_PARAMS = {
 }`,
 
   "GenerateTables": `{
-  // Lee tables_schema desde ctx.params (cargado por un step previo)
-  // No requiere parámetros directos
+  // Se puede pasar tables_schema directo, o dejar vacío si LoadConfigFromSpec
+  // ya cargó tables_list en ctx.params
+  "tables_schema": [
+    {
+      "id": "resumen_logro",
+      "title": "Resumen Logro por Curso",
+      "type": "resumen_estadistico_basico", // Función de report_tools.py
+      "input_key": "df_estudiantes", // Artifact del contexto
+      "output_filename": "resumen_logro.xlsx",
+      // iterate_by (opcional): genera una tabla por valor único de la columna
+      // "iterate_by": "Curso",
+      // iterate_param (opcional): nombre del kwarg donde inyectar el valor iterado
+      // "iterate_param": "valor_agrupacion",
+      "params": {
+        "columna": "Rend",
+        "formato": "percent", // "percent" o "number"
+        "agrupar_por": "Curso"
+      }
+    }
+  ]
 }`,
 
   "RenderReport": `{

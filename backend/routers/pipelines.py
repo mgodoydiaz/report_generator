@@ -7,7 +7,7 @@ from io import BytesIO
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
-from config import BASE_DIR, PIPELINES_DB_PATH, PIPELINES_DIR, UPLOADS_DIR, PIPELINE_RUNS_DIR
+from config import BASE_DIR, PIPELINES_DB_PATH, UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json, get_json_safe_df
 
@@ -310,13 +310,6 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
             else:
                 target_id = 1
         
-        # Ya no guardamos archivos JSON físicos
-        # pipeline_filename = f"pipeline{target_id:03d}.json"
-        # pipeline_path = PIPELINES_DIR / pipeline_filename
-        # PIPELINES_DIR.mkdir(parents=True, exist_ok=True)
-        # with open(pipeline_path, 'w', encoding='utf-8') as f:
-        #     json.dump(config, f, indent=4, ensure_ascii=False)
-        
         steps_list = config.get("pipeline", [])
         steps_text = " -> ".join([s.get("step", "Sin nombre") for s in steps_list])
         config_json_text = safe_json_to_text(config)
@@ -359,13 +352,7 @@ async def delete_pipeline(pipeline_id: int):
         
         df = df[df['id_evaluation'] != pipeline_id]
         df.to_excel(PIPELINES_DB_PATH, index=False)
-        
-        # Ya no eliminamos archivos JSON físicos
-        # pipeline_filename = f"pipeline{pipeline_id:03d}.json"
-        # pipeline_path = PIPELINES_DIR / pipeline_filename
-        # if pipeline_path.exists():
-        #     os.remove(pipeline_path)
-            
+
         uploads_dir = UPLOADS_DIR / str(pipeline_id)
         if uploads_dir.exists():
             shutil.rmtree(uploads_dir)

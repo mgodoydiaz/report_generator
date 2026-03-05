@@ -148,11 +148,4 @@ def run_pipeline(config_source: str | Path | dict, pipeline_id: Optional[int] = 
         return {"status": "error", "message": str(e)}
 
 if __name__ == "__main__":
-    # Test rápido si se ejecuta directamente
-    import os
-    # Ajustar path si es necesario
-    test_path = Path(__file__).parents[3] / "data" / "database" / "pipelines" / "pipeline002.json"
-    if test_path.exists():
-        run_pipeline(test_path)
-    else:
-        print(f"No se encontró el archivo de test en {test_path}")
+    print("pipeline_tools.py — uso: importar PipelineRunner o run_pipeline desde el router.")

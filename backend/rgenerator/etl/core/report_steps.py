@@ -188,6 +188,7 @@ class GenerateTables(Step):
             output_filename = table_def.get("output_filename")
             params = table_def.get("params", {})
             iterate_by = table_def.get("iterate_by", None)
+            iterate_param = table_def.get("iterate_param", None)
 
             # Validar definición mínima
             if not func_name or not input_key or not output_filename:
@@ -245,8 +246,12 @@ class GenerateTables(Step):
                         iter_params["parametros"] = {}
                     if isinstance(iter_params.get("parametros"), dict):
                         iter_params["parametros"][iterate_by] = val
-                    # También como kwarg raíz (para funciones como resumen_estadistico_basico)
-                    iter_params[iterate_by] = val
+                    # También como kwarg raíz: usa iterate_param si está definido,
+                    # sino usa el nombre de la columna directamente
+                    if iterate_param:
+                        iter_params[iterate_param] = val
+                    else:
+                        iter_params[iterate_by] = val
 
                     if process_and_save(df_full, fname, iter_params):
                         tables_generated += 1
