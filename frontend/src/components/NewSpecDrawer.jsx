@@ -19,12 +19,45 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
         type: "Reporte",
         variables: FIXED_VARIABLES.map(key => ({ key, value: "" })),
         sections: [],
-        etlParams: []
+        etlParams: [],
+        chartsSchema: [],
+        tablesSchema: []
     });
     const [specId, setSpecId] = useState(null);
 
     // Estado para el select de "Nuevo Parámetro"
     const [selectedEtlParam, setSelectedEtlParam] = useState("");
+
+    const parseParamsArray = (schemaArray) => {
+        if (!schemaArray) return [];
+        return schemaArray.map(item => {
+            let paramsArray = [];
+            if (item.params && typeof item.params === 'object' && !Array.isArray(item.params)) {
+                paramsArray = Object.keys(item.params).map(k => {
+                    let v = item.params[k];
+                    if (typeof v === 'object') v = JSON.stringify(v);
+                    return { key: k, val: v };
+                });
+            } else if (Array.isArray(item.params)) {
+                paramsArray = item.params.map(p => {
+                    let v = p.val;
+                    if (typeof v === 'object') v = JSON.stringify(v);
+                    return { key: p.key, val: v };
+                });
+            }
+            return {
+                ...item,
+                params: paramsArray,
+                id: item.id || "",
+                title: item.title || "",
+                category: item.category || "",
+                type: item.type || "",
+                input_key: item.input_key || "",
+                output_filename: item.output_filename || "",
+                iterate_by: item.iterate_by || ""
+            };
+        });
+    };
 
     useEffect(() => {
         if (isOpen) {
@@ -36,13 +69,18 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                     value: String(vars[key] || "")
                 }));
 
+                const loadedCharts = initialData.charts_schema || initialData.charts_list || [];
+                const loadedTables = initialData.tables_schema || initialData.tables_list || [];
+
                 setFormData({
                     name: initialData.name || "",
                     description: initialData.description || "",
                     type: initialData.type || "Reporte",
                     variables: variablesArray,
                     sections: initialData.secciones_fijas || [],
-                    etlParams: initialData.etlParams || []
+                    etlParams: initialData.etlParams || [],
+                    chartsSchema: parseParamsArray(loadedCharts),
+                    tablesSchema: parseParamsArray(loadedTables)
                 });
                 setSpecId(initialData.id);
             } else {
@@ -53,7 +91,9 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                     type: "Reporte",
                     variables: FIXED_VARIABLES.map(key => ({ key, value: "" })),
                     sections: [],
-                    etlParams: []
+                    etlParams: [],
+                    chartsSchema: [],
+                    tablesSchema: []
                 });
                 setSpecId(null);
             }
@@ -87,6 +127,84 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
         const newSections = [...formData.sections];
         newSections[index][field] = value;
         setFormData({ ...formData, sections: newSections });
+    };
+
+    // --- Handlers for Charts Schema ---
+    const addChart = () => {
+        setFormData(prev => ({
+            ...prev,
+            chartsSchema: [...prev.chartsSchema, {
+                id: "", title: "", category: "", type: "", input_key: "df_enriched_estudiantes", output_filename: "", params: []
+            }]
+        }));
+    };
+
+    const removeChart = (index) => {
+        const newCharts = formData.chartsSchema.filter((_, i) => i !== index);
+        setFormData(prev => ({ ...prev, chartsSchema: newCharts }));
+    };
+
+    const updateChart = (index, field, value) => {
+        const newCharts = [...formData.chartsSchema];
+        newCharts[index][field] = value;
+        setFormData(prev => ({ ...prev, chartsSchema: newCharts }));
+    };
+
+    const addChartParam = (chartIndex) => {
+        const newCharts = [...formData.chartsSchema];
+        newCharts[chartIndex].params = [...(newCharts[chartIndex].params || []), { key: "", val: "" }];
+        setFormData(prev => ({ ...prev, chartsSchema: newCharts }));
+    };
+
+    const removeChartParam = (chartIndex, paramIndex) => {
+        const newCharts = [...formData.chartsSchema];
+        newCharts[chartIndex].params = newCharts[chartIndex].params.filter((_, i) => i !== paramIndex);
+        setFormData(prev => ({ ...prev, chartsSchema: newCharts }));
+    };
+
+    const updateChartParam = (chartIndex, paramIndex, field, value) => {
+        const newCharts = [...formData.chartsSchema];
+        newCharts[chartIndex].params[paramIndex][field] = value;
+        setFormData(prev => ({ ...prev, chartsSchema: newCharts }));
+    };
+
+    // --- Handlers for Tables Schema ---
+    const addTable = () => {
+        setFormData(prev => ({
+            ...prev,
+            tablesSchema: [...prev.tablesSchema, {
+                id: "", title: "", category: "", type: "", input_key: "df_enriched_estudiantes", output_filename: "", iterate_by: "", params: []
+            }]
+        }));
+    };
+
+    const removeTable = (index) => {
+        const newTables = formData.tablesSchema.filter((_, i) => i !== index);
+        setFormData(prev => ({ ...prev, tablesSchema: newTables }));
+    };
+
+    const updateTable = (index, field, value) => {
+        const newTables = [...formData.tablesSchema];
+        newTables[index][field] = value;
+        setFormData(prev => ({ ...prev, tablesSchema: newTables }));
+    };
+
+    const addTableParam = (tableIndex) => {
+        const newTables = [...formData.tablesSchema];
+        newTables[tableIndex].params = [...(newTables[tableIndex].params || []), { key: "", val: "" }];
+        setFormData(prev => ({ ...prev, tablesSchema: newTables }));
+    };
+
+    const removeTableParam = (tableIndex, paramIndex) => {
+        const newTables = [...formData.tablesSchema];
+        newTables[tableIndex].params = newTables[tableIndex].params.filter((_, i) => i !== paramIndex);
+        setFormData(prev => ({ ...prev, tablesSchema: newTables }));
+    };
+
+    const updateTableParam = (tableIndex, paramIndex, field, value) => {
+        const newTables = [...formData.tablesSchema];
+        newTables[tableIndex].params[paramIndex][field] = value;
+        setFormData(prev => ({ ...prev, tablesSchema: newTables }));
     };
 
     // --- Handlers for ETL Params ---
@@ -157,6 +275,28 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
     };
 
 
+    const buildParamsObject = (schemaArray) => {
+        return schemaArray.map(item => {
+            const paramsObj = {};
+            if (Array.isArray(item.params)) {
+                item.params.forEach(p => {
+                    if (p.key.trim()) {
+                        let val = p.val;
+                        try {
+                            // Intentar parsear de vuelta si era un objeto JSON en string (ej: "{}")
+                            val = JSON.parse(val);
+                        } catch (e) { /* es texto normal */ }
+                        paramsObj[p.key] = val;
+                    }
+                });
+            }
+            // Eliminar temporal fields no necesarios si se desea, pero mantenemos por simplicidad.
+            const resultItem = { ...item, params: paramsObj };
+            if (!resultItem.iterate_by) delete resultItem.iterate_by;
+            return resultItem;
+        });
+    };
+
     const handleSave = () => {
         const variablesObj = {};
         formData.variables.forEach(v => {
@@ -170,7 +310,9 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
             variables_documento: variablesObj,
             secciones_fijas: formData.sections,
             secciones_dinamicas: [],
-            etlParams: formData.etlParams // Guardamos la config ETL cruda o procesada según necesites
+            etlParams: formData.etlParams, // Guardamos la config ETL cruda o procesada según necesites
+            charts_schema: buildParamsObject(formData.chartsSchema),
+            tables_schema: buildParamsObject(formData.tablesSchema)
         };
 
         if (onSave) onSave(result);
@@ -537,6 +679,253 @@ const NewSpecDrawer = ({ isOpen, onClose, initialData = null, title = "Nueva Esp
                                 </div>
                             </section>
                         </>
+                    )}
+
+                    {/* VISTA: Gráficos */}
+                    {formData.type === 'Gráficos' && (
+                        <section className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                                    <Layers size={16} /> Esquema de Gráficos
+                                </h3>
+                                <button
+                                    onClick={addChart}
+                                    className="text-xs flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-bold"
+                                >
+                                    <Plus size={14} /> Añadir Gráfico
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                {formData.chartsSchema.map((chart, index) => (
+                                    <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 bg-white dark:bg-slate-800 relative group shadow-sm">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full uppercase">Gráfico {index + 1}</span>
+                                            <button
+                                                onClick={() => removeChart(index)}
+                                                className="text-slate-300 hover:text-red-500 transition-colors"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                        <div className="grid gap-3">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="ID (ej: rendimiento_prog)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                                                    value={chart.id}
+                                                    onChange={(e) => updateChart(index, 'id', e.target.value)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Categoría (ej: resumen)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={chart.category}
+                                                    onChange={(e) => updateChart(index, 'category', e.target.value)}
+                                                />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                placeholder="Título del Gráfico"
+                                                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                value={chart.title}
+                                                onChange={(e) => updateChart(index, 'title', e.target.value)}
+                                            />
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Input Key (ej: df_enriched)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={chart.input_key}
+                                                    onChange={(e) => updateChart(index, 'input_key', e.target.value)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Output Filename (ej: chart1.png)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={chart.output_filename}
+                                                    onChange={(e) => updateChart(index, 'output_filename', e.target.value)}
+                                                />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                placeholder="Tipo / Función (ej: grafico_barras_promedio)"
+                                                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                value={chart.type}
+                                                onChange={(e) => updateChart(index, 'type', e.target.value)}
+                                            />
+
+                                            {/* Params */}
+                                            <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase">Parámetros</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {chart.params && chart.params.map((param, pIdx) => (
+                                                        <div key={pIdx} className="flex gap-2 items-center">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Clave"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full font-mono"
+                                                                value={param.key}
+                                                                onChange={(e) => updateChartParam(index, pIdx, 'key', e.target.value)}
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Valor"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full"
+                                                                value={param.val}
+                                                                onChange={(e) => updateChartParam(index, pIdx, 'val', e.target.value)}
+                                                            />
+                                                            <button onClick={() => removeChartParam(index, pIdx)} className="text-slate-400 hover:text-red-500 shrink-0"><X size={14} /></button>
+                                                        </div>
+                                                    ))}
+                                                    <button
+                                                        onClick={() => addChartParam(index)}
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1 mt-2"
+                                                    >
+                                                        <Plus size={14} /> Agregar Parámetro
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {formData.chartsSchema.length === 0 && (
+                                    <div className="text-center p-8 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                                        <p className="text-xs text-slate-400">No hay gráficos definidos.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    )}
+
+                    {/* VISTA: Tablas */}
+                    {formData.type === 'Tablas' && (
+                        <section className="space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h3 className="text-sm font-semibold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                                    <LayoutTemplate size={16} /> Esquema de Tablas
+                                </h3>
+                                <button
+                                    onClick={addTable}
+                                    className="text-xs flex items-center gap-1 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 font-bold"
+                                >
+                                    <Plus size={14} /> Añadir Tabla
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                {formData.tablesSchema.map((table, index) => (
+                                    <div key={index} className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl space-y-3 bg-white dark:bg-slate-800 relative group shadow-sm">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-bold bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full uppercase">Tabla {index + 1}</span>
+                                            <button
+                                                onClick={() => removeTable(index)}
+                                                className="text-slate-300 hover:text-red-500 transition-colors"
+                                            >
+                                                <Trash2 size={16} />
+                                            </button>
+                                        </div>
+                                        <div className="grid gap-3">
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="ID (ej: resumen_logro)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs"
+                                                    value={table.id}
+                                                    onChange={(e) => updateTable(index, 'id', e.target.value)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Categoría (ej: resumen)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={table.category}
+                                                    onChange={(e) => updateTable(index, 'category', e.target.value)}
+                                                />
+                                            </div>
+                                            <input
+                                                type="text"
+                                                placeholder="Título de la Tabla"
+                                                className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm font-medium bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                value={table.title}
+                                                onChange={(e) => updateTable(index, 'title', e.target.value)}
+                                            />
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Input Key (ej: df_enriched)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={table.input_key}
+                                                    onChange={(e) => updateTable(index, 'input_key', e.target.value)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Output Filename (ej: tabla.xlsx)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-xs font-mono text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={table.output_filename}
+                                                    onChange={(e) => updateTable(index, 'output_filename', e.target.value)}
+                                                />
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <input
+                                                    type="text"
+                                                    placeholder="Tipo / Función (ej: resumen_estadistico)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={table.type}
+                                                    onChange={(e) => updateTable(index, 'type', e.target.value)}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    placeholder="Iterate By (opcional, ej: Curso)"
+                                                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 rounded-lg text-sm bg-white dark:bg-slate-900 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    value={table.iterate_by || ""}
+                                                    onChange={(e) => updateTable(index, 'iterate_by', e.target.value)}
+                                                />
+                                            </div>
+
+                                            {/* Params */}
+                                            <div className="mt-2 p-3 bg-slate-50 dark:bg-slate-900/50 rounded-lg border border-slate-100 dark:border-slate-800">
+                                                <div className="flex items-center justify-between mb-2">
+                                                    <span className="text-[10px] font-bold text-slate-500 uppercase">Parámetros</span>
+                                                </div>
+                                                <div className="space-y-2">
+                                                    {table.params && table.params.map((param, pIdx) => (
+                                                        <div key={pIdx} className="flex gap-2 items-center">
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Clave"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full font-mono"
+                                                                value={param.key}
+                                                                onChange={(e) => updateTableParam(index, pIdx, 'key', e.target.value)}
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                placeholder="Valor"
+                                                                className="flex-1 px-2 py-1 border border-slate-200 dark:border-slate-700 rounded text-xs bg-white dark:bg-slate-900 text-slate-900 dark:text-white w-full"
+                                                                value={param.val}
+                                                                onChange={(e) => updateTableParam(index, pIdx, 'val', e.target.value)}
+                                                            />
+                                                            <button onClick={() => removeTableParam(index, pIdx)} className="text-slate-400 hover:text-red-500 shrink-0"><X size={14} /></button>
+                                                        </div>
+                                                    ))}
+                                                    <button
+                                                        onClick={() => addTableParam(index)}
+                                                        className="text-xs text-indigo-600 dark:text-indigo-400 font-bold flex items-center gap-1 mt-2"
+                                                    >
+                                                        <Plus size={14} /> Agregar Parámetro
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                                {formData.tablesSchema.length === 0 && (
+                                    <div className="text-center p-8 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-xl">
+                                        <p className="text-xs text-slate-400">No hay tablas definidas.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
                     )}
                 </div>
 
