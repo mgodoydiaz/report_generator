@@ -6,7 +6,7 @@ BASE_DIR = Path(".")
 PIPELINES_DB = BASE_DIR / "data/database/pipelines.xlsx"
 
 df_pipe = pd.read_excel(PIPELINES_DB)
-row_idx = df_pipe.index[df_pipe['id_evaluation'] == 16][0]
+row_idx = df_pipe.index[df_pipe['pipeline_id'] == 16][0]
 pipeline_config = json.loads(df_pipe.at[row_idx, 'config_json'])
 
 # Filter out LoadConfigFromSpec duplicates

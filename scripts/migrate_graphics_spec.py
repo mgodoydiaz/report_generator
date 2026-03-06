@@ -8,7 +8,7 @@ SPECS_DB = BASE_DIR / "data/database/specs.xlsx"
 
 # 1. Read Pipelines
 df_pipe = pd.read_excel(PIPELINES_DB)
-row_idx = df_pipe.index[df_pipe['id_evaluation'] == 16][0]
+row_idx = df_pipe.index[df_pipe['pipeline_id'] == 16][0]
 pipeline_config = json.loads(df_pipe.at[row_idx, 'config_json'])
 
 # Find GenerateGraphics step and extract charts_schema

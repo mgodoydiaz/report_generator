@@ -19,7 +19,7 @@ ACTIVE_RUNNERS: Dict[int, PipelineRunner] = {}
 def _update_last_run(pipeline_id):
     try:
         df = pd.read_excel(PIPELINES_DB_PATH)
-        df.loc[df['id_evaluation'] == pipeline_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
+        df.loc[df['pipeline_id'] == pipeline_id, 'last_run'] = pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')
         df.to_excel(PIPELINES_DB_PATH, index=False)
     except Exception as ex:
         print(f"Error actualizando Excel: {ex}")
@@ -30,7 +30,7 @@ def _get_pipeline_config_from_excel(pipeline_id: int) -> Optional[dict]:
         if not PIPELINES_DB_PATH.exists():
             return None
         df = pd.read_excel(PIPELINES_DB_PATH)
-        row = df[df['id_evaluation'] == pipeline_id]
+        row = df[df['pipeline_id'] == pipeline_id]
         if not row.empty and 'config_json' in row.columns:
             json_text = row.iloc[0]['config_json']
             if json_text is not None and pd.notna(json_text) and str(json_text).strip():
@@ -250,7 +250,7 @@ async def preview_artifact(pipeline_id: int, artifact_key: str):
 async def get_pipeline_config(pipeline_id: int):
     try:
         config = {
-            "pipeline_metadata": {"id_evaluation": pipeline_id, "name": "", "description": "", "input": "EXCEL", "output": "XLSX"},
+            "pipeline_metadata": {"pipeline_id": pipeline_id, "name": "", "description": "", "input": "EXCEL", "output": "XLSX"},
             "context": {"base_dir": "."},
             "pipeline": []
         }
@@ -259,7 +259,7 @@ async def get_pipeline_config(pipeline_id: int):
             return config
 
         df = pd.read_excel(PIPELINES_DB_PATH)
-        row = df[df['id_evaluation'] == pipeline_id]
+        row = df[df['pipeline_id'] == pipeline_id]
         
         if row.empty:
             return config
@@ -299,14 +299,14 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
         target_id = pipeline_id
         is_new = False
         
-        if pipeline_id == 0 or pipeline_id not in df['id_evaluation'].values:
+        if pipeline_id == 0 or pipeline_id not in df['pipeline_id'].values:
             is_new = True
             new_name = metadata.get("name", "Nuevo Proceso")
             if new_name in df['pipeline'].values:
                 return {"error": f"Ya existe un proceso llamado '{new_name}'. Por favor elige otro nombre."}
 
             if len(df) > 0:
-                target_id = int(df['id_evaluation'].max()) + 1
+                target_id = int(df['pipeline_id'].max()) + 1
             else:
                 target_id = 1
         
@@ -316,7 +316,7 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
 
         if is_new:
             new_row = {
-                'id_evaluation': target_id,
+                'pipeline_id': target_id,
                 'pipeline': metadata.get("name", "Nuevo Proceso"),
                 'description': metadata.get("description", ""),
                 'steps': steps_text,
@@ -327,12 +327,12 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         else:
-            if metadata.get("name"): df.loc[df['id_evaluation'] == target_id, 'pipeline'] = metadata.get("name")
-            if metadata.get("description"): df.loc[df['id_evaluation'] == target_id, 'description'] = metadata.get("description")
-            df.loc[df['id_evaluation'] == target_id, 'steps'] = steps_text
-            df.loc[df['id_evaluation'] == target_id, 'config_json'] = config_json_text
-            if metadata.get("input"): df.loc[df['id_evaluation'] == target_id, 'input'] = str(metadata.get("input")).upper()
-            if metadata.get("output"): df.loc[df['id_evaluation'] == target_id, 'output'] = str(metadata.get("output")).upper()
+            if metadata.get("name"): df.loc[df['pipeline_id'] == target_id, 'pipeline'] = metadata.get("name")
+            if metadata.get("description"): df.loc[df['pipeline_id'] == target_id, 'description'] = metadata.get("description")
+            df.loc[df['pipeline_id'] == target_id, 'steps'] = steps_text
+            df.loc[df['pipeline_id'] == target_id, 'config_json'] = config_json_text
+            if metadata.get("input"): df.loc[df['pipeline_id'] == target_id, 'input'] = str(metadata.get("input")).upper()
+            if metadata.get("output"): df.loc[df['pipeline_id'] == target_id, 'output'] = str(metadata.get("output")).upper()
         
         df.to_excel(PIPELINES_DB_PATH, index=False)
         return {"status": "success", "message": f"Configuración guardada para el ID {target_id}", "new_id": target_id}
@@ -347,10 +347,10 @@ async def save_pipeline_config_endpoint(pipeline_id: int, config: dict):
 async def delete_pipeline(pipeline_id: int):
     try:
         df = pd.read_excel(PIPELINES_DB_PATH)
-        if pipeline_id not in df['id_evaluation'].values:
+        if pipeline_id not in df['pipeline_id'].values:
             return {"error": "Pipeline no encontrado"}
         
-        df = df[df['id_evaluation'] != pipeline_id]
+        df = df[df['pipeline_id'] != pipeline_id]
         df.to_excel(PIPELINES_DB_PATH, index=False)
 
         uploads_dir = UPLOADS_DIR / str(pipeline_id)

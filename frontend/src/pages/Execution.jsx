@@ -91,7 +91,7 @@ export default function Execution() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                     {filteredPipelines.map((p) => (
                         <div
-                            key={p.id_evaluation}
+                            key={p.pipeline_id}
                             className="group bg-white rounded-3xl border border-slate-100 p-4 shadow-sm hover:shadow-2xl hover:shadow-indigo-100 hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between"
                         >
                             <div className="space-y-4">
@@ -159,7 +159,7 @@ export default function Execution() {
                     setIsExecutionModalOpen(false);
                     fetchPipelines();
                 }}
-                pipelineId={activePipeline?.id_evaluation}
+                pipelineId={activePipeline?.pipeline_id}
                 pipelineName={activePipeline?.pipeline}
             />
         </div>

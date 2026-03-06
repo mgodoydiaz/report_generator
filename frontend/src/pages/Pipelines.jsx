@@ -273,7 +273,7 @@ export default function Pipelines() {
                 </tr>
               ) : sortedAndFilteredPipelines.length > 0 ? (
                 sortedAndFilteredPipelines.map((p) => (
-                  <tr key={p.id_evaluation} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 border-b border-slate-50 dark:border-slate-800/50 transition-colors group">
+                  <tr key={p.pipeline_id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 border-b border-slate-50 dark:border-slate-800/50 transition-colors group">
                     <td className="p-5">
                       <div className="font-bold text-slate-700 dark:text-slate-200">
                         {p.pipeline}
@@ -300,31 +300,31 @@ export default function Pipelines() {
                       <div className="flex justify-end gap-1 opacity-100 lg:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => handleRunPipeline(p)}
-                          disabled={executingId === p.id_evaluation}
-                          className={`p-2 rounded-xl transition-all ${executingId === p.id_evaluation
+                          disabled={executingId === p.pipeline_id}
+                          className={`p-2 rounded-xl transition-all ${executingId === p.pipeline_id
                             ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-600'
                             : 'text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/30'
                             }`}
                           title="Ejecutar"
                         >
-                          <Play size={18} fill={executingId === p.id_evaluation ? "none" : "currentColor"} className={executingId === p.id_evaluation ? "animate-spin" : ""} />
+                          <Play size={18} fill={executingId === p.pipeline_id ? "none" : "currentColor"} className={executingId === p.pipeline_id ? "animate-spin" : ""} />
                         </button>
                         <button
-                          onClick={() => handleEditPipeline(p.id_evaluation)}
+                          onClick={() => handleEditPipeline(p.pipeline_id)}
                           className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
                           title="Editar"
                         >
                           <Settings size={18} />
                         </button>
                         <button
-                          onClick={() => handleDuplicatePipeline(p.id_evaluation)}
+                          onClick={() => handleDuplicatePipeline(p.pipeline_id)}
                           className="p-2 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all"
                           title="Duplicar"
                         >
                           <PlusCircle size={18} />
                         </button>
                         <button
-                          onClick={() => handleDeletePipeline(p.id_evaluation, p.pipeline)}
+                          onClick={() => handleDeletePipeline(p.pipeline_id, p.pipeline)}
                           className="p-2 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-xl transition-all"
                           title="Eliminar"
                         >
@@ -362,7 +362,7 @@ export default function Pipelines() {
           setIsExecutionModalOpen(false);
           fetchPipelines();
         }}
-        pipelineId={activePipeline?.id_evaluation}
+        pipelineId={activePipeline?.pipeline_id}
         pipelineName={activePipeline?.pipeline}
       />
     </div>
