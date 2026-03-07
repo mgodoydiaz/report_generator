@@ -278,7 +278,7 @@ El artifact referenciado debe ser un DataFrame cuyas columnas incluyan:
 
 ## Skills de administración
 
-Tareas recurrentes de desarrollo y administración del proyecto están documentadas como skills ejecutables en **[skills.md](./skills.md)**:
+Tareas recurrentes de desarrollo y administración del proyecto están documentadas como flujos de trabajo en **[.agents/workflows/](./.agents/workflows/)**:
 
 - `/add-step` — Crear o modificar un paso de pipeline (guía de referencia)
 - `/add-metric` — Crear una nueva métrica interactivamente

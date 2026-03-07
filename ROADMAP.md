@@ -56,10 +56,14 @@ Pendientes, deuda técnica y mejoras planificadas para Report Generator.
 - [ ] Implementar generación de gráficos, tablas, reportes y dashboards desde el frontend
 - [ ] Perfilamiento y configuración por usuario
 - [ ] Implementar multitenancy (múltiples organizaciones/clientes)
+- [ ] Falta agregar Habilidad y Eje Temático como métrica
+- [ ] Agregar un paso que, dependiendo de la dimensión, enriquezca una métrica
+- [ ] Agregar un consolidado de pasos (agregar el enriquecer por métrica)
+- [ ] Completar pruebas e implementación con: Lenguaje, Matemáticas SIMCE, Cálculo Veloz, y PDL
 
 ### Calidad y documentación
 - [ ] Escribir suite de tests automatizados
-- [x] Crear documentación de pasos y guía de uso — ver `skills.md` (`/add-step`, `/add-metric`, `/new-pipeline`)
+- [x] Crear documentación de pasos y guía de uso — (Migrado a `.agents/workflows/`)
 
 ---
 
