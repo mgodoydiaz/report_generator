@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 from typing import Dict, Type, List, Optional
 import re
-from rgenerator.etl.core.context import RunContext
-from rgenerator.etl.core.step import Step, WaitingForInputException
-import rgenerator.etl.core.pipeline_steps as ps
-import rgenerator.etl.core.metric_steps as ms
+from rgenerator.core.context import RunContext
+from rgenerator.core.step import Step, WaitingForInputException
+import rgenerator.core.pipeline_steps as ps
+import rgenerator.core.metric_steps as ms
 import os
 
 # Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python

@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import os
 from typing import Optional, List, Dict, Any
-from rgenerator.etl.core.step import Step
+from rgenerator.core.step import Step
 from config import METRICS_DB_PATH, METRIC_DATA_DB_PATH, METRIC_DIMENSIONS_DB_PATH, DIMENSIONS_DB_PATH
 
 class SaveToMetric(Step):

@@ -3,7 +3,7 @@ rgenerator
 Librería para ejecutar ETL y generar reportes académicos.
 """
 
-from . import etl, reports, tooling  # noqa: F401
+from . import core, tooling  # noqa: F401
 from ._version import __version__  # noqa: F401
 
 import os
@@ -17,4 +17,4 @@ TMP_DIR = os.path.join(BASE_DIR, 'data', 'tmp')
 
 sys.path.append(BASE_DIR)
 
-__all__ = ["etl", "tooling", "reports", "__version__"]
+__all__ = ["core", "tooling", "__version__"]
