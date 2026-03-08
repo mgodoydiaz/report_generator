@@ -27,8 +27,4 @@ dependencies:
       - pymupdf
       - docxtpl
       - docx2pdf
-      # Aqui debería instalarse rgenerator de alguna forma
-      # ####
-      # Lo siguiente viene solo para la rama main, en caso de devtest
-      # instalar manualmente
-      #- git+https://github.com/username/rgenerator.git
+      - "-e ."

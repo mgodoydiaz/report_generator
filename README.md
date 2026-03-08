@@ -29,7 +29,7 @@ conda env create -f environment.yml
 conda activate rgenerator
 
 # Instalar el paquete rgenerator en modo editable
-pip install -e backend/
+pip install -e .
 ```
 
 ### 2. Configurar Entorno Frontend

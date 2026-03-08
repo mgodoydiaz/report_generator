@@ -58,7 +58,7 @@ conda env create -f environment.yml
 conda activate rgenerator
 
 # Install rgenerator package in editable mode
-pip install -e backend/
+pip install -e .
 
 # Frontend dependencies
 cd frontend && npm install
