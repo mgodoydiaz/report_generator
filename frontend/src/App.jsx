@@ -1,7 +1,7 @@
 ﻿import { Routes, Route } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext.jsx';
-import Layout from "./components/Layout.jsx";
+import Layout from "./layouts/Layout.jsx";
 import Home from "./pages/Home.jsx";
 import Pipelines from "./pages/Pipelines.jsx";
 import Specs from "./pages/Specs.jsx";

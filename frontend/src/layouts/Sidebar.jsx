@@ -1,4 +1,4 @@
-﻿import { NavLink } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import {
   House,        // Home
