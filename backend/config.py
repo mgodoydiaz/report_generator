@@ -14,6 +14,8 @@ DIMENSION_VALUES_DB_PATH = DB_DIR / "dimension_values.xlsx"
 METRICS_DB_PATH = DB_DIR / "metrics.xlsx"
 METRIC_DIMENSIONS_DB_PATH = DB_DIR / "metric_dimensions.xlsx"
 METRIC_DATA_DB_PATH = DB_DIR / "metric_data.xlsx"
+INDICATORS_DB_PATH = DB_DIR / "indicators.xlsx"
+INDICATOR_METRICS_DB_PATH = DB_DIR / "indicator_metrics.xlsx"
 
 # Directorios de Almacenamiento
 REPORTS_TEMPLATES_DIR = DB_DIR / "reports_templates"

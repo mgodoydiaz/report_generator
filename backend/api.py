@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import pipelines, specs, dimensions, metrics
+from routers import pipelines, specs, dimensions, metrics, indicators
 
 app = FastAPI()
 
@@ -18,6 +18,7 @@ app.include_router(pipelines.router)
 app.include_router(specs.router)
 app.include_router(dimensions.router)
 app.include_router(metrics.router)
+app.include_router(indicators.router)
 
 if __name__ == "__main__":
     import uvicorn
