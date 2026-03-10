@@ -124,12 +124,13 @@ def modificar_valores_columna(df, config_transformaciones):
             {
                 "columna": "Rend",
                 "operacion": "math",
+                "usa_fila": false,  // Opcional. Si es true, expone 'row' (la fila completa de pandas) a la expresion.
                 "valores": [
                     {"condicion": "x > 1", "expresion": "x / 100"},
                     {"condicion": "*",     "expresion": "x"}
                 ]
-                // condicion: "*" aplica a todos los valores, o expresion booleana con "x"
-                // expresion: operacion matematica en terminos de "x" (valor actual de la celda)
+                // condicion: "*" aplica a todos los valores, o expresion booleana con "x" (o "row" si usa_fila=true)
+                // expresion: operacion matematica en terminos de "x" (valor actual de la celda) o "row" (ej: row['A'] + row['B'])
                 // Las reglas se evaluan en orden; la primera condicion que se cumpla se aplica
             }
 
@@ -141,10 +142,14 @@ def modificar_valores_columna(df, config_transformaciones):
 
     for regla in config_transformaciones:
         col = regla.get("columna")
-        if col not in df.columns:
-            continue
-
         operacion = regla.get("operacion", "replace")
+
+        if col not in df.columns:
+            if operacion == "math" and regla.get("usa_fila", False):
+                df[col] = None
+            else:
+                continue
+
         valores = regla.get("valores", [])
 
         if operacion == "replace":
@@ -166,18 +171,34 @@ def modificar_valores_columna(df, config_transformaciones):
                     df[col] = df[col].astype(str).str.replace(patron, reemplazo, regex=True)
 
         elif operacion == "math":
-            _math_ns = {"__builtins__": {}, "abs": abs, "round": round, "min": min, "max": max}
+            usa_fila = regla.get("usa_fila", False)
+            _math_ns = {"__builtins__": {}, "abs": abs, "round": round, "min": min, "max": max, "sum": sum, "len": len, "str": str, "float": float, "int": int}
 
-            def aplicar_math(x, reglas):
-                for regla in reglas:
-                    condicion = regla.get("condicion", "*")
-                    expresion = regla.get("expresion")
-                    if expresion is None:
-                        continue
-                    cumple = condicion == "*" or bool(eval(condicion, {**_math_ns, "x": x}))
-                    if cumple:
-                        return eval(expresion, {**_math_ns, "x": x})
-                return x
-            df[col] = df[col].apply(lambda x: aplicar_math(x, valores))
+            if usa_fila:
+                def aplicar_math_fila(row, reglas):
+                    for regla in reglas:
+                        condicion = regla.get("condicion", "*")
+                        expresion = regla.get("expresion")
+                        if expresion is None:
+                            continue
+                        env = {**_math_ns, "row": row}
+                        cumple = condicion == "*" or bool(eval(condicion, env))
+                        if cumple:
+                            return eval(expresion, env)
+                    return row.get(col, None)
+
+                df[col] = df.apply(lambda row: aplicar_math_fila(row, valores), axis=1)
+            else:
+                def aplicar_math(x, reglas):
+                    for regla in reglas:
+                        condicion = regla.get("condicion", "*")
+                        expresion = regla.get("expresion")
+                        if expresion is None:
+                            continue
+                        cumple = condicion == "*" or bool(eval(condicion, {**_math_ns, "x": x}))
+                        if cumple:
+                            return eval(expresion, {**_math_ns, "x": x})
+                    return x
+                df[col] = df[col].apply(lambda x: aplicar_math(x, valores))
 
     return df

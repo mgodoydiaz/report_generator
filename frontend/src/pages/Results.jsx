@@ -251,7 +251,7 @@ function TablaResumenCursos({ data, cursos, onCursoClick, cursoActivo }) {
             <table className="w-full text-left border-collapse text-sm">
                 <thead>
                     <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                        {["Curso", "Alumnos", "Promedio %", "SIMCE prom", "M\u00edn", "M\u00e1x", "Adecuado", "Elemental", "Insuficiente"].map(h => (
+                        {["Curso", "Alumnos", "Promedio %", "SIMCE prom", "Mín", "Máx", "Adecuado", "Elemental", "Insuficiente"].map(h => (
                             <th key={h} className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest">{h}</th>
                         ))}
                     </tr>
@@ -474,9 +474,13 @@ export default function Results() {
                 if (hasPregunta || hasHabilidad) {
                     // Datos de preguntas
                     if (entry._logro_pregunta === undefined && entry._logro === undefined) {
-                        // Intentar extraer de _value
-                        const v = parseFloat(entry._value);
-                        if (!isNaN(v)) entry._logro_pregunta = v <= 1 ? v : v / 100;
+                        if (entry._rend !== undefined) {
+                            entry._logro_pregunta = entry._rend;
+                        } else {
+                            // Intentar extraer de _value
+                            const v = parseFloat(entry._value);
+                            if (!isNaN(v)) entry._logro_pregunta = v <= 1 ? v : v / 100;
+                        }
                     }
                     preguntas.push(entry);
                 } else {
@@ -592,9 +596,10 @@ export default function Results() {
                     {sortedDimKeys.map(dimId => {
                         const dim = indicatorDims[dimId];
                         if (!dim || !dim.values || dim.values.length === 0) return null;
-                        // Excluir dimensiones que son datos internos (nombre, estudiante, pregunta)
+                        // Excluir dimensiones que son datos internos o a nivel de detalle (curso, pregunta, rut)
                         const nameLower = dim.name.toLowerCase();
-                        if (nameLower.includes("nombre") || nameLower.includes("estudiante") || nameLower.includes("habilidad")) return null;
+                        const excluded = ["nombre", "estudiante", "habilidad", "curso", "pregunta", "rut"];
+                        if (excluded.some(ex => nameLower.includes(ex))) return null;
 
                         return (
                             <div key={dimId} className="flex-1 min-w-40">
@@ -647,7 +652,7 @@ export default function Results() {
                         <KPICard label="Total alumnos" value={dashboardComputed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
                         <KPICard label="Logro promedio" value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
                         <KPICard label="SIMCE promedio" value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
-                        <KPICard label="Nivel predominante" value={dashboardComputed.nivelPredominante} sub="m\u00e1s frecuente" icon={Award} color="amber" />
+                        <KPICard label="Nivel predominante" value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
                     </div>
 
                     {/* Tabs */}
@@ -733,32 +738,32 @@ export default function Results() {
                                         ))}
                                     </div>
 
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                        {/* Habilidades */}
-                                        {datosCurso.preguntas.length > 0 && (
-                                            <div>
-                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Habilidad</h3>
+                                    {/* Gráficos */}
+                                    {datosCurso.preguntas.length > 0 && (
+                                        <div>
+                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Habilidad</h3>
+                                            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
                                                 <GraficoHabilidades data={datosCurso.preguntas} />
                                             </div>
-                                        )}
-
-                                        {/* Tabla preguntas */}
-                                        {datosCurso.preguntas.length > 0 && (
-                                            <div>
-                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Pregunta</h3>
-                                                <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                                                    <TablaPreguntas data={datosCurso.preguntas} />
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
 
                                     {/* Tabla alumnos */}
                                     {datosCurso.estudiantes.length > 0 && (
                                         <div>
-                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Resultados por Estudiante</h3>
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Estudiante</h3>
+                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
                                                 <TablaAlumnos data={datosCurso.estudiantes} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Tabla preguntas */}
+                                    {datosCurso.preguntas.length > 0 && (
+                                        <div>
+                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Pregunta</h3>
+                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+                                                <TablaPreguntas data={datosCurso.preguntas} />
                                             </div>
                                         </div>
                                     )}
