@@ -10,6 +10,7 @@ import Execution from "./pages/Execution.jsx";
 import Values from "./pages/Values.jsx";
 import Dimensions from "./pages/Dimensions.jsx";
 import Metrics from "./pages/Metrics.jsx";
+import Indicators from "./pages/Indicators.jsx";
 import Help from "./pages/Help.jsx";
 
 export default function App() {
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/values" element={<Values />} />
           <Route path="/dimensions" element={<Dimensions />} />
           <Route path="/metrics" element={<Metrics />} />
+          <Route path="/indicators" element={<Indicators />} />
           <Route path="/help" element={<Help />} />
         </Routes>
       </Layout>

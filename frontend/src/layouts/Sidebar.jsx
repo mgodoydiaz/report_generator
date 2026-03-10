@@ -11,6 +11,7 @@ import {
   Box,          // Metrics
   Notebook,     // Templates
   Workflow,     // Pipelines
+  Microscope,   // Indicators
   CircleHelp,   // Help
   Sun,          // Light mode
   Moon          // Dark mode
@@ -73,6 +74,10 @@ export default function Sidebar() {
         <NavLink to="/metrics" className={linkClass}>
           <Box size={18} />
           Métricas
+        </NavLink>
+        <NavLink to="/indicators" className={linkClass}>
+          <Microscope size={18} />
+          Indicadores
         </NavLink>
         <NavLink to="/specs" className={linkClass}>
           <Notebook size={18} />
