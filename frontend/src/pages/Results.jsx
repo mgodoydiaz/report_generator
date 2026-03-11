@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import {
     ChartColumn, RefreshCcw, Search, ChevronDown, ChevronUp, Play,
     TrendingUp, TrendingDown, Minus, Users, Target, Award, BarChart3
@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
-    ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie
+    ResponsiveContainer, Cell, LineChart, Line, PieChart, Pie, Customized
 } from 'recharts';
 
 // ── Paletas ──
@@ -73,29 +73,164 @@ function AvancePill({ val }) {
 
 // ── Gráficos ──
 
-function GraficoLogroPorCurso({ data, cursos, onCursoClick, cursoActivo }) {
+function GraficoLogroPorCurso({ data, cursos, metric }) {
+    const isSimce = metric === "simce";
     const resumen = cursos.map((c, i) => ({
         curso: c,
-        logro: avg(data.filter(r => r._curso === c), "_rend"),
+        valor: isSimce
+            ? avg(data.filter(r => r._curso === c), "_simce")
+            : avg(data.filter(r => r._curso === c), "_rend"),
         color: CURSO_COLORS[i % CURSO_COLORS.length],
     }));
+
+    const vals = resumen.map(r => r.valor).filter(v => v != null && !isNaN(v));
+    const yDomain = isSimce
+        ? [0, vals.length ? Math.ceil(Math.max(...vals) * 1.1 / 10) * 10 : 350]
+        : [0, 1];
+
     return (
         <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={resumen} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}
-                onClick={(d) => d?.activePayload && onCursoClick(d.activePayload[0].payload.curso)}>
+            <BarChart data={resumen} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="curso" tick={{ fontWeight: 700, fontSize: 13 }} />
-                <YAxis tickFormatter={v => `${Math.round(v * 100)}%`} domain={[0, 1]} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(v) => pct(v)} />
-                <Bar dataKey="logro" radius={[6, 6, 0, 0]} label={{ position: "top", formatter: pct, fontSize: 12, fontWeight: 700 }}>
+                <YAxis
+                    tickFormatter={isSimce ? (v => Math.round(v)) : (v => `${Math.round(v * 100)}%`)}
+                    domain={yDomain}
+                    tick={{ fontSize: 12 }}
+                />
+                <Tooltip formatter={(v) => isSimce ? Math.round(v) : pct(v)} />
+                <Bar dataKey="valor" radius={[6, 6, 0, 0]}
+                    label={{ position: "top", formatter: isSimce ? (v => Math.round(v)) : pct, fontSize: 12, fontWeight: 700 }}>
                     {resumen.map((entry) => (
-                        <Cell key={entry.curso}
-                            fill={entry.curso === cursoActivo ? "#f72585" : entry.color}
-                            opacity={cursoActivo && entry.curso !== cursoActivo ? 0.4 : 1}
-                            cursor="pointer"
-                        />
+                        <Cell key={entry.curso} fill={entry.color} />
                     ))}
                 </Bar>
+            </BarChart>
+        </ResponsiveContainer>
+    );
+}
+
+function GraficoBoxplotPorCurso({ data, cursos, metric }) {
+    const isSimce = metric === "simce";
+    const key = isSimce ? "_simce" : "_rend";
+
+    const boxData = cursos.map((c, i) => {
+        const vals = data.filter(r => r._curso === c).map(r => r[key]).filter(v => v != null).sort((a, b) => a - b);
+        if (!vals.length) return { curso: c, min: 0, q1: 0, median: 0, q3: 0, max: 0, base: 0, boxLower: 0, boxUpper: 0, color: CURSO_COLORS[i % CURSO_COLORS.length] };
+        const q = (arr, p) => { const idx = (arr.length - 1) * p; const lo = Math.floor(idx); const hi = Math.ceil(idx); return arr[lo] + (arr[hi] - arr[lo]) * (idx - lo); };
+        const q1 = q(vals, 0.25);
+        const q3 = q(vals, 0.75);
+        const median = q(vals, 0.5);
+        const iqr = q3 - q1;
+        const lowerFence = Math.max(vals[0], q1 - 1.5 * iqr);
+        const upperFence = Math.min(vals[vals.length - 1], q3 + 1.5 * iqr);
+        return {
+            curso: c,
+            min: lowerFence,
+            q1,
+            median,
+            q3,
+            max: upperFence,
+            // Stacking: base=q1, then median-q1, then q3-median
+            base: q1,
+            boxLower: median - q1,
+            boxUpper: q3 - median,
+            color: CURSO_COLORS[i % CURSO_COLORS.length],
+        };
+    });
+
+    const fmt = isSimce ? (v => Math.round(v)) : (v => `${Math.round(v * 100)}%`);
+
+    // Custom shape for the top bar (median→Q3) that also draws whiskers
+    const TopBarWithWhiskers = (props) => {
+        const { x, y, width, height, payload } = props;
+        if (!payload || !width || !height) return null;
+
+        const { min, q1, median, q3, max, color } = payload;
+        const dataRange = q3 - median;
+
+        // Fallback if no range
+        if (!dataRange || height <= 0) {
+            return <rect x={x} y={y} width={width} height={Math.max(height, 2)} fill={color} opacity={0.85} rx={3} />;
+        }
+
+        // Scale: this bar goes from median (bottom) to q3 (top)
+        // In SVG: y = top pixel (q3), y+height = bottom pixel (median)
+        const pxPerUnit = height / dataRange;
+        const xCenter = x + width / 2;
+        const capW = width * 0.5;
+
+        // Pixel positions for whisker endpoints
+        const yMaxPx = y - (max - q3) * pxPerUnit;
+        const yQ1Px = (y + height) + (median - q1) * pxPerUnit;
+        const yMinPx = (y + height) + (median - min) * pxPerUnit;
+
+        return (
+            <g>
+                {/* Top box segment: median to Q3 */}
+                <rect x={x} y={y} width={width} height={height} fill={color} opacity={0.85} rx={3} />
+
+                {/* Upper whisker line: Q3 → Max */}
+                <line x1={xCenter} x2={xCenter} y1={y} y2={yMaxPx}
+                    stroke={color} strokeWidth={2} />
+                {/* Max cap */}
+                <line x1={xCenter - capW / 2} x2={xCenter + capW / 2} y1={yMaxPx} y2={yMaxPx}
+                    stroke={color} strokeWidth={2.5} />
+
+                {/* Lower whisker line: Q1 → Min */}
+                <line x1={xCenter} x2={xCenter} y1={yQ1Px} y2={yMinPx}
+                    stroke={color} strokeWidth={2} />
+                {/* Min cap */}
+                <line x1={xCenter - capW / 2} x2={xCenter + capW / 2} y1={yMinPx} y2={yMinPx}
+                    stroke={color} strokeWidth={2.5} />
+
+                {/* Median line (white, across the box) */}
+                <line x1={x + 2} x2={x + width - 2} y1={y + height} y2={y + height}
+                    stroke="white" strokeWidth={2.5} />
+            </g>
+        );
+    };
+
+    return (
+        <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={boxData} margin={{ top: 20, right: 16, bottom: 0, left: 0 }} barCategoryGap="30%">
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                <XAxis dataKey="curso" tick={{ fontWeight: 700, fontSize: 13 }} />
+                <YAxis tickFormatter={fmt} allowDataOverflow={true} domain={(() => {
+                    if (!isSimce) return [0, 1];
+                    const valid = boxData.filter(d => d.max > 0);
+                    if (!valid.length) return [0, 350];
+                    const allMin = Math.min(...valid.map(d => d.min));
+                    const allMax = Math.max(...valid.map(d => d.max));
+                    const pad = (allMax - allMin) * 0.1 || 10;
+                    return [Math.floor((allMin - pad) / 10) * 10, Math.ceil((allMax + pad) / 10) * 10];
+                })()} tick={{ fontSize: 12 }} />
+                <Tooltip
+                    content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                            <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-3 shadow-lg text-xs">
+                                <div className="font-bold text-slate-700 dark:text-white mb-1">{d.curso}</div>
+                                <div className="text-slate-500">Máx: {fmt(d.max)}</div>
+                                <div className="text-slate-500">Q3: {fmt(d.q3)}</div>
+                                <div className="text-slate-500 font-bold">Mediana: {fmt(d.median)}</div>
+                                <div className="text-slate-500">Q1: {fmt(d.q1)}</div>
+                                <div className="text-slate-500">Mín: {fmt(d.min)}</div>
+                            </div>
+                        );
+                    }}
+                />
+                {/* Invisible base bar: positions bottom at Q1 */}
+                <Bar dataKey="base" stackId="box" fill="transparent" />
+                {/* Q1 → Median (lower box) */}
+                <Bar dataKey="boxLower" stackId="box">
+                    {boxData.map((entry, i) => (
+                        <Cell key={`q1-${i}`} fill={entry.color} opacity={0.5} />
+                    ))}
+                </Bar>
+                {/* Median → Q3 (upper box) + whiskers drawn via custom shape */}
+                <Bar dataKey="boxUpper" stackId="box" shape={TopBarWithWhiskers} />
             </BarChart>
         </ResponsiveContainer>
     );
@@ -212,7 +347,7 @@ function TablaPreguntas({ data }) {
             <table className="w-full text-left border-collapse text-sm">
                 <thead>
                     <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                        {["N\u00b0", "Habilidad", "Logro %", "Correcta"].map(h => (
+                        {["N°", "Habilidad", "Logro %", "Correcta"].map(h => (
                             <th key={h} className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest">{h}</th>
                         ))}
                     </tr>
@@ -251,7 +386,7 @@ function TablaResumenCursos({ data, cursos, onCursoClick, cursoActivo }) {
             <table className="w-full text-left border-collapse text-sm">
                 <thead>
                     <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                        {["Curso", "Alumnos", "Promedio %", "SIMCE prom", "Mín", "Máx", "Adecuado", "Elemental", "Insuficiente"].map(h => (
+                        {["Curso", "Alumnos", "Promedio %", "SIMCE prom", "Mín (% / SIMCE)", "Máx (% / SIMCE)", "Adecuado", "Elemental", "Insuficiente"].map(h => (
                             <th key={h} className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest">{h}</th>
                         ))}
                     </tr>
@@ -261,23 +396,52 @@ function TablaResumenCursos({ data, cursos, onCursoClick, cursoActivo }) {
                         const d = data.filter(r => r._curso === c);
                         if (!d.length) return null;
                         const rends = d.map(r => r._rend).filter(v => v != null);
+                        const simces = d.map(r => r._simce).filter(v => v != null);
+                        const total = d.length;
+                        const adeCount = d.filter(r => r._logro === "Adecuado").length;
+                        const eleCount = d.filter(r => r._logro === "Elemental").length;
+                        const insCount = d.filter(r => r._logro === "Insuficiente").length;
                         return (
                             <tr key={c} className={`cursor-pointer transition-colors ${cursoActivo === c ? 'bg-indigo-50/80 dark:bg-indigo-900/20' : 'hover:bg-slate-50/80 dark:hover:bg-slate-800/80'}`}
                                 onClick={() => onCursoClick(c)}>
                                 <td className="p-3 font-extrabold" style={{ color: CURSO_COLORS[i % CURSO_COLORS.length] }}>{c}</td>
                                 <td className="p-3 text-slate-600 dark:text-slate-300">{d.length}</td>
                                 <td className="p-3 font-bold text-slate-800 dark:text-white">{rends.length ? pct(avg(d, "_rend")) : "—"}</td>
-                                <td className="p-3 text-slate-600 dark:text-slate-300">{rends.length ? Math.round(avg(d, "_simce")) : "—"}</td>
-                                <td className="p-3 text-rose-600">{rends.length ? pct(Math.min(...rends)) : "—"}</td>
-                                <td className="p-3 text-emerald-600">{rends.length ? pct(Math.max(...rends)) : "—"}</td>
-                                <td className="p-3"><span className="text-emerald-600 font-bold">{d.filter(r => r._logro === "Adecuado").length}</span></td>
-                                <td className="p-3"><span className="text-amber-600 font-bold">{d.filter(r => r._logro === "Elemental").length}</span></td>
-                                <td className="p-3"><span className="text-rose-600 font-bold">{d.filter(r => r._logro === "Insuficiente").length}</span></td>
+                                <td className="p-3 text-slate-600 dark:text-slate-300">{simces.length ? Math.round(avg(d, "_simce")) : "—"}</td>
+                                <td className="p-3 text-rose-600">
+                                    {rends.length ? `${pct(Math.min(...rends))} / ${simces.length ? Math.round(Math.min(...simces)) : "—"}` : "—"}
+                                </td>
+                                <td className="p-3 text-emerald-600">
+                                    {rends.length ? `${pct(Math.max(...rends))} / ${simces.length ? Math.round(Math.max(...simces)) : "—"}` : "—"}
+                                </td>
+                                <td className="p-3"><span className="text-emerald-600 font-bold">{adeCount}</span> <span className="text-slate-400 text-xs">({total ? Math.round(adeCount / total * 100) : 0}%)</span></td>
+                                <td className="p-3"><span className="text-amber-600 font-bold">{eleCount}</span> <span className="text-slate-400 text-xs">({total ? Math.round(eleCount / total * 100) : 0}%)</span></td>
+                                <td className="p-3"><span className="text-rose-600 font-bold">{insCount}</span> <span className="text-slate-400 text-xs">({total ? Math.round(insCount / total * 100) : 0}%)</span></td>
                             </tr>
                         );
                     })}
                 </tbody>
             </table>
+        </div>
+    );
+}
+
+// ── Toggle Button ──
+function MetricToggle({ value, onChange }) {
+    return (
+        <div className="inline-flex bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+            <button
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${value === "logro" ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                onClick={() => onChange("logro")}
+            >
+                Logro %
+            </button>
+            <button
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${value === "simce" ? "bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
+                onClick={() => onChange("simce")}
+            >
+                SIMCE
+            </button>
         </div>
     );
 }
@@ -297,15 +461,15 @@ export default function Results() {
     // ── Estado: selectores ──
     const [selectedIndicator, setSelectedIndicator] = useState("");
     const [selectedFilters, setSelectedFilters] = useState({});
-    // Dimensiones dinámicas que el indicador requiere
     const [indicatorDims, setIndicatorDims] = useState({});
-    // Métricas del indicador seleccionado
     const [indicatorMetrics, setIndicatorMetrics] = useState([]);
 
     // ── Estado: dashboard ──
     const [dashboardData, setDashboardData] = useState(null);
     const [tab, setTab] = useState("general");
     const [cursoActivo, setCursoActivo] = useState(null);
+    const [metricLogro, setMetricLogro] = useState("logro");
+    const [metricBoxplot, setMetricBoxplot] = useState("logro");
 
     // ── Carga inicial ──
     useEffect(() => {
@@ -321,7 +485,6 @@ export default function Results() {
             ]);
             const indData = indRes.ok ? await indRes.json() : [];
             const dimData = dimRes.ok ? await dimRes.json() : [];
-
             setIndicators(Array.isArray(indData) ? indData : []);
             setDimensions(Array.isArray(dimData) ? dimData : []);
         } catch (err) {
@@ -339,14 +502,11 @@ export default function Results() {
             setSelectedFilters({});
             return;
         }
-
         const loadIndicatorDims = async () => {
             try {
-                // Obtener datos sin filtros para saber qué dimensiones y valores están disponibles
                 const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`);
                 if (!res.ok) throw new Error("Error al cargar dimensiones del indicador");
                 const result = await res.json();
-
                 setIndicatorDims(result.dimensions || {});
                 setIndicatorMetrics(result.metrics || []);
                 setSelectedFilters({});
@@ -367,7 +527,6 @@ export default function Results() {
             toast.error("Selecciona un indicador");
             return;
         }
-
         setLoadingDashboard(true);
         setDashboardData(null);
         setCursoActivo(null);
@@ -380,11 +539,8 @@ export default function Results() {
             const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data${filtersParam}`);
             if (!res.ok) throw new Error("Error al generar dashboard");
             const result = await res.json();
-
-            // Procesar datos para el dashboard
             const processed = processDataForDashboard(result);
             setDashboardData(processed);
-
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
                 toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
             }
@@ -400,7 +556,6 @@ export default function Results() {
         const { metrics, dimensions: dims, data } = result;
         const dimsMap = dims || {};
 
-        // Buscar la dimensión "Curso" por nombre
         const cursoDimId = Object.keys(dimsMap).find(k => dimsMap[k].name.toLowerCase().includes("curso"));
         const nombreDimId = Object.keys(dimsMap).find(k =>
             dimsMap[k].name.toLowerCase().includes("nombre") || dimsMap[k].name.toLowerCase().includes("estudiante")
@@ -411,43 +566,34 @@ export default function Results() {
         const estudiantes = [];
         const preguntas = [];
 
-        // Procesar cada métrica
         for (const metric of metrics) {
             const mid = metric.id_metric;
             const metricData = data[mid] || [];
             const isObject = metric.data_type === 'object';
             const fields = isObject ? (metric.meta_json?.fields || []) : [];
-
-            // Detectar si es métrica de estudiantes o de preguntas
             const hasPregunta = preguntaDimId && metric.dimension_ids.includes(parseInt(preguntaDimId));
             const hasHabilidad = habilidadDimId && metric.dimension_ids.includes(parseInt(habilidadDimId));
 
             for (const row of metricData) {
                 const djson = row.dimensions_json || {};
                 const val = row.value;
-
                 const entry = {
                     _curso: cursoDimId ? (djson[cursoDimId] || "") : "",
                     _raw_dims: djson,
                 };
 
-                // Extraer valor
                 if (isObject && typeof val === 'object' && val !== null) {
                     for (const f of fields) {
-                        const fval = val[f.name];
-                        entry[`_${f.name.toLowerCase()}`] = fval;
+                        entry[`_${f.name.toLowerCase()}`] = val[f.name];
                     }
                 } else if (!isObject) {
                     entry._value = val;
                 }
 
-                // Mapear campos conocidos
                 if (nombreDimId) entry._nombre = djson[nombreDimId] || "";
                 if (habilidadDimId) entry._habilidad = djson[habilidadDimId] || "";
                 if (preguntaDimId) entry._pregunta = djson[preguntaDimId] || "";
 
-                // Campos que podrían venir en value (object) o como dimensiones
-                // Intentar mapear campos comunes del mockup
                 if (entry._rend === undefined && entry._rendimiento !== undefined) entry._rend = entry._rendimiento;
                 if (entry._rend === undefined && entry._logro_porcentaje !== undefined) entry._rend = entry._logro_porcentaje;
                 if (entry._rend === undefined && entry._value !== undefined) {
@@ -455,29 +601,24 @@ export default function Results() {
                     if (!isNaN(v) && v >= 0 && v <= 1) entry._rend = v;
                 }
 
-                // Normalizar logro
                 if (!entry._logro && entry._nivel) entry._logro = entry._nivel;
                 if (!entry._logro && entry._nivel_logro) entry._logro = entry._nivel_logro;
                 if (!entry._logro && entry._nivel_de_logro) entry._logro = entry._nivel_de_logro;
 
-                // Normalizar numéricos
                 if (entry._rend != null) entry._rend = parseFloat(entry._rend) || 0;
                 if (entry._simce != null) entry._simce = parseFloat(entry._simce) || 0;
                 if (entry._avance != null) entry._avance = parseFloat(entry._avance) || 0;
                 if (entry._logro_pregunta != null) entry._logro_pregunta = parseFloat(entry._logro_pregunta) || 0;
                 if (entry._logro != null && typeof entry._logro === 'number') {
-                    // Si logro es numérico, podría ser el logro_pregunta
                     entry._logro_pregunta = entry._logro;
                     entry._logro = undefined;
                 }
 
                 if (hasPregunta || hasHabilidad) {
-                    // Datos de preguntas
                     if (entry._logro_pregunta === undefined && entry._logro === undefined) {
                         if (entry._rend !== undefined) {
                             entry._logro_pregunta = entry._rend;
                         } else {
-                            // Intentar extraer de _value
                             const v = parseFloat(entry._value);
                             if (!isNaN(v)) entry._logro_pregunta = v <= 1 ? v : v / 100;
                         }
@@ -489,9 +630,7 @@ export default function Results() {
             }
         }
 
-        // Obtener cursos únicos
         const cursos = [...new Set(estudiantes.map(e => e._curso).filter(Boolean))].sort();
-
         return { estudiantes, preguntas, cursos, dimsMap };
     };
 
@@ -499,17 +638,13 @@ export default function Results() {
     const dashboardComputed = useMemo(() => {
         if (!dashboardData) return null;
         const { estudiantes, preguntas, cursos } = dashboardData;
-
         const totalAlumnos = estudiantes.length;
         const logroPromedio = avg(estudiantes, "_rend");
         const simcePromedio = avg(estudiantes, "_simce");
-
-        // Nivel predominante
         const niveles = ["Adecuado", "Elemental", "Insuficiente"];
-        const nivelPredominante = niveles.sort((a, b) =>
+        const nivelPredominante = [...niveles].sort((a, b) =>
             estudiantes.filter(r => r._logro === b).length - estudiantes.filter(r => r._logro === a).length
         )[0] || "—";
-
         return { totalAlumnos, logroPromedio, simcePromedio, nivelPredominante, cursos, estudiantes, preguntas };
     }, [dashboardData]);
 
@@ -527,7 +662,7 @@ export default function Results() {
         setTab("curso");
     };
 
-    // ── Dimensiones ordenadas por nombre conocido ──
+    // ── Dimensiones ordenadas ──
     const sortedDimKeys = useMemo(() => {
         const priority = ["indicador", "año", "asignatura", "ensayo", "mes", "prueba"];
         return Object.keys(indicatorDims).sort((a, b) => {
@@ -576,7 +711,6 @@ export default function Results() {
             {/* ── Panel de selectores ── */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
                 <div className="flex flex-wrap items-end gap-4">
-                    {/* Selector de indicador */}
                     <div className="flex-1 min-w-50">
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Indicador</label>
                         <select
@@ -592,15 +726,12 @@ export default function Results() {
                         </select>
                     </div>
 
-                    {/* Selectores de dimensiones dinámicas */}
                     {sortedDimKeys.map(dimId => {
                         const dim = indicatorDims[dimId];
                         if (!dim || !dim.values || dim.values.length === 0) return null;
-                        // Excluir dimensiones que son datos internos o a nivel de detalle (curso, pregunta, rut)
                         const nameLower = dim.name.toLowerCase();
                         const excluded = ["nombre", "estudiante", "habilidad", "curso", "pregunta", "rut"];
                         if (excluded.some(ex => nameLower.includes(ex))) return null;
-
                         return (
                             <div key={dimId} className="flex-1 min-w-40">
                                 <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">{dim.name}</label>
@@ -626,7 +757,6 @@ export default function Results() {
                         );
                     })}
 
-                    {/* Botón generar */}
                     <div>
                         <button
                             onClick={handleGenerateDashboard}
@@ -647,19 +777,11 @@ export default function Results() {
             {/* ── Dashboard ── */}
             {dashboardData && dashboardComputed && (
                 <>
-                    {/* KPIs */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        <KPICard label="Total alumnos" value={dashboardComputed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
-                        <KPICard label="Logro promedio" value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
-                        <KPICard label="SIMCE promedio" value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
-                        <KPICard label="Nivel predominante" value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
-                    </div>
-
                     {/* Tabs */}
                     <div>
                         <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
                             <button className={tabStyle(tab === "general")} onClick={() => setTab("general")}>Vista General</button>
-                            <button className={tabStyle(tab === "curso")} onClick={() => setTab("curso")} disabled={!cursoActivo}>
+                            <button className={tabStyle(tab === "curso")} onClick={() => setTab("curso")}>
                                 {cursoActivo ? `Detalle Curso ${cursoActivo}` : "Detalle Curso"}
                             </button>
                         </div>
@@ -668,40 +790,13 @@ export default function Results() {
                             {/* TAB: GENERAL */}
                             {tab === "general" && (
                                 <div className="space-y-8">
-                                    {dashboardComputed.cursos.length > 0 && (
-                                        <p className="text-slate-400 text-sm">
-                                            Haz click en una barra para ver el detalle del curso.
-                                        </p>
-                                    )}
-
-                                    {/* Gráficos principales */}
-                                    {dashboardComputed.cursos.length > 0 && (
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            <div>
-                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro Promedio por Curso</h3>
-                                                <GraficoLogroPorCurso
-                                                    data={dashboardComputed.estudiantes}
-                                                    cursos={dashboardComputed.cursos}
-                                                    onCursoClick={handleCursoClick}
-                                                    cursoActivo={cursoActivo}
-                                                />
-                                            </div>
-                                            <div>
-                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Alumnos por Nivel de Logro</h3>
-                                                <GraficoNivelesPorCurso data={dashboardComputed.estudiantes} cursos={dashboardComputed.cursos} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Distribución de niveles (pie) */}
-                                    {dashboardComputed.estudiantes.some(e => e._logro) && (
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            <div>
-                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Distribución de Niveles de Logro</h3>
-                                                <GraficoDistribucionNiveles data={dashboardComputed.estudiantes} />
-                                            </div>
-                                        </div>
-                                    )}
+                                    {/* KPIs - Solo en Vista General */}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <KPICard label="Total alumnos" value={dashboardComputed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
+                                        <KPICard label="Logro promedio" value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
+                                        <KPICard label="SIMCE promedio" value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
+                                        <KPICard label="Nivel predominante" value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
+                                    </div>
 
                                     {/* Tabla resumen */}
                                     {dashboardComputed.cursos.length > 0 && (
@@ -717,13 +812,60 @@ export default function Results() {
                                             </div>
                                         </div>
                                     )}
+
+                                    {/* Gráficos en grid 2x2 */}
+                                    {dashboardComputed.cursos.length > 0 && (
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                                            {/* 1: Logro Promedio por Curso */}
+                                            <div>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Logro Promedio por Curso</h3>
+                                                    <MetricToggle value={metricLogro} onChange={setMetricLogro} />
+                                                </div>
+                                                <GraficoLogroPorCurso
+                                                    data={dashboardComputed.estudiantes}
+                                                    cursos={dashboardComputed.cursos}
+                                                    metric={metricLogro}
+                                                />
+                                            </div>
+
+                                            {/* 2: Boxplot */}
+                                            <div>
+                                                <div className="flex items-center justify-between mb-4">
+                                                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Distribución por Curso</h3>
+                                                    <MetricToggle value={metricBoxplot} onChange={setMetricBoxplot} />
+                                                </div>
+                                                <GraficoBoxplotPorCurso
+                                                    data={dashboardComputed.estudiantes}
+                                                    cursos={dashboardComputed.cursos}
+                                                    metric={metricBoxplot}
+                                                />
+                                            </div>
+
+                                            {/* 3: Distribución de niveles (pie) */}
+                                            {dashboardComputed.estudiantes.some(e => e._logro) && (
+                                                <div>
+                                                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Distribución de Niveles de Logro</h3>
+                                                    <GraficoDistribucionNiveles data={dashboardComputed.estudiantes} />
+                                                </div>
+                                            )}
+
+                                            {/* 4: Alumnos por Nivel de Logro */}
+                                            <div>
+                                                <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Alumnos por Nivel de Logro</h3>
+                                                <GraficoNivelesPorCurso
+                                                    data={dashboardComputed.estudiantes}
+                                                    cursos={dashboardComputed.cursos}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
                             {/* TAB: DETALLE CURSO */}
                             {tab === "curso" && cursoActivo && (
                                 <div className="space-y-8">
-                                    {/* Selector de curso */}
                                     <div className="flex gap-2 flex-wrap">
                                         {dashboardComputed.cursos.map((c, i) => (
                                             <button key={c} onClick={() => setCursoActivo(c)}
@@ -738,7 +880,6 @@ export default function Results() {
                                         ))}
                                     </div>
 
-                                    {/* Gráficos */}
                                     {datosCurso.preguntas.length > 0 && (
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Habilidad</h3>
@@ -748,7 +889,6 @@ export default function Results() {
                                         </div>
                                     )}
 
-                                    {/* Tabla alumnos */}
                                     {datosCurso.estudiantes.length > 0 && (
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Estudiante</h3>
@@ -758,7 +898,6 @@ export default function Results() {
                                         </div>
                                     )}
 
-                                    {/* Tabla preguntas */}
                                     {datosCurso.preguntas.length > 0 && (
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Pregunta</h3>
@@ -778,7 +917,7 @@ export default function Results() {
 
                             {tab === "curso" && !cursoActivo && (
                                 <div className="text-center py-16 text-slate-400">
-                                    Selecciona un curso desde la vista general para ver el detalle.
+                                    Selecciona un curso desde la tabla de resumen para ver el detalle.
                                 </div>
                             )}
                         </div>
