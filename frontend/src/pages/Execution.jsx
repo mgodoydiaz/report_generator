@@ -9,6 +9,7 @@ export default function Execution() {
     const [busqueda, setBusqueda] = useState("");
     const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
     const [activePipeline, setActivePipeline] = useState(null);
+    const [showHidden, setShowHidden] = useState(false);
 
     useEffect(() => {
         fetchPipelines();
@@ -35,12 +36,15 @@ export default function Execution() {
 
     const filteredPipelines = useMemo(() => {
         return pipelines
-            .filter(p =>
-                (p.pipeline?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
-                (p.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
-            )
+            .filter(p => {
+                if (!showHidden && p.hidden) return false;
+                return (
+                    (p.pipeline?.toLowerCase() || "").includes(busqueda.toLowerCase()) ||
+                    (p.description?.toLowerCase() || "").includes(busqueda.toLowerCase())
+                );
+            })
             .sort((a, b) => (a.pipeline || "").localeCompare(b.pipeline || ""));
-    }, [pipelines, busqueda]);
+    }, [pipelines, busqueda, showHidden]);
 
     return (
         <div className="max-w-7xl mx-auto space-y-8 animate-in fade-in duration-500">
@@ -64,6 +68,19 @@ export default function Execution() {
                     <RefreshCcw size={18} className={loading ? "animate-spin" : ""} />
                     Actualizar Lista
                 </button>
+            </div>
+
+            {/* Mostrar ocultos checkbox */}
+            <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-500 font-medium">
+                    <input
+                        type="checkbox"
+                        checked={showHidden}
+                        onChange={(e) => setShowHidden(e.target.checked)}
+                        className="w-4 h-4 rounded accent-indigo-600 cursor-pointer"
+                    />
+                    Mostrar procesos ocultos
+                </label>
             </div>
 
             {/* Barra de Búsqueda Estilizada */}

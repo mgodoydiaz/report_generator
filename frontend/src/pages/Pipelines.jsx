@@ -1,5 +1,5 @@
 ﻿import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Play, Trash2, Plus, PlusCircle, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight } from 'lucide-react';
+import { Settings, Play, Trash2, Plus, PlusCircle, Clock, Workflow, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Copy, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
@@ -18,6 +18,7 @@ export default function Pipelines() {
   const [editingData, setEditingData] = useState(null);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
   const [activePipeline, setActivePipeline] = useState(null);
+  const [showHidden, setShowHidden] = useState(false);
 
   useEffect(() => {
     fetchPipelines();
@@ -142,11 +143,30 @@ export default function Pipelines() {
     }
   };
 
+  const handleToggleHidden = async (p) => {
+    const newHidden = !p.hidden;
+    try {
+      const response = await fetch(`${API_BASE_URL}/pipelines/${p.pipeline_id}/hidden`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hidden: newHidden })
+      });
+      const result = await response.json();
+      if (result.error) throw new Error(result.error);
+      fetchPipelines();
+    } catch (err) {
+      toast.error("Error al cambiar visibilidad: " + err.message);
+    }
+  };
+
   const sortedAndFilteredPipelines = useMemo(() => {
-    let items = pipelines.filter(p =>
-      p.pipeline?.toLowerCase().includes(busqueda.toLowerCase()) ||
-      p.description?.toLowerCase().includes(busqueda.toLowerCase())
-    );
+    let items = pipelines.filter(p => {
+      if (!showHidden && p.hidden) return false;
+      return (
+        p.pipeline?.toLowerCase().includes(busqueda.toLowerCase()) ||
+        p.description?.toLowerCase().includes(busqueda.toLowerCase())
+      );
+    });
 
     if (sortConfig.key) {
       items.sort((a, b) => {
@@ -200,6 +220,19 @@ export default function Pipelines() {
             Nuevo Proceso
           </button>
         </div>
+      </div>
+
+      {/* Mostrar ocultos checkbox */}
+      <div className="flex items-center gap-2">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-slate-500 dark:text-slate-400 font-medium">
+          <input
+            type="checkbox"
+            checked={showHidden}
+            onChange={(e) => setShowHidden(e.target.checked)}
+            className="w-4 h-4 rounded accent-indigo-600 cursor-pointer"
+          />
+          Mostrar procesos ocultos
+        </label>
       </div>
 
       {/* Filter & Search Bar */}
@@ -322,6 +355,16 @@ export default function Pipelines() {
                           title="Duplicar"
                         >
                           <PlusCircle size={18} />
+                        </button>
+                        <button
+                          onClick={() => handleToggleHidden(p)}
+                          className={`p-2 rounded-xl transition-all ${p.hidden
+                            ? 'text-amber-500 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30'
+                            : 'text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                          }`}
+                          title={p.hidden ? "Mostrar proceso" : "Ocultar proceso"}
+                        >
+                          {p.hidden ? <EyeOff size={18} /> : <Eye size={18} />}
                         </button>
                         <button
                           onClick={() => handleDeletePipeline(p.pipeline_id, p.pipeline)}

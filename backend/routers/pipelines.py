@@ -343,6 +343,20 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
 async def save_pipeline_config_endpoint(pipeline_id: int, config: dict):
     return await save_pipeline_config_logic(pipeline_id, config)
 
+@router.patch("/{pipeline_id}/hidden")
+async def toggle_pipeline_hidden(pipeline_id: int, body: dict):
+    try:
+        df = pd.read_excel(PIPELINES_DB_PATH)
+        if pipeline_id not in df['pipeline_id'].values:
+            return {"error": "Pipeline no encontrado"}
+        if 'hidden' not in df.columns:
+            df['hidden'] = False
+        df.loc[df['pipeline_id'] == pipeline_id, 'hidden'] = body.get("hidden", False)
+        df.to_excel(PIPELINES_DB_PATH, index=False)
+        return {"status": "success", "hidden": body.get("hidden", False)}
+    except Exception as e:
+        return {"error": str(e)}
+
 @router.delete("/{pipeline_id}")
 async def delete_pipeline(pipeline_id: int):
     try:
