@@ -151,14 +151,21 @@ async def delete_metric(metric_id: int):
 # --- Endpoints: Metric Data values ---
 
 @router.get("/{metric_id}/data")
-async def get_metric_data(metric_id: int):
+async def get_metric_data(metric_id: int, page: int = 1, page_size: int = 50):
     try:
         df = get_df(METRIC_DATA_DB_PATH)
         filtered = df[df['id_metric'] == metric_id].copy()
         
+        total = len(filtered)
+        
+        # Aplicar paginación
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_df = filtered.iloc[start:end]
+        
         # Parsear JSON para devolverlo como objeto real
         results = []
-        for _, row in filtered.iterrows():
+        for _, row in page_df.iterrows():
             item = row.to_dict()
             try:
                 # Excel a veces guarda el JSON como string con comillas simples o dobles
@@ -170,7 +177,7 @@ async def get_metric_data(metric_id: int):
                 item['dimensions_json'] = {}
             results.append(item)
             
-        return results
+        return {"items": results, "total": total}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -18,6 +18,11 @@ export default function Values() {
     const [loadingData, setLoadingData] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
 
+    // Paginación
+    const [currentPage, setCurrentPage] = useState(1);
+    const [totalRecords, setTotalRecords] = useState(0);
+    const PAGE_SIZE = 50;
+
     // UI States
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -30,13 +35,21 @@ export default function Values() {
 
     useEffect(() => {
         if (selectedMetric) {
-            loadMetricData(selectedMetric.id_metric);
+            setCurrentPage(1);
             setSelectedIds(new Set()); // Limpiar selección al cambiar métrica
         } else {
             setMetricData([]);
             setSelectedIds(new Set());
+            setTotalRecords(0);
         }
     }, [selectedMetric]);
+
+    useEffect(() => {
+        if (selectedMetric) {
+            loadMetricData(selectedMetric.id_metric, currentPage);
+            setSelectedIds(new Set());
+        }
+    }, [selectedMetric, currentPage]);
 
     const loadInitialData = async () => {
         setLoadingMetrics(true);
@@ -82,13 +95,14 @@ export default function Values() {
         }
     };
 
-    const loadMetricData = async (metricId) => {
+    const loadMetricData = async (metricId, page = 1) => {
         setLoadingData(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${metricId}/data`);
+            const res = await fetch(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}`);
             const data = await res.json();
             if (data.error) throw new Error(data.error);
-            setMetricData(data);
+            setMetricData(data.items);
+            setTotalRecords(data.total);
         } catch (error) {
             toast.error("Error cargando valores: " + error.message);
         } finally {
@@ -123,6 +137,14 @@ export default function Values() {
         }
     };
 
+    // Paginación helpers
+    const totalPages = Math.ceil(totalRecords / PAGE_SIZE);
+    const rangeStart = totalRecords === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1;
+    const rangeEnd = Math.min(currentPage * PAGE_SIZE, totalRecords);
+
+    const goToPrevPage = () => setCurrentPage(p => Math.max(1, p - 1));
+    const goToNextPage = () => setCurrentPage(p => Math.min(totalPages, p + 1));
+
     const handleAddValue = () => {
         setEditingData(null); // Modo creación
         if (!selectedMetric) {
@@ -153,7 +175,7 @@ export default function Values() {
             if (data.error) throw new Error(data.error);
 
             toast.success(`Eliminados ${data.deleted_count} registros`);
-            loadMetricData(selectedMetric.id_metric);
+            loadMetricData(selectedMetric.id_metric, currentPage);
             setSelectedIds(new Set());
             setIsDeleteModalOpen(false);
         } catch (error) {
@@ -212,7 +234,8 @@ export default function Values() {
             if (data.error) throw new Error(data.error || "Error importing data");
 
             toast.success(`Importados ${data.imported} registros correctamente`);
-            loadMetricData(selectedMetric.id_metric); // Recargar tabla
+            setCurrentPage(1);
+            loadMetricData(selectedMetric.id_metric, 1); // Recargar tabla desde página 1
         } catch (error) {
             console.error(error);
             toast.error("Error al importar: " + error.message);
@@ -337,40 +360,66 @@ export default function Values() {
                 ) : (
                     <>
                         {/* Toolbar */}
-                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex justify-between items-center bg-slate-50/50 dark:bg-slate-800/30">
-                            <div>
-                                <h1 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                    {selectedMetric.name}
-                                    <span className="text-xs font-normal text-slate-400 bg-white dark:bg-slate-700 px-2 py-1 rounded-full border border-slate-200 dark:border-slate-600">
-                                        {metricData.length} registros
-                                    </span>
-                                </h1>
-                                <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedMetric.description}</p>
-                            </div>
-                            <div className="flex gap-2 items-center">
-                                {selectedIds.size > 0 && (
-                                    <button
-                                        onClick={handleBatchDeleteClick}
-                                        className="flex items-center gap-2 px-3 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-transparent rounded-xl text-sm font-bold transition-all animate-in zoom-in duration-200 mr-2"
-                                    >
-                                        <Trash2 size={16} /> Eliminar ({selectedIds.size})
+                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
+                            {/* Fila 1: Título + acciones */}
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h1 className="text-xl font-bold text-slate-800 dark:text-white">
+                                        {selectedMetric.name}
+                                    </h1>
+                                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedMetric.description}</p>
+                                </div>
+                                <div className="flex gap-2 items-center">
+                                    {selectedIds.size > 0 && (
+                                        <button
+                                            onClick={handleBatchDeleteClick}
+                                            className="flex items-center gap-2 px-3 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-transparent rounded-xl text-sm font-bold transition-all animate-in zoom-in duration-200 mr-2"
+                                        >
+                                            <Trash2 size={16} /> Eliminar ({selectedIds.size})
+                                        </button>
+                                    )}
+                                    <button onClick={() => toast("Filtros próximamente", { icon: '🚧' })} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl border border-transparent hover:border-slate-200 transition-all" title="Filtrar">
+                                        <Filter size={18} />
                                     </button>
-                                )}
-                                <button onClick={() => toast("Filtros próximamente", { icon: '🚧' })} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl border border-transparent hover:border-slate-200 transition-all" title="Filtrar">
-                                    <Filter size={18} />
-                                </button>
-                                <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
-                                <button onClick={handleImportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
-                                    <Upload size={16} /> Importar
-                                </button>
-                                <button onClick={handleExportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
-                                    <Download size={16} /> Exportar
+                                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                    <button onClick={handleImportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                        <Upload size={16} /> Importar
+                                    </button>
+                                    <button onClick={handleExportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
+                                        <Download size={16} /> Exportar
+                                    </button>
+                                    <button
+                                        onClick={handleAddValue}
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95 ml-2"
+                                    >
+                                        <Plus size={18} strokeWidth={3} /> Agregar Valor
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Fila 2: Paginación */}
+                            <div className="flex items-center justify-end gap-2">
+                                <span className="text-sm text-slate-400 select-none">
+                                    {totalRecords === 0
+                                        ? '0 registros'
+                                        : `${rangeStart}–${rangeEnd} de ${totalRecords}`
+                                    }
+                                </span>
+                                <button
+                                    onClick={goToPrevPage}
+                                    disabled={currentPage <= 1 || loadingData}
+                                    className="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
+                                    title="Página anterior"
+                                >
+                                    ‹
                                 </button>
                                 <button
-                                    onClick={handleAddValue}
-                                    className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95 ml-2"
+                                    onClick={goToNextPage}
+                                    disabled={currentPage >= totalPages || loadingData}
+                                    className="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
+                                    title="Página siguiente"
                                 >
-                                    <Plus size={18} strokeWidth={3} /> Agregar Valor
+                                    ›
                                 </button>
                             </div>
                         </div>
@@ -503,7 +552,7 @@ export default function Values() {
                 }}
                 metric={selectedMetric}
                 dimensionsMap={dimensionsMap}
-                onSave={() => loadMetricData(selectedMetric.id_metric)}
+                onSave={() => loadMetricData(selectedMetric.id_metric, currentPage)}
                 initialData={editingData}
             />
 
