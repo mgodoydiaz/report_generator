@@ -8,7 +8,7 @@ export default function TablaResumenCursos({ data, cursos, onCursoClick, cursoAc
 
     const levelsToUse = achievement_levels && achievement_levels.length > 0 
         ? achievement_levels 
-        : ["Adecuado", "Elemental", "Insuficiente"];
+        : ["Insuficiente", "Elemental", "Adecuado"];
 
     const headers = ["Curso", "Alumnos", l1];
     if (hasLogro2) headers.push(l2);

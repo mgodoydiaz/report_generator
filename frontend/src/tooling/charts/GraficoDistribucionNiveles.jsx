@@ -7,7 +7,7 @@ import { LOGRO_COLORS } from './constants';
 export default function GraficoDistribucionNiveles({ data, achievement_levels=[] }) {
     const levelsToUse = achievement_levels && achievement_levels.length > 0 
         ? achievement_levels 
-        : ["Adecuado", "Elemental", "Insuficiente"];
+        : ["Insuficiente", "Elemental", "Adecuado"];
 
     const conteo = levelsToUse.map((level, i) => {
         const hue = Math.round((i / Math.max(1, levelsToUse.length - 1)) * 120);
