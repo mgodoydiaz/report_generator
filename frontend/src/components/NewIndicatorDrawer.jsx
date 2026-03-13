@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter } from 'lucide-react';
+import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 
@@ -19,7 +19,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         type: 'Evaluación',
         metric_ids: [],
         column_roles: {},
-        filter_dimensions: []
+        filter_dimensions: [],
+        temporal_config: { levels: [] }
     });
 
     const [availableMetrics, setAvailableMetrics] = useState([]);
@@ -41,7 +42,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 type: initialData.type || 'Evaluación',
                 metric_ids: initialData.metric_ids || [],
                 column_roles: initialData.column_roles || {},
-                filter_dimensions: initialData.filter_dimensions || []
+                filter_dimensions: initialData.filter_dimensions || [],
+                temporal_config: initialData.temporal_config || { levels: [] }
             });
         } else {
             setFormData({
@@ -50,7 +52,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 type: 'Evaluación',
                 metric_ids: [],
                 column_roles: {},
-                filter_dimensions: []
+                filter_dimensions: [],
+                temporal_config: { levels: [] }
             });
         }
     }, [initialData, isOpen]);
@@ -135,6 +138,94 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
             } else {
                 return { ...prev, filter_dimensions: [...current, dimId] };
             }
+        });
+    };
+
+    // Temporal config handlers
+    const handleAddTemporalLevel = () => {
+        setFormData(prev => ({
+            ...prev,
+            temporal_config: {
+                ...prev.temporal_config,
+                levels: [...(prev.temporal_config?.levels || []), { label: "", sort_mode: "custom", order: [] }]
+            }
+        }));
+    };
+
+    const handleUpdateTemporalLevel = (index, field, value) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            levels[index] = { ...levels[index], [field]: value };
+            if (field === 'sort_mode' && value === 'numeric') {
+                levels[index].order = [];
+            }
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleRemoveTemporalLevel = (index) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            levels.splice(index, 1);
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleMoveLevelUp = (index) => {
+        if (index === 0) return;
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            [levels[index - 1], levels[index]] = [levels[index], levels[index - 1]];
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleMoveLevelDown = (index, total) => {
+        if (index === total - 1) return;
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            [levels[index], levels[index + 1]] = [levels[index + 1], levels[index]];
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleAddOrderValue = (levelIndex) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            levels[levelIndex] = { ...levels[levelIndex], order: [...(levels[levelIndex].order || []), ""] };
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleUpdateOrderValue = (levelIndex, valueIndex, newVal) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            const order = [...(levels[levelIndex].order || [])];
+            order[valueIndex] = newVal;
+            levels[levelIndex] = { ...levels[levelIndex], order };
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleRemoveOrderValue = (levelIndex, valueIndex) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            const order = [...(levels[levelIndex].order || [])];
+            order.splice(valueIndex, 1);
+            levels[levelIndex] = { ...levels[levelIndex], order };
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
+        });
+    };
+
+    const handleMoveOrderValue = (levelIndex, valueIndex, direction) => {
+        setFormData(prev => {
+            const levels = [...(prev.temporal_config?.levels || [])];
+            const order = [...(levels[levelIndex].order || [])];
+            const newIdx = valueIndex + direction;
+            if (newIdx < 0 || newIdx >= order.length) return prev;
+            [order[valueIndex], order[newIdx]] = [order[newIdx], order[valueIndex]];
+            levels[levelIndex] = { ...levels[levelIndex], order };
+            return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
         });
     };
 
@@ -428,6 +519,114 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                             </div>
                                         );
                                     })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Temporal Config */}
+                        {(formData.column_roles?.evaluacion_num || []).filter(e => e.metric_id && e.column).length > 0 && (
+                            <div>
+                                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                                    <TrendingUp size={16} />
+                                    Configuración Temporal
+                                </label>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Define los niveles de ordenación del eje temporal en cascada. El orden se aplica del nivel 1 al último.
+                                </p>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-4">
+                                    {(formData.temporal_config?.levels || []).length === 0 && (
+                                        <p className="text-xs text-slate-300 dark:text-slate-600 italic pl-1">Sin niveles configurados. El eje temporal se ordenará alfabéticamente.</p>
+                                    )}
+                                    {(formData.temporal_config?.levels || []).map((level, li) => {
+                                        const total = (formData.temporal_config?.levels || []).length;
+                                        return (
+                                            <div key={li} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+                                                {/* Level header */}
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg px-2 py-1 shrink-0">
+                                                        Nivel {li + 1}
+                                                    </span>
+                                                    <input
+                                                        type="text"
+                                                        value={level.label}
+                                                        onChange={(e) => handleUpdateTemporalLevel(li, 'label', e.target.value)}
+                                                        placeholder="Ej: Año, Mes, Semestre..."
+                                                        className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                    />
+                                                    <select
+                                                        value={level.sort_mode}
+                                                        onChange={(e) => handleUpdateTemporalLevel(li, 'sort_mode', e.target.value)}
+                                                        className="bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                    >
+                                                        <option value="custom">Orden manual</option>
+                                                        <option value="numeric">Numérico (año)</option>
+                                                        <option value="alpha">Alfabético</option>
+                                                    </select>
+                                                    <div className="flex gap-1">
+                                                        <button type="button" onClick={() => handleMoveLevelUp(li)} disabled={li === 0}
+                                                            className="p-1 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                            <ChevronUp size={14} />
+                                                        </button>
+                                                        <button type="button" onClick={() => handleMoveLevelDown(li, total)} disabled={li === total - 1}
+                                                            className="p-1 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                            <ChevronDown size={14} />
+                                                        </button>
+                                                        <button type="button" onClick={() => handleRemoveTemporalLevel(li)}
+                                                            className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {/* Custom order values */}
+                                                {level.sort_mode === 'custom' && (
+                                                    <div className="pl-2 space-y-2">
+                                                        <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">Valores en orden</p>
+                                                        {(level.order || []).map((val, vi) => (
+                                                            <div key={vi} className="flex items-center gap-2">
+                                                                <span className="text-[10px] text-slate-300 w-5 text-right shrink-0">{vi + 1}.</span>
+                                                                <input
+                                                                    type="text"
+                                                                    value={val}
+                                                                    onChange={(e) => handleUpdateOrderValue(li, vi, e.target.value)}
+                                                                    placeholder="Valor exacto..."
+                                                                    className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                                />
+                                                                <div className="flex gap-1">
+                                                                    <button type="button" onClick={() => handleMoveOrderValue(li, vi, -1)} disabled={vi === 0}
+                                                                        className="p-1 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                                        <ChevronUp size={12} />
+                                                                    </button>
+                                                                    <button type="button" onClick={() => handleMoveOrderValue(li, vi, 1)} disabled={vi === (level.order || []).length - 1}
+                                                                        className="p-1 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                                        <ChevronDown size={12} />
+                                                                    </button>
+                                                                    <button type="button" onClick={() => handleRemoveOrderValue(li, vi)}
+                                                                        className="p-1 text-slate-300 hover:text-rose-500 rounded transition-colors">
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        <button type="button" onClick={() => handleAddOrderValue(li)}
+                                                            className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors mt-1">
+                                                            <Plus size={12} /> Agregar valor
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {level.sort_mode === 'numeric' && (
+                                                    <p className="text-[10px] text-slate-400 pl-2 italic">Los valores se ordenarán numéricamente (ascendente).</p>
+                                                )}
+                                                {level.sort_mode === 'alpha' && (
+                                                    <p className="text-[10px] text-slate-400 pl-2 italic">Los valores se ordenarán alfabéticamente.</p>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                    <button type="button" onClick={handleAddTemporalLevel}
+                                        className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors w-full justify-center border border-dashed border-indigo-200 dark:border-indigo-800">
+                                        <Plus size={14} /> Agregar nivel
+                                    </button>
                                 </div>
                             </div>
                         )}

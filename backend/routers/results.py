@@ -178,12 +178,25 @@ async def get_indicator_data(indicator_id: int, filters: Optional[str] = Query(N
             elif isinstance(fd, list):
                 filter_dimensions = fd
 
+        # 10. Obtener temporal_config del indicador
+        temporal_config = {}
+        if not ind_row.empty:
+            tc = ind_row.iloc[0].get('temporal_config')
+            if isinstance(tc, str) and tc:
+                try:
+                    temporal_config = json.loads(tc)
+                except:
+                    pass
+            elif isinstance(tc, dict):
+                temporal_config = tc
+
         return {
             "metrics": metrics_info,
             "dimensions": dims_map,
             "data": data_by_metric,
             "column_roles": column_roles,
             "filter_dimensions": filter_dimensions,
+            "temporal_config": temporal_config,
         }
 
     except Exception as e:

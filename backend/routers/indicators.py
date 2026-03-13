@@ -16,6 +16,7 @@ class IndicatorBase(BaseModel):
     type: str = "Evaluación" # Evaluación, Estudio, Alerta
     column_roles: Optional[Dict[str, Any]] = None  # {"logro_1": [{"metric_id": 1, "column": "Rend"}], ...}
     filter_dimensions: Optional[List[int]] = None  # IDs de dimensiones que aparecen como filtros en Results
+    temporal_config: Optional[Dict[str, Any]] = None
 
 class IndicatorCreate(IndicatorBase):
     metric_ids: List[int] = []
@@ -62,6 +63,16 @@ async def get_indicators():
             elif not isinstance(fd, list):
                 indicator['filter_dimensions'] = []
 
+            # Parse temporal_config JSON
+            tc = indicator.get('temporal_config')
+            if isinstance(tc, str) and tc:
+                try:
+                    indicator['temporal_config'] = json.loads(tc)
+                except:
+                    indicator['temporal_config'] = {}
+            elif not isinstance(tc, dict):
+                indicator['temporal_config'] = {}
+
             results.append(indicator)
             
         return results
@@ -85,6 +96,7 @@ async def create_indicator(indicator: IndicatorCreate):
             "type": indicator.type,
             "column_roles": json.dumps(indicator.column_roles or {}, ensure_ascii=False),
             "filter_dimensions": json.dumps(indicator.filter_dimensions or [], ensure_ascii=False),
+            "temporal_config": json.dumps(indicator.temporal_config or {}, ensure_ascii=False),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
@@ -122,6 +134,8 @@ async def update_indicator(indicator_id: int, indicator: IndicatorUpdate):
             df.at[idx, 'column_roles'] = json.dumps(indicator.column_roles, ensure_ascii=False)
         if indicator.filter_dimensions is not None:
             df.at[idx, 'filter_dimensions'] = json.dumps(indicator.filter_dimensions, ensure_ascii=False)
+        if indicator.temporal_config is not None:
+            df.at[idx, 'temporal_config'] = json.dumps(indicator.temporal_config, ensure_ascii=False)
         df.at[idx, 'updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         save_df(df, INDICATORS_DB_PATH)
         
