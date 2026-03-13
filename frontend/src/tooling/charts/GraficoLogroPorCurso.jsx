@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { CURSO_COLORS, pct, avg } from './constants';
 
-export default function GraficoLogroPorCurso({ data, cursos, metric }) {
+export default function GraficoLogroPorCurso({ data, cursos, metric, roleLabels={} }) {
     const isSimce = metric === "simce";
     const resumen = cursos.map((c, i) => ({
         curso: c,
@@ -30,7 +30,7 @@ export default function GraficoLogroPorCurso({ data, cursos, metric }) {
                     domain={yDomain}
                     tick={{ fontSize: 12 }}
                 />
-                <Tooltip formatter={(v) => isSimce ? Math.round(v) : pct(v)} />
+                <Tooltip formatter={(v) => [isSimce ? Math.round(v) : pct(v), isSimce ? (roleLabels.logro_2 || "Val. secundario") : (roleLabels.logro_1 || "Logro")]} />
                 <Bar dataKey="valor" radius={[6, 6, 0, 0]}
                     label={{ position: "top", formatter: isSimce ? (v => Math.round(v)) : pct, fontSize: 12, fontWeight: 700 }}>
                     {resumen.map((entry) => (

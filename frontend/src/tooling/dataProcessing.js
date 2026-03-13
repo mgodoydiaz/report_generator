@@ -50,7 +50,7 @@ function resolveRoleValue(role, metricId, roleMap, val, djson, dimsMap) {
  * @returns {{ estudiantes: Array, preguntas: Array, cursos: string[], dimsMap: Object, activeRoles: Object }}
  */
 export function processDataForDashboard(result) {
-    const { metrics, dimensions: dims, data, column_roles: columnRoles } = result;
+    const { metrics, dimensions: dims, data, column_roles: columnRoles, role_labels: roleLabels } = result;
     const dimsMap = dims || {};
     const roleMap = buildRoleMap(columnRoles);
 
@@ -116,33 +116,30 @@ export function processDataForDashboard(result) {
             const evalNum = resolveRoleValue("evaluacion_num", mid, roleMap, val, djson, dimsMap);
             if (evalNum !== undefined) entry._evaluacion_num = evalNum;
 
-            // Para preguntas: usar _rend como _logro_pregunta si no hay otro valor
-            if (hasPregunta || hasHabilidadRole) {
-                if (entry._rend !== undefined) {
-                    entry._logro_pregunta = entry._rend;
-                }
+            // ── Bucketing logic ──
+            if (hasPregunta) {
+                if (entry._rend !== undefined) entry._logro_pregunta = entry._rend;
                 preguntas.push(entry);
             } else {
                 estudiantes.push(entry);
+                if (hasHabilidadRole) {
+                    if (entry._rend !== undefined) entry._logro_pregunta = entry._rend;
+                    preguntas.push(entry);
+                }
             }
-
-            // FALLBACK HEURÍSTICO (desactivado — descomentar si se necesita para indicadores legacy)
-            // if (isObject && typeof val === 'object' && val !== null) {
-            //     const fields = metric.meta_json?.fields || [];
-            //     for (const f of fields) {
-            //         entry[`_${f.name.toLowerCase()}`] = val[f.name];
-            //     }
-            // }
-            // if (entry._rend === undefined && entry._rendimiento !== undefined) entry._rend = entry._rendimiento;
-            // if (entry._rend === undefined && entry._logro_porcentaje !== undefined) entry._rend = entry._logro_porcentaje;
-            // if (!entry._logro && entry._nivel) entry._logro = entry._nivel;
-            // if (!entry._logro && entry._nivel_logro) entry._logro = entry._nivel_logro;
-            // if (!entry._logro && entry._nivel_de_logro) entry._logro = entry._nivel_de_logro;
         }
     }
 
     const cursos = [...new Set(estudiantes.map(e => e._curso).filter(Boolean))].sort();
-    return { estudiantes, preguntas, cursos, dimsMap, activeRoles };
+    return { 
+        estudiantes, 
+        preguntas, 
+        cursos, 
+        dimsMap, 
+        activeRoles, 
+        roleLabels: roleLabels || {},
+        achievement_levels: result.achievement_levels || []
+    };
 }
 
 /**
@@ -151,8 +148,11 @@ export function processDataForDashboard(result) {
  */
 export function computeDashboardKPIs(dashboardData) {
     if (!dashboardData) return null;
-    const { estudiantes, preguntas, cursos, activeRoles } = dashboardData;
-    const totalAlumnos = estudiantes.length;
+    const { estudiantes, preguntas, cursos, activeRoles, roleLabels } = dashboardData;
+
+    // Contar alumnos únicos por nombre (si existe) para evitar duplicados en desgloses
+    const studentNames = estudiantes.map(e => e._nombre).filter(Boolean);
+    const totalAlumnos = studentNames.length > 0 ? new Set(studentNames).size : estudiantes.length;
 
     const logroPromedio = activeRoles.logro_1 ? avg(estudiantes, "_rend") : null;
     const simcePromedio = activeRoles.logro_2 ? avg(estudiantes, "_simce") : null;
@@ -167,6 +167,6 @@ export function computeDashboardKPIs(dashboardData) {
 
     return {
         totalAlumnos, logroPromedio, simcePromedio, nivelPredominante,
-        cursos, estudiantes, preguntas, activeRoles,
+        cursos, estudiantes, preguntas, activeRoles, roleLabels, achievement_levels: dashboardData.achievement_levels || []
     };
 }

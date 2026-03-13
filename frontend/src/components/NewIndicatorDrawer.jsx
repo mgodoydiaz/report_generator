@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter, TrendingUp, ChevronUp, ChevronDown } from 'lucide-react';
+import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter, TrendingUp, ChevronUp, ChevronDown, Search, Palette } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 
@@ -19,8 +19,10 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         type: 'Evaluación',
         metric_ids: [],
         column_roles: {},
+        role_labels: {},
         filter_dimensions: [],
-        temporal_config: { levels: [] }
+        temporal_config: { levels: [] },
+        achievement_levels: []
     });
 
     const [availableMetrics, setAvailableMetrics] = useState([]);
@@ -42,8 +44,10 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 type: initialData.type || 'Evaluación',
                 metric_ids: initialData.metric_ids || [],
                 column_roles: initialData.column_roles || {},
+                role_labels: initialData.role_labels || {},
                 filter_dimensions: initialData.filter_dimensions || [],
-                temporal_config: initialData.temporal_config || { levels: [] }
+                temporal_config: initialData.temporal_config || { levels: [] },
+                achievement_levels: initialData.achievement_levels || []
             });
         } else {
             setFormData({
@@ -52,8 +56,10 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 type: 'Evaluación',
                 metric_ids: [],
                 column_roles: {},
+                role_labels: {},
                 filter_dimensions: [],
-                temporal_config: { levels: [] }
+                temporal_config: { levels: [] },
+                achievement_levels: []
             });
         }
     }, [initialData, isOpen]);
@@ -130,6 +136,22 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         return allDimensions.filter(d => dimIds.has(d.id_dimension));
     }, [selectedMetricsList, allDimensions]);
 
+    const availableTemporalColumns = useMemo(() => {
+        const roles = formData.column_roles?.evaluacion_num || [];
+        const colsTracker = new Set();
+        const cols = [];
+        roles.forEach(entry => {
+            if (!entry.metric_id || !entry.column) return;
+            const metricsCols = columnsByMetric[entry.metric_id]?.columns || [];
+            const colDef = metricsCols.find(c => c.value === entry.column);
+            if (colDef && !colsTracker.has(entry.column)) {
+                colsTracker.add(entry.column);
+                cols.push({ value: entry.column, label: colDef.label, metric_id: entry.metric_id });
+            }
+        });
+        return cols;
+    }, [formData.column_roles, columnsByMetric]);
+
     const handleToggleFilterDim = (dimId) => {
         setFormData(prev => {
             const current = prev.filter_dimensions || [];
@@ -175,9 +197,42 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         if (index === 0) return;
         setFormData(prev => {
             const levels = [...(prev.temporal_config?.levels || [])];
-            [levels[index - 1], levels[index]] = [levels[index], levels[index - 1]];
+            const temp = levels[index];
+            levels[index] = levels[index - 1];
+            levels[index - 1] = temp;
             return { ...prev, temporal_config: { ...prev.temporal_config, levels } };
         });
+    };
+
+    const handleFetchDistinctValues = async (index) => {
+        const level = formData.temporal_config?.levels[index];
+        if (!level || !level.label) {
+            toast.error("Selecciona una evaluación primero");
+            return;
+        }
+        
+        const selectedCol = availableTemporalColumns.find(c => c.label === level.label);
+        if (!selectedCol) {
+            toast.error("Columna no encontrada en la configuración");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/metrics/${selectedCol.metric_id}/distinct/${selectedCol.value}`);
+            if (!res.ok) throw new Error("Error en la solicitud");
+            const data = await res.json();
+            
+            if (data.values && data.values.length > 0) {
+                const currentOrder = new Set(level.order || []);
+                data.values.forEach(v => currentOrder.add(v));
+                handleUpdateTemporalLevel(index, 'order', Array.from(currentOrder));
+                toast.success(`Se recuperaron ${data.values.length} valores distintos`);
+            } else {
+                toast.error("No hay datos cargados para esta columna");
+            }
+        } catch (error) {
+            toast.error("Error al buscar valores: " + error.message);
+        }
     };
 
     const handleMoveLevelDown = (index, total) => {
@@ -267,6 +322,63 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 return { ...prev, metric_ids: [...current, metricId] };
             }
         });
+    };
+
+    // Achievement levels handlers
+    const handleAddAchievementLevel = () => {
+        setFormData(prev => ({ ...prev, achievement_levels: [...(prev.achievement_levels || []), ""] }));
+    };
+
+    const handleUpdateAchievementLevel = (index, newVal) => {
+        setFormData(prev => {
+            const levels = [...(prev.achievement_levels || [])];
+            levels[index] = newVal;
+            return { ...prev, achievement_levels: levels };
+        });
+    };
+
+    const handleRemoveAchievementLevel = (index) => {
+        setFormData(prev => {
+            const levels = [...(prev.achievement_levels || [])];
+            levels.splice(index, 1);
+            return { ...prev, achievement_levels: levels };
+        });
+    };
+
+    const handleMoveAchievementLevel = (index, direction) => {
+        setFormData(prev => {
+            const levels = [...(prev.achievement_levels || [])];
+            const newIdx = index + direction;
+            if (newIdx < 0 || newIdx >= levels.length) return prev;
+            [levels[index], levels[newIdx]] = [levels[newIdx], levels[index]];
+            return { ...prev, achievement_levels: levels };
+        });
+    };
+
+    const handleFetchAchievementValues = async () => {
+        const roles = formData.column_roles?.nivel_de_logro || [];
+        const entry = roles.find(e => e.metric_id && e.column);
+        if (!entry) {
+            toast.error("Selecciona una columna para Nivel de Logro primero");
+            return;
+        }
+
+        try {
+            const res = await fetch(`${API_BASE_URL}/metrics/${entry.metric_id}/distinct/${entry.column}`);
+            if (!res.ok) throw new Error("Error en la solicitud");
+            const data = await res.json();
+            
+            if (data.values && data.values.length > 0) {
+                const currentOrder = new Set(formData.achievement_levels || []);
+                data.values.forEach(v => currentOrder.add(v));
+                setFormData(prev => ({ ...prev, achievement_levels: Array.from(currentOrder) }));
+                toast.success(`Se recuperaron ${data.values.length} valores distintos`);
+            } else {
+                toast.error("No hay datos cargados para esta columna");
+            }
+        } catch (error) {
+            toast.error("Error al buscar valores: " + error.message);
+        }
     };
 
     const handleSave = async () => {
@@ -448,6 +560,46 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                             </p>
                         </div>
 
+                        {/* Filter Dimensions */}
+                        {formData.metric_ids?.length > 0 && availableFilterDims.length > 0 && (
+                            <div>
+                                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                                    <Filter size={16} />
+                                    Filtros del Dashboard
+                                </label>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Selecciona qué dimensiones aparecerán como filtros desplegables en la página de Resultados.
+                                </p>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 max-h-[320px] overflow-y-auto custom-scrollbar">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {availableFilterDims.map(dim => {
+                                            const isSelected = (formData.filter_dimensions || []).includes(dim.id_dimension);
+                                            return (
+                                                <div
+                                                    key={dim.id_dimension}
+                                                    onClick={() => handleToggleFilterDim(dim.id_dimension)}
+                                                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${isSelected
+                                                        ? 'bg-white dark:bg-slate-800 border-indigo-500 shadow-sm'
+                                                        : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                    }`}
+                                                >
+                                                    <div className={`transition-colors shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-300'}`}>
+                                                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`font-bold text-sm ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-400'}`}>
+                                                            {dim.name}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-400">{dim.data_type} · ID {dim.id_dimension}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Column Roles */}
                         {formData.metric_ids?.length > 0 && Object.keys(columnsByMetric).length > 0 && (
                             <div>
@@ -463,10 +615,21 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                         const entries = formData.column_roles?.[role.key] || [];
                                         return (
                                             <div key={role.key}>
-                                                <div className="flex items-start justify-between mb-2">
-                                                    <div>
-                                                        <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{role.label}</span>
-                                                        <p className="text-[10px] text-slate-400 leading-tight">{role.description}</p>
+                                                <div className="flex items-start justify-between mb-2 gap-4">
+                                                    <div className="flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{role.label}</span>
+                                                            {["logro_1", "logro_2"].includes(role.key) && (
+                                                                <input
+                                                                    type="text"
+                                                                    value={formData.role_labels?.[role.key] || ""}
+                                                                    onChange={(e) => setFormData(prev => ({ ...prev, role_labels: { ...prev.role_labels, [role.key]: e.target.value } }))}
+                                                                    placeholder={`Ej: ${role.key === 'logro_1' ? 'Logro' : 'Puntaje'}`}
+                                                                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 w-32 outline-none"
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] text-slate-400 leading-tight mt-1">{role.description}</p>
                                                     </div>
                                                     <button
                                                         type="button"
@@ -546,13 +709,16 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                                     <span className="text-xs font-bold text-slate-400 bg-slate-100 dark:bg-slate-700 rounded-lg px-2 py-1 shrink-0">
                                                         Nivel {li + 1}
                                                     </span>
-                                                    <input
-                                                        type="text"
+                                                    <select
                                                         value={level.label}
                                                         onChange={(e) => handleUpdateTemporalLevel(li, 'label', e.target.value)}
-                                                        placeholder="Ej: Año, Mes, Semestre..."
                                                         className="flex-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                                                    />
+                                                    >
+                                                        <option value="" disabled>Selecciona la evaluación...</option>
+                                                        {availableTemporalColumns.map(col => (
+                                                            <option key={col.value} value={col.label}>{col.label}</option>
+                                                        ))}
+                                                    </select>
                                                     <select
                                                         value={level.sort_mode}
                                                         onChange={(e) => handleUpdateTemporalLevel(li, 'sort_mode', e.target.value)}
@@ -608,10 +774,16 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                                                 </div>
                                                             </div>
                                                         ))}
-                                                        <button type="button" onClick={() => handleAddOrderValue(li)}
-                                                            className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors mt-1">
-                                                            <Plus size={12} /> Agregar valor
-                                                        </button>
+                                                        <div className="flex gap-2 mt-2">
+                                                            <button type="button" onClick={() => handleAddOrderValue(li)}
+                                                                className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                                                                <Plus size={12} /> Agregar valor manual
+                                                            </button>
+                                                            <button type="button" onClick={() => handleFetchDistinctValues(li)}
+                                                                className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
+                                                                <Search size={12} /> Buscar en valores cargados
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 )}
                                                 {level.sort_mode === 'numeric' && (
@@ -631,41 +803,60 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                             </div>
                         )}
 
-                        {/* Filter Dimensions */}
-                        {formData.metric_ids?.length > 0 && availableFilterDims.length > 0 && (
+                        {/* Achievement Levels */}
+                        {(formData.column_roles?.nivel_de_logro || []).filter(e => e.metric_id && e.column).length > 0 && (
                             <div>
                                 <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
-                                    <Filter size={16} />
-                                    Filtros del Dashboard
+                                    <Palette size={16} />
+                                    Niveles de Logro
                                 </label>
                                 <p className="text-xs text-slate-400 mb-4">
-                                    Selecciona qué dimensiones aparecerán como filtros desplegables en la página de Resultados.
+                                    Define y ordena los niveles de logro (de menor a mayor o viceversa) para la paleta de colores.
                                 </p>
-                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800">
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {availableFilterDims.map(dim => {
-                                            const isSelected = (formData.filter_dimensions || []).includes(dim.id_dimension);
-                                            return (
-                                                <div
-                                                    key={dim.id_dimension}
-                                                    onClick={() => handleToggleFilterDim(dim.id_dimension)}
-                                                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${isSelected
-                                                        ? 'bg-white dark:bg-slate-800 border-indigo-500 shadow-sm'
-                                                        : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
-                                                    }`}
-                                                >
-                                                    <div className={`transition-colors shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-300'}`}>
-                                                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
-                                                    </div>
-                                                    <div>
-                                                        <p className={`font-bold text-sm ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-400'}`}>
-                                                            {dim.name}
-                                                        </p>
-                                                        <p className="text-[10px] text-slate-400">{dim.data_type} · ID {dim.id_dimension}</p>
-                                                    </div>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-2">
+                                    {(formData.achievement_levels || []).map((level, i) => {
+                                        const count = (formData.achievement_levels || []).length;
+                                        // Generar color indicativo (de rojo a verde si asume menor-mayor) o azulado
+                                        const hue = Math.round((i / Math.max(1, count - 1)) * 120); // 0 (rojo) a 120 (verde)
+                                        return (
+                                            <div key={i} className="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
+                                                <div 
+                                                    className="w-4 h-4 rounded-full shadow-inner border border-black/10 shrink-0" 
+                                                    style={{ backgroundColor: `hsl(${hue}, 70%, 50%)` }}
+                                                />
+                                                <input
+                                                    type="text"
+                                                    value={level}
+                                                    onChange={(e) => handleUpdateAchievementLevel(i, e.target.value)}
+                                                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700 dark:text-slate-200"
+                                                    placeholder="Ej: Adecuado, Insuficiente..."
+                                                />
+                                                <div className="flex gap-1 shrink-0">
+                                                    <button type="button" onClick={() => handleMoveAchievementLevel(i, -1)} disabled={i === 0}
+                                                        className="p-1.5 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                        <ChevronUp size={14} />
+                                                    </button>
+                                                    <button type="button" onClick={() => handleMoveAchievementLevel(i, 1)} disabled={i === count - 1}
+                                                        className="p-1.5 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
+                                                        <ChevronDown size={14} />
+                                                    </button>
+                                                    <button type="button" onClick={() => handleRemoveAchievementLevel(i)}
+                                                        className="p-1.5 text-slate-300 hover:text-rose-500 rounded transition-colors">
+                                                        <Trash2 size={14} />
+                                                    </button>
                                                 </div>
-                                            );
-                                        })}
+                                            </div>
+                                        );
+                                    })}
+                                    <div className="flex gap-2 pt-2">
+                                        <button type="button" onClick={handleAddAchievementLevel}
+                                            className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-3 py-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors">
+                                            <Plus size={14} /> Agregar nivel
+                                        </button>
+                                        <button type="button" onClick={handleFetchAchievementValues}
+                                            className="flex items-center gap-1 text-xs font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 px-3 py-2 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors">
+                                            <Search size={14} /> Buscar en valores
+                                        </button>
                                     </div>
                                 </div>
                             </div>

@@ -5,16 +5,24 @@ import {
 } from 'recharts';
 import { LOGRO_COLORS } from './constants';
 
-export default function GraficoNivelesPorCurso({ data, cursos }) {
+export default function GraficoNivelesPorCurso({ data, cursos, achievement_levels=[] }) {
+    const levelsToUse = achievement_levels && achievement_levels.length > 0 
+        ? achievement_levels 
+        : ["Adecuado", "Elemental", "Insuficiente"];
+
     const resumen = cursos.map((c) => {
         const alumnos = data.filter(r => r._curso === c);
-        return {
-            curso: c,
-            Adecuado: alumnos.filter(r => r._logro === "Adecuado").length,
-            Elemental: alumnos.filter(r => r._logro === "Elemental").length,
-            Insuficiente: alumnos.filter(r => r._logro === "Insuficiente").length,
-        };
+        const currentRes = { curso: c };
+        levelsToUse.forEach(level => {
+            currentRes[level] = alumnos.filter(r => r._logro === level).length;
+        });
+        return currentRes;
     });
+
+    // In stacked bar charts, the first elements added to the `<BarChart>` are rendered 
+    // at the bottom (or left). To have "Adecuado" at the TOP, we map in reverse order.
+    const reversedLevels = [...levelsToUse].reverse();
+
     return (
         <ResponsiveContainer width="100%" height={240}>
             <BarChart data={resumen} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
@@ -23,9 +31,26 @@ export default function GraficoNivelesPorCurso({ data, cursos }) {
                 <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
                 <Tooltip />
                 <Legend iconType="circle" wrapperStyle={{ fontSize: 13 }} />
-                {["Insuficiente", "Elemental", "Adecuado"].map(n => (
-                    <Bar key={n} dataKey={n} stackId="a" fill={LOGRO_COLORS[n]} radius={n === "Adecuado" ? [4, 4, 0, 0] : [0, 0, 0, 0]} />
-                ))}
+                {reversedLevels.map((level, i) => {
+                    // Original index when unreversed
+                    const originalIndex = levelsToUse.length - 1 - i;
+                    const hue = Math.round((originalIndex / Math.max(1, levelsToUse.length - 1)) * 120);
+                    const fill = achievement_levels && achievement_levels.length > 0 
+                                 ? `hsl(${hue}, 70%, 50%)` 
+                                 : LOGRO_COLORS[level];
+
+                    // Add top rounded corners only to the topmost section
+                    const isTop = (i === reversedLevels.length - 1);
+                    return (
+                        <Bar 
+                            key={level} 
+                            dataKey={level} 
+                            stackId="a" 
+                            fill={fill} 
+                            radius={isTop ? [4, 4, 0, 0] : [0, 0, 0, 0]} 
+                        />
+                    );
+                })}
             </BarChart>
         </ResponsiveContainer>
     );

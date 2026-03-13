@@ -15,8 +15,10 @@ class IndicatorBase(BaseModel):
     description: Optional[str] = ""
     type: str = "Evaluación" # Evaluación, Estudio, Alerta
     column_roles: Optional[Dict[str, Any]] = None  # {"logro_1": [{"metric_id": 1, "column": "Rend"}], ...}
+    role_labels: Optional[Dict[str, str]] = None # Custom names for columns, e.g., {"logro_1": "Logro"}
     filter_dimensions: Optional[List[int]] = None  # IDs de dimensiones que aparecen como filtros en Results
     temporal_config: Optional[Dict[str, Any]] = None
+    achievement_levels: Optional[List[str]] = None
 
 class IndicatorCreate(IndicatorBase):
     metric_ids: List[int] = []
@@ -63,6 +65,14 @@ async def get_indicators():
             elif not isinstance(fd, list):
                 indicator['filter_dimensions'] = []
 
+            # Parse role_labels JSON
+            rl = indicator.get('role_labels')
+            if isinstance(rl, str) and rl:
+                try: indicator['role_labels'] = json.loads(rl)
+                except: indicator['role_labels'] = {}
+            elif not isinstance(rl, dict):
+                indicator['role_labels'] = {}
+
             # Parse temporal_config JSON
             tc = indicator.get('temporal_config')
             if isinstance(tc, str) and tc:
@@ -72,6 +82,14 @@ async def get_indicators():
                     indicator['temporal_config'] = {}
             elif not isinstance(tc, dict):
                 indicator['temporal_config'] = {}
+
+            # Parse achievement_levels JSON
+            al = indicator.get('achievement_levels')
+            if isinstance(al, str) and al:
+                try: indicator['achievement_levels'] = json.loads(al)
+                except: indicator['achievement_levels'] = []
+            elif not isinstance(al, list):
+                indicator['achievement_levels'] = []
 
             results.append(indicator)
             
@@ -95,8 +113,10 @@ async def create_indicator(indicator: IndicatorCreate):
             "description": indicator.description,
             "type": indicator.type,
             "column_roles": json.dumps(indicator.column_roles or {}, ensure_ascii=False),
+            "role_labels": json.dumps(indicator.role_labels or {}, ensure_ascii=False),
             "filter_dimensions": json.dumps(indicator.filter_dimensions or [], ensure_ascii=False),
             "temporal_config": json.dumps(indicator.temporal_config or {}, ensure_ascii=False),
+            "achievement_levels": json.dumps(indicator.achievement_levels or [], ensure_ascii=False),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
         
@@ -132,10 +152,14 @@ async def update_indicator(indicator_id: int, indicator: IndicatorUpdate):
         df.at[idx, 'type'] = indicator.type
         if indicator.column_roles is not None:
             df.at[idx, 'column_roles'] = json.dumps(indicator.column_roles, ensure_ascii=False)
+        if indicator.role_labels is not None:
+            df.at[idx, 'role_labels'] = json.dumps(indicator.role_labels, ensure_ascii=False)
         if indicator.filter_dimensions is not None:
             df.at[idx, 'filter_dimensions'] = json.dumps(indicator.filter_dimensions, ensure_ascii=False)
         if indicator.temporal_config is not None:
             df.at[idx, 'temporal_config'] = json.dumps(indicator.temporal_config, ensure_ascii=False)
+        if indicator.achievement_levels is not None:
+            df.at[idx, 'achievement_levels'] = json.dumps(indicator.achievement_levels, ensure_ascii=False)
         df.at[idx, 'updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         save_df(df, INDICATORS_DB_PATH)
         

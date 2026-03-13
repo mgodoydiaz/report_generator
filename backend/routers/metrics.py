@@ -373,6 +373,49 @@ async def export_metric_data(metric_id: int, format: str = "excel"):
         print(e)
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.get("/{metric_id}/distinct/{column}")
+async def get_metric_distinct_values(metric_id: int, column: str):
+    try:
+        df_data = get_df(METRIC_DATA_DB_PATH)
+        df_data = df_data[df_data['id_metric'] == metric_id].copy()
+        if df_data.empty: return {"values": []}
+
+        df_metrics = get_df(METRICS_DB_PATH)
+        metric = df_metrics[df_metrics['id_metric'] == metric_id].iloc[0].to_dict()
+        
+        df_dims = get_df(DIMENSIONS_DB_PATH)
+        dims_map = {row['id_dimension']: row['name'] for _, row in df_dims.iterrows()}
+        
+        distinct_vals = set()
+        for _, row in df_data.iterrows():
+            dims_json = {}
+            try:
+                val = row['dimensions_json']
+                if isinstance(val, str): dims_json = json.loads(val.replace("'", '"'))
+                elif isinstance(val, dict): dims_json = val
+            except: pass
+            
+            for dim_id, val in dims_json.items():
+                dim_name = dims_map.get(int(dim_id), f"Dim_{dim_id}")
+                if dim_name == column:
+                    distinct_vals.add(str(val))
+            
+            value = row['value']
+            if metric['data_type'] == 'object':
+                try:
+                    val_obj = json.loads(value) if isinstance(value, str) else dict(value)
+                    for k, v in val_obj.items():
+                        if k == column: distinct_vals.add(str(v))
+                except:
+                    if column == 'Valor_Raw': distinct_vals.add(str(value))
+            elif metric['name'] == column:
+                distinct_vals.add(str(value))
+                
+        return {"values": sorted(list(distinct_vals))}
+    except Exception as e:
+        print(e)
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.get("/{metric_id}/template")
 async def get_metric_template(metric_id: int):
     try:

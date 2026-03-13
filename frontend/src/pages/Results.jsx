@@ -267,13 +267,13 @@ export default function Results() {
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <KPICard label="Total alumnos" value={dashboardComputed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
                                         {dashboardComputed.activeRoles?.logro_1 && (
-                                            <KPICard label="Logro promedio" value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
+                                            <KPICard label={dashboardComputed.roleLabels?.logro_1 || "Logro promedio"} value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
                                         )}
                                         {dashboardComputed.activeRoles?.logro_2 && (
-                                            <KPICard label="Puntaje promedio" value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
+                                            <KPICard label={dashboardComputed.roleLabels?.logro_2 || "Puntaje promedio"} value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
                                         )}
                                         {dashboardComputed.activeRoles?.nivel_de_logro && (
-                                            <KPICard label="Nivel predominante" value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
+                                            <KPICard label={dashboardComputed.roleLabels?.nivel_de_logro || "Nivel predominante"} value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
                                         )}
                                     </div>
 
@@ -287,6 +287,9 @@ export default function Results() {
                                                     cursos={dashboardComputed.cursos}
                                                     onCursoClick={handleCursoClick}
                                                     cursoActivo={cursoActivo}
+                                                    roleLabels={dashboardComputed.roleLabels}
+                                                    activeRoles={dashboardComputed.activeRoles}
+                                                    achievement_levels={dashboardComputed.achievement_levels}
                                                 />
                                             </div>
                                         </div>
@@ -301,13 +304,14 @@ export default function Results() {
                                                     <div className="flex items-center justify-between mb-4">
                                                         <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Logro Promedio por Curso</h3>
                                                         {dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 && (
-                                                            <MetricToggle value={metricLogro} onChange={setMetricLogro} />
+                                                            <MetricToggle value={metricLogro} onChange={setMetricLogro} roleLabels={dashboardComputed.roleLabels} />
                                                         )}
                                                     </div>
                                                     <GraficoLogroPorCurso
                                                         data={dashboardComputed.estudiantes}
                                                         cursos={dashboardComputed.cursos}
                                                         metric={dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 ? metricLogro : (dashboardComputed.activeRoles?.logro_1 ? "logro" : "simce")}
+                                                        roleLabels={dashboardComputed.roleLabels}
                                                     />
                                                 </div>
                                             )}
@@ -318,13 +322,14 @@ export default function Results() {
                                                     <div className="flex items-center justify-between mb-4">
                                                         <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Distribución por Curso</h3>
                                                         {dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 && (
-                                                            <MetricToggle value={metricBoxplot} onChange={setMetricBoxplot} />
+                                                            <MetricToggle value={metricBoxplot} onChange={setMetricBoxplot} roleLabels={dashboardComputed.roleLabels} />
                                                         )}
                                                     </div>
                                                     <GraficoBoxplotPorCurso
                                                         data={dashboardComputed.estudiantes}
                                                         cursos={dashboardComputed.cursos}
                                                         metric={dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 ? metricBoxplot : (dashboardComputed.activeRoles?.logro_1 ? "logro" : "simce")}
+                                                        roleLabels={dashboardComputed.roleLabels}
                                                     />
                                                 </div>
                                             )}
@@ -333,7 +338,10 @@ export default function Results() {
                                             {dashboardComputed.activeRoles?.nivel_de_logro && dashboardComputed.estudiantes.some(e => e._logro) && (
                                                 <div>
                                                     <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Distribución de Niveles de Logro</h3>
-                                                    <GraficoDistribucionNiveles data={dashboardComputed.estudiantes} />
+                                                    <GraficoDistribucionNiveles 
+                                                        data={dashboardComputed.estudiantes} 
+                                                        achievement_levels={dashboardComputed.achievement_levels} 
+                                                    />
                                                 </div>
                                             )}
 
@@ -344,6 +352,7 @@ export default function Results() {
                                                     <GraficoNivelesPorCurso
                                                         data={dashboardComputed.estudiantes}
                                                         cursos={dashboardComputed.cursos}
+                                                        achievement_levels={dashboardComputed.achievement_levels}
                                                     />
                                                 </div>
                                             )}
@@ -373,7 +382,7 @@ export default function Results() {
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Habilidad</h3>
                                             <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-                                                <GraficoHabilidades data={datosCurso.preguntas} />
+                                                <GraficoHabilidades data={datosCurso.preguntas} roleLabels={dashboardComputed.roleLabels} />
                                             </div>
                                         </div>
                                     )}
@@ -382,7 +391,7 @@ export default function Results() {
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Estudiante</h3>
                                             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                                                <TablaAlumnos data={datosCurso.estudiantes} />
+                                                <TablaAlumnos data={datosCurso.estudiantes} roleLabels={dashboardComputed.roleLabels} activeRoles={dashboardComputed.activeRoles} />
                                             </div>
                                         </div>
                                     )}
@@ -391,7 +400,7 @@ export default function Results() {
                                         <div>
                                             <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Pregunta</h3>
                                             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                                                <TablaPreguntas data={datosCurso.preguntas} />
+                                                <TablaPreguntas data={datosCurso.preguntas} roleLabels={dashboardComputed.roleLabels} />
                                             </div>
                                         </div>
                                     )}

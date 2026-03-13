@@ -1,7 +1,8 @@
 import React from 'react';
 import { pct } from './constants';
 
-export default function TablaPreguntas({ data }) {
+export default function TablaPreguntas({ data, roleLabels={} }) {
+    const l1 = roleLabels.logro_1 || "Logro %";
     const preguntas = [...data].sort((a, b) => (b._logro_pregunta || 0) - (a._logro_pregunta || 0));
     if (!preguntas.length) return <p className="text-slate-400 text-sm p-4">Sin datos de preguntas</p>;
 
@@ -10,7 +11,7 @@ export default function TablaPreguntas({ data }) {
             <table className="w-full text-left border-collapse text-sm">
                 <thead>
                     <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                        {["N°", "Habilidad", "Logro %", "Correcta"].map(h => (
+                        {["N°", "Habilidad", l1, "Correcta"].map(h => (
                             <th key={h} className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest">{h}</th>
                         ))}
                     </tr>

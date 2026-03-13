@@ -4,12 +4,19 @@ import {
 } from 'recharts';
 import { LOGRO_COLORS } from './constants';
 
-export default function GraficoDistribucionNiveles({ data }) {
-    const conteo = [
-        { name: "Adecuado", value: data.filter(r => r._logro === "Adecuado").length, fill: LOGRO_COLORS.Adecuado },
-        { name: "Elemental", value: data.filter(r => r._logro === "Elemental").length, fill: LOGRO_COLORS.Elemental },
-        { name: "Insuficiente", value: data.filter(r => r._logro === "Insuficiente").length, fill: LOGRO_COLORS.Insuficiente },
-    ].filter(d => d.value > 0);
+export default function GraficoDistribucionNiveles({ data, achievement_levels=[] }) {
+    const levelsToUse = achievement_levels && achievement_levels.length > 0 
+        ? achievement_levels 
+        : ["Adecuado", "Elemental", "Insuficiente"];
+
+    const conteo = levelsToUse.map((level, i) => {
+        const hue = Math.round((i / Math.max(1, levelsToUse.length - 1)) * 120);
+        return {
+            name: level,
+            value: data.filter(r => r._logro === level).length,
+            fill: achievement_levels && achievement_levels.length > 0 ? `hsl(${hue}, 70%, 50%)` : LOGRO_COLORS[level]
+        };
+    }).filter(d => d.value > 0);
 
     if (!conteo.length) return null;
 

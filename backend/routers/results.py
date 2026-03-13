@@ -190,13 +190,35 @@ async def get_indicator_data(indicator_id: int, filters: Optional[str] = Query(N
             elif isinstance(tc, dict):
                 temporal_config = tc
 
+        # 11. Obtener role_labels del indicador
+        role_labels = {}
+        if not ind_row.empty:
+            rl = ind_row.iloc[0].get('role_labels')
+            if isinstance(rl, str) and rl:
+                 try: role_labels = json.loads(rl)
+                 except: pass
+            elif isinstance(rl, dict):
+                 role_labels = rl
+
+        # 12. Obtener achievement_levels del indicador
+        achievement_levels = []
+        if not ind_row.empty:
+            al = ind_row.iloc[0].get('achievement_levels')
+            if isinstance(al, str) and al:
+                 try: achievement_levels = json.loads(al)
+                 except: pass
+            elif isinstance(al, list):
+                 achievement_levels = al
+
         return {
             "metrics": metrics_info,
             "dimensions": dims_map,
             "data": data_by_metric,
             "column_roles": column_roles,
+            "role_labels": role_labels,
             "filter_dimensions": filter_dimensions,
             "temporal_config": temporal_config,
+            "achievement_levels": achievement_levels
         }
 
     except Exception as e:

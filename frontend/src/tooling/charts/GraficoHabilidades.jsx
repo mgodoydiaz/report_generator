@@ -5,7 +5,7 @@ import {
 } from 'recharts';
 import { pct, avg } from './constants';
 
-export default function GraficoHabilidades({ data }) {
+export default function GraficoHabilidades({ data, roleLabels={} }) {
     if (!data.length) return <p className="text-slate-400 text-sm">Sin datos de habilidades</p>;
     const habilidades = [...new Set(data.map(r => r._habilidad).filter(Boolean))];
     const chartData = habilidades.map(h => ({
@@ -18,7 +18,7 @@ export default function GraficoHabilidades({ data }) {
                 <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f0f0f0" />
                 <XAxis type="number" tickFormatter={v => `${Math.round(v * 100)}%`} domain={[0, 1]} tick={{ fontSize: 12 }} />
                 <YAxis type="category" dataKey="habilidad" tick={{ fontSize: 12, fontWeight: 600 }} width={80} />
-                <Tooltip formatter={(v) => pct(v)} />
+                <Tooltip formatter={(v) => [pct(v), roleLabels.logro_1 || "Logro"]} />
                 <Bar dataKey="logro" fill="#4361ee" radius={[0, 6, 6, 0]}
                     label={{ position: "right", formatter: pct, fontSize: 12, fontWeight: 700 }} />
             </BarChart>
