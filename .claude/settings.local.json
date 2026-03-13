@@ -9,7 +9,8 @@
       "Bash(ls -la /home/miguel/Documentos/Proyectos/report_generator/*.md)",
       "Bash(npm install recharts)",
       "Bash(npx vite build)",
-      "Bash(python -c \"import py_compile; py_compile.compile\\(''routers/results.py'', doraise=True\\); print\\(''PYTHON OK''\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\(''routers/results.py'', doraise=True\\); print\\(''PYTHON OK''\\)\")",
+      "Bash(npm run:*)"
     ]
   }
 }

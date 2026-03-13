@@ -1,22 +1,35 @@
-import React, { useState, useEffect } from 'react';
-import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+
+const COLUMN_ROLES = [
+    { key: "logro_1", label: "Logro 1 (numérico)", description: "Porcentaje de logro / rendimiento (0-1)", multi: true },
+    { key: "logro_2", label: "Logro 2 (numérico)", description: "Puntaje secundario (ej. SIMCE)", multi: true },
+    { key: "nivel_de_logro", label: "Nivel de Logro", description: "Categoría textual (ej. Adecuado, Elemental)", multi: true },
+    { key: "habilidad", label: "Habilidad", description: "Habilidad evaluada", multi: true },
+    { key: "habilidad_2", label: "Habilidad 2 / Eje Temático", description: "Eje temático o habilidad secundaria", multi: true },
+    { key: "evaluacion_num", label: "N° Evaluación", description: "Columna para análisis temporal", multi: true },
+];
 
 export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData, onSave }) {
     const [formData, setFormData] = useState({
         name: '',
         description: '',
         type: 'Evaluación',
-        metric_ids: []
+        metric_ids: [],
+        column_roles: {},
+        filter_dimensions: []
     });
 
     const [availableMetrics, setAvailableMetrics] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [allDimensions, setAllDimensions] = useState([]);
 
     useEffect(() => {
         if (isOpen) {
             fetchMetrics();
+            fetchDimensions();
         }
     }, [isOpen]);
 
@@ -26,14 +39,18 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 name: initialData.name || '',
                 description: initialData.description || '',
                 type: initialData.type || 'Evaluación',
-                metric_ids: initialData.metric_ids || []
+                metric_ids: initialData.metric_ids || [],
+                column_roles: initialData.column_roles || {},
+                filter_dimensions: initialData.filter_dimensions || []
             });
         } else {
             setFormData({
                 name: '',
                 description: '',
                 type: 'Evaluación',
-                metric_ids: []
+                metric_ids: [],
+                column_roles: {},
+                filter_dimensions: []
             });
         }
     }, [initialData, isOpen]);
@@ -46,6 +63,108 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         } catch (error) {
             console.error("Error loading metrics:", error);
         }
+    };
+
+    const fetchDimensions = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/dimensions`);
+            const data = await res.json();
+            if (Array.isArray(data)) setAllDimensions(data);
+        } catch (error) {
+            console.error("Error loading dimensions:", error);
+        }
+    };
+
+    // Columnas disponibles agrupadas por métrica seleccionada
+    const columnsByMetric = useMemo(() => {
+        const result = {};
+        const selectedMetrics = availableMetrics.filter(m => formData.metric_ids?.includes(m.id_metric));
+
+        for (const metric of selectedMetrics) {
+            const cols = [];
+
+            // Fields del meta_json (para métricas tipo object)
+            let metaJson = metric.meta_json;
+            if (typeof metaJson === 'string') {
+                try { metaJson = JSON.parse(metaJson); } catch { metaJson = {}; }
+            }
+            if (metaJson?.fields) {
+                for (const f of metaJson.fields) {
+                    cols.push({ value: f.name, label: f.name, source: "campo" });
+                }
+            }
+
+            // Dimensiones asociadas a la métrica
+            const dimIds = metric.dimension_ids || [];
+            for (const dimId of dimIds) {
+                const dim = allDimensions.find(d => d.id_dimension === dimId);
+                if (dim) {
+                    cols.push({ value: dim.name, label: dim.name, source: "dimensión" });
+                }
+            }
+
+            if (cols.length > 0) {
+                result[metric.id_metric] = { name: metric.name, columns: cols };
+            }
+        }
+
+        return result;
+    }, [formData.metric_ids, availableMetrics, allDimensions]);
+
+    const selectedMetricsList = useMemo(() =>
+        availableMetrics.filter(m => formData.metric_ids?.includes(m.id_metric)),
+        [formData.metric_ids, availableMetrics]
+    );
+
+    // Dimensiones disponibles (unión de las dimensiones de las métricas seleccionadas)
+    const availableFilterDims = useMemo(() => {
+        const dimIds = new Set();
+        for (const metric of selectedMetricsList) {
+            for (const dimId of (metric.dimension_ids || [])) {
+                dimIds.add(dimId);
+            }
+        }
+        return allDimensions.filter(d => dimIds.has(d.id_dimension));
+    }, [selectedMetricsList, allDimensions]);
+
+    const handleToggleFilterDim = (dimId) => {
+        setFormData(prev => {
+            const current = prev.filter_dimensions || [];
+            if (current.includes(dimId)) {
+                return { ...prev, filter_dimensions: current.filter(id => id !== dimId) };
+            } else {
+                return { ...prev, filter_dimensions: [...current, dimId] };
+            }
+        });
+    };
+
+    // Role entries: each role value is an array of {metric_id, column}
+    const handleAddRoleEntry = (roleKey) => {
+        setFormData(prev => ({
+            ...prev,
+            column_roles: {
+                ...prev.column_roles,
+                [roleKey]: [...(prev.column_roles?.[roleKey] || []), { metric_id: "", column: "" }]
+            }
+        }));
+    };
+
+    const handleUpdateRoleEntry = (roleKey, index, field, value) => {
+        setFormData(prev => {
+            const entries = [...(prev.column_roles?.[roleKey] || [])];
+            entries[index] = { ...entries[index], [field]: field === "metric_id" ? (value ? parseInt(value) : "") : value };
+            // Reset column when metric changes
+            if (field === "metric_id") entries[index].column = "";
+            return { ...prev, column_roles: { ...prev.column_roles, [roleKey]: entries } };
+        });
+    };
+
+    const handleRemoveRoleEntry = (roleKey, index) => {
+        setFormData(prev => {
+            const entries = [...(prev.column_roles?.[roleKey] || [])];
+            entries.splice(index, 1);
+            return { ...prev, column_roles: { ...prev.column_roles, [roleKey]: entries } };
+        });
     };
 
     const handleToggleMetric = (metricId) => {
@@ -82,7 +201,14 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(formData)
+                    body: JSON.stringify({
+                        ...formData,
+                        column_roles: Object.fromEntries(
+                            Object.entries(formData.column_roles || {})
+                                .map(([k, v]) => [k, Array.isArray(v) ? v.filter(e => e.metric_id && e.column) : v])
+                                .filter(([, v]) => Array.isArray(v) ? v.length > 0 : !!v)
+                        )
+                    })
                 });
 
                 if (!response.ok && response.status === 404) {
@@ -98,7 +224,11 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
             }
 
             toast.success(isEditing ? "Indicador actualizado" : "Indicador creado");
-            onSave(result.data);
+            const savedData = result.data || {
+                ...formData,
+                id_indicator: isEditing ? initialData.id_indicator : Date.now(),
+            };
+            onSave(savedData);
             onClose();
         } catch (error) {
             toast.error(error.message);
@@ -226,6 +356,121 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                 Selecciona qué métricas componen a este indicador.
                             </p>
                         </div>
+
+                        {/* Column Roles */}
+                        {formData.metric_ids?.length > 0 && Object.keys(columnsByMetric).length > 0 && (
+                            <div>
+                                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                                    <Settings2 size={16} />
+                                    Roles de Columna
+                                </label>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Asigna qué columna de cada métrica cumple cada rol. Puedes agregar múltiples métricas por rol.
+                                </p>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-5">
+                                    {COLUMN_ROLES.map(role => {
+                                        const entries = formData.column_roles?.[role.key] || [];
+                                        return (
+                                            <div key={role.key}>
+                                                <div className="flex items-start justify-between mb-2">
+                                                    <div>
+                                                        <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{role.label}</span>
+                                                        <p className="text-[10px] text-slate-400 leading-tight">{role.description}</p>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleAddRoleEntry(role.key)}
+                                                        className="flex items-center gap-1 text-xs font-bold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 px-2 py-1 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors shrink-0"
+                                                    >
+                                                        <Plus size={14} /> Agregar
+                                                    </button>
+                                                </div>
+                                                {entries.length === 0 && (
+                                                    <p className="text-xs text-slate-300 dark:text-slate-600 italic pl-1">Sin asignar</p>
+                                                )}
+                                                <div className="space-y-2">
+                                                    {entries.map((entry, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2">
+                                                            <select
+                                                                value={entry.metric_id || ""}
+                                                                onChange={(e) => handleUpdateRoleEntry(role.key, idx, "metric_id", e.target.value)}
+                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                                                            >
+                                                                <option value="">Métrica...</option>
+                                                                {selectedMetricsList.map(m => (
+                                                                    <option key={m.id_metric} value={m.id_metric}>{m.name}</option>
+                                                                ))}
+                                                            </select>
+                                                            <span className="text-slate-300 text-xs">→</span>
+                                                            <select
+                                                                value={entry.column || ""}
+                                                                onChange={(e) => handleUpdateRoleEntry(role.key, idx, "column", e.target.value)}
+                                                                disabled={!entry.metric_id}
+                                                                className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all disabled:opacity-40"
+                                                            >
+                                                                <option value="">Columna...</option>
+                                                                {(columnsByMetric[entry.metric_id]?.columns || []).map(col => (
+                                                                    <option key={col.value} value={col.value}>
+                                                                        {col.label} ({col.source})
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRemoveRoleEntry(role.key, idx)}
+                                                                className="p-1.5 text-slate-300 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20 transition-colors shrink-0"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Filter Dimensions */}
+                        {formData.metric_ids?.length > 0 && availableFilterDims.length > 0 && (
+                            <div>
+                                <label className="flex items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">
+                                    <Filter size={16} />
+                                    Filtros del Dashboard
+                                </label>
+                                <p className="text-xs text-slate-400 mb-4">
+                                    Selecciona qué dimensiones aparecerán como filtros desplegables en la página de Resultados.
+                                </p>
+                                <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800">
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {availableFilterDims.map(dim => {
+                                            const isSelected = (formData.filter_dimensions || []).includes(dim.id_dimension);
+                                            return (
+                                                <div
+                                                    key={dim.id_dimension}
+                                                    onClick={() => handleToggleFilterDim(dim.id_dimension)}
+                                                    className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all border ${isSelected
+                                                        ? 'bg-white dark:bg-slate-800 border-indigo-500 shadow-sm'
+                                                        : 'border-transparent hover:bg-slate-100 dark:hover:bg-slate-800'
+                                                    }`}
+                                                >
+                                                    <div className={`transition-colors shrink-0 ${isSelected ? 'text-indigo-600' : 'text-slate-300'}`}>
+                                                        {isSelected ? <CheckSquare size={18} /> : <Square size={18} />}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`font-bold text-sm ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-400'}`}>
+                                                            {dim.name}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-400">{dim.data_type} · ID {dim.id_dimension}</p>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Footer Buttons */}
                         <div className="pt-6 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-3">

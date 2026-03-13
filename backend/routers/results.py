@@ -152,10 +152,38 @@ async def get_indicator_data(indicator_id: int, filters: Optional[str] = Query(N
                     except:
                         pass
 
+        # 8. Obtener column_roles del indicador
+        df_indicators = get_df(INDICATORS_DB_PATH)
+        column_roles = {}
+        ind_row = df_indicators[df_indicators['id_indicator'] == indicator_id]
+        if not ind_row.empty:
+            cr = ind_row.iloc[0].get('column_roles')
+            if isinstance(cr, str) and cr:
+                try:
+                    column_roles = json.loads(cr)
+                except:
+                    pass
+            elif isinstance(cr, dict):
+                column_roles = cr
+
+        # 9. Obtener filter_dimensions del indicador
+        filter_dimensions = []
+        if not ind_row.empty:
+            fd = ind_row.iloc[0].get('filter_dimensions')
+            if isinstance(fd, str) and fd:
+                try:
+                    filter_dimensions = json.loads(fd)
+                except:
+                    pass
+            elif isinstance(fd, list):
+                filter_dimensions = fd
+
         return {
             "metrics": metrics_info,
             "dimensions": dims_map,
             "data": data_by_metric,
+            "column_roles": column_roles,
+            "filter_dimensions": filter_dimensions,
         }
 
     except Exception as e:
