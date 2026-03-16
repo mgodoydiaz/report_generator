@@ -12,6 +12,7 @@ import {
   Notebook,     // Templates
   Workflow,     // Pipelines
   Microscope,   // Indicators
+  SquareFunction, // Functions
   CircleHelp,   // Help
   Sun,          // Light mode
   Moon          // Dark mode
@@ -70,6 +71,10 @@ export default function Sidebar() {
         <NavLink to="/indicators" className={linkClass}>
           <Microscope size={18} />
           Indicadores
+        </NavLink>
+        <NavLink to="/functions" className={linkClass}>
+          <SquareFunction size={18} />
+          Funciones
         </NavLink>
         <NavLink to="/specs" className={linkClass}>
           <Notebook size={18} />
