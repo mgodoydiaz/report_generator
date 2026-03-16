@@ -207,6 +207,20 @@ async def add_metric_data_point(metric_id: int, point: MetricDataPoint):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/{metric_id}/clear")
+async def clear_metric_data(metric_id: int):
+    try:
+        df = get_df(METRIC_DATA_DB_PATH)
+        initial_len = len(df)
+        df_filtered = df[df['id_metric'] != metric_id]
+        
+        if len(df_filtered) < initial_len:
+            save_df(df_filtered, METRIC_DATA_DB_PATH)
+            
+        return {"status": "success", "cleared_count": initial_len - len(df_filtered)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/data/{data_id}")
 async def delete_data_point(data_id: int):
     try:

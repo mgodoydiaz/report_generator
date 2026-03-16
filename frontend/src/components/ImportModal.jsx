@@ -115,7 +115,7 @@ export default function ImportModal({ isOpen, onClose, onImport, onDownloadTempl
 
                         {/* Dropzone */}
                         <div
-                            className={`border-2 border-dashed rounded-2xl p-8 flex flex-col items-center justify-center transition-all bg-slate-50 dark:bg-slate-800/50 ${isDragging
+                            className={`border-2 border-dashed rounded-2xl p-5 flex flex-col items-center justify-center transition-all bg-slate-50 dark:bg-slate-800/50 ${isDragging
                                     ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20 scale-[0.99]'
                                     : 'border-slate-300 dark:border-slate-700'
                                 }`}
@@ -124,11 +124,11 @@ export default function ImportModal({ isOpen, onClose, onImport, onDownloadTempl
                             onDragLeave={handleDragLeave}
                             onDrop={handleDrop}
                         >
-                            <div className="bg-white dark:bg-slate-800 p-4 rounded-full shadow-sm mb-4">
-                                <UploadCloud size={32} className="text-indigo-500" />
+                            <div className="bg-white dark:bg-slate-800 p-3 rounded-full shadow-sm mb-2">
+                                <UploadCloud size={24} className="text-indigo-500" />
                             </div>
-                            <h4 className="font-bold text-slate-700 dark:text-slate-200 text-lg">Arrastra tus archivos aquí</h4>
-                            <p className="text-slate-400 text-sm mt-2 mb-6 text-center max-w-xs">Soporta múltiples archivos Excel (.xlsx, .xls) o CSV.</p>
+                            <h4 className="font-bold text-slate-700 dark:text-slate-200 text-base">Arrastra tus archivos aquí</h4>
+                            <p className="text-slate-400 text-xs mt-1 mb-4 text-center max-w-xs">Excel (.xlsx, .xls) o CSV.</p>
 
                             <input
                                 type="file"
@@ -140,7 +140,7 @@ export default function ImportModal({ isOpen, onClose, onImport, onDownloadTempl
                             />
                             <label
                                 htmlFor="fileInput"
-                                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl cursor-pointer shadow-lg shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 text-sm"
+                                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl cursor-pointer shadow-md shadow-indigo-200 dark:shadow-indigo-900/30 transition-all active:scale-95 text-sm"
                             >
                                 Seleccionar Archivos
                             </label>

@@ -28,6 +28,7 @@ export default function Values() {
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isImportModalOpen, setIsImportModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+    const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
     useEffect(() => {
         loadInitialData();
@@ -180,6 +181,28 @@ export default function Values() {
             setIsDeleteModalOpen(false);
         } catch (error) {
             toast.error("Error eliminando: " + error.message);
+        }
+    };
+
+    const handleClearMetricClick = () => {
+        setIsClearModalOpen(true);
+    };
+
+    const confirmClearMetric = async () => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/clear`, {
+                method: 'POST'
+            });
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            toast.success("Métrica vaciada correctamente");
+            loadMetricData(selectedMetric.id_metric, 1);
+            setCurrentPage(1);
+            setSelectedIds(new Set());
+            setIsClearModalOpen(false);
+        } catch (error) {
+            toast.error("Error vaciando métrica: " + error.message);
         }
     };
 
@@ -360,28 +383,44 @@ export default function Values() {
                 ) : (
                     <>
                         {/* Toolbar */}
-                        <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-3">
-                            {/* Fila 1: Título + acciones */}
-                            <div className="flex justify-between items-center">
-                                <div>
-                                    <h1 className="text-xl font-bold text-slate-800 dark:text-white">
-                                        {selectedMetric.name}
-                                    </h1>
-                                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{selectedMetric.description}</p>
+                        <div className="p-6 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30 space-y-5">
+                            {/* Fila 1: Nombre de la Métrica */}
+                            <div>
+                                <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+                                    {selectedMetric.name}
+                                </h1>
+                                <p className="text-sm text-slate-400 mt-1 line-clamp-1 italic">{selectedMetric.description}</p>
+                            </div>
+
+                            {/* Fila 2: Filtros y Botones */}
+                            <div className="flex flex-wrap justify-between items-center gap-4">
+                                <div className="flex gap-2">
+                                    <button 
+                                        onClick={() => toast("Filtros próximamente", { icon: '🚧' })} 
+                                        className="flex items-center gap-2 px-4 py-2.5 text-slate-500 hover:text-indigo-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold transition-all"
+                                    >
+                                        <Filter size={18} /> Filtros
+                                    </button>
                                 </div>
-                                <div className="flex gap-2 items-center">
+
+                                <div className="flex flex-wrap gap-2 items-center">
                                     {selectedIds.size > 0 && (
                                         <button
                                             onClick={handleBatchDeleteClick}
-                                            className="flex items-center gap-2 px-3 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 border border-transparent rounded-xl text-sm font-bold transition-all animate-in zoom-in duration-200 mr-2"
+                                            className="flex items-center gap-2 px-4 py-2.5 text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/10 dark:text-red-400 border border-red-100 dark:border-red-900/20 rounded-xl text-sm font-bold transition-all animate-in zoom-in duration-200"
+                                            title="Eliminar solo los elementos marcados"
                                         >
-                                            <Trash2 size={16} /> Eliminar ({selectedIds.size})
+                                            <Trash2 size={16} /> Eliminar selección ({selectedIds.size})
                                         </button>
                                     )}
-                                    <button onClick={() => toast("Filtros próximamente", { icon: '🚧' })} className="p-2.5 text-slate-400 hover:text-indigo-600 hover:bg-white dark:hover:bg-slate-700 rounded-xl border border-transparent hover:border-slate-200 transition-all" title="Filtrar">
-                                        <Filter size={18} />
+                                    <button
+                                        onClick={handleClearMetricClick}
+                                        className="flex items-center gap-2 px-4 py-2.5 text-red-500 hover:text-white bg-white dark:bg-slate-900 hover:bg-red-500 dark:hover:bg-red-600 border border-red-200 dark:border-red-900/40 rounded-xl text-sm font-bold transition-all"
+                                        title="Eliminar TODOS los datos de esta métrica"
+                                    >
+                                        <Trash2 size={16} /> Vaciar Métrica
                                     </button>
-                                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                                    <div className="h-8 w-px bg-slate-200 dark:bg-slate-700 mx-1 hidden sm:block"></div>
                                     <button onClick={handleImportClick} className="flex items-center gap-2 px-4 py-2.5 text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl text-sm font-bold transition-all">
                                         <Upload size={16} /> Importar
                                     </button>
@@ -390,37 +429,40 @@ export default function Values() {
                                     </button>
                                     <button
                                         onClick={handleAddValue}
-                                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95 ml-2"
+                                        className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 dark:shadow-indigo-900/30 transition-all active:scale-95"
                                     >
                                         <Plus size={18} strokeWidth={3} /> Agregar Valor
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Fila 2: Paginación */}
-                            <div className="flex items-center justify-end gap-2">
-                                <span className="text-sm text-slate-400 select-none">
+                            {/* Fila 3: Indicador de valores y paginación */}
+                            <div className="flex items-center justify-end gap-4 pt-2 border-t border-slate-100 dark:border-slate-800/50">
+                                <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg">
+                                    <Database size={14} className="text-indigo-500" />
                                     {totalRecords === 0
                                         ? '0 registros'
                                         : `${rangeStart}–${rangeEnd} de ${totalRecords}`
                                     }
-                                </span>
-                                <button
-                                    onClick={goToPrevPage}
-                                    disabled={currentPage <= 1 || loadingData}
-                                    className="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
-                                    title="Página anterior"
-                                >
-                                    ‹
-                                </button>
-                                <button
-                                    onClick={goToNextPage}
-                                    disabled={currentPage >= totalPages || loadingData}
-                                    className="flex items-center justify-center w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-sm font-bold"
-                                    title="Página siguiente"
-                                >
-                                    ›
-                                </button>
+                                </div>
+                                <div className="flex gap-1">
+                                    <button
+                                        onClick={goToPrevPage}
+                                        disabled={currentPage <= 1 || loadingData}
+                                        className="flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-lg font-bold"
+                                        title="Página anterior"
+                                    >
+                                        ‹
+                                    </button>
+                                    <button
+                                        onClick={goToNextPage}
+                                        disabled={currentPage >= totalPages || loadingData}
+                                        className="flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition-all text-lg font-bold"
+                                        title="Página siguiente"
+                                    >
+                                        ›
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -583,9 +625,19 @@ export default function Values() {
                 isOpen={isDeleteModalOpen}
                 onClose={() => setIsDeleteModalOpen(false)}
                 onConfirm={confirmBatchDelete}
-                title="Eliminar datos seleccionados"
-                message={`¿Estás seguro de que deseas eliminar ${selectedIds.size} registros? Esta acción no se puede deshacer.`}
-                confirmText="Sí, Eliminar"
+                title="Eliminar selección"
+                message={`¿Estás seguro de que deseas eliminar los ${selectedIds.size} registros seleccionados?`}
+                confirmText="Sí, Eliminar selección"
+                isDestructive={true}
+            />
+
+            <ConfirmModal
+                isOpen={isClearModalOpen}
+                onClose={() => setIsClearModalOpen(false)}
+                onConfirm={confirmClearMetric}
+                title="Vaciar Métrica (Eliminación Total)"
+                message={`¿Estás seguro de que deseas eliminar TODOS los registros de "${selectedMetric?.name}"? Esta acción no se puede deshacer y borrará absolutamente todos los datos de esta métrica.`}
+                confirmText="Sí, Vaciar TODO"
                 isDestructive={true}
             />
         </div>
