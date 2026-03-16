@@ -30,15 +30,7 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-800 flex flex-col h-screen sticky top-0 shrink-0 transition-colors duration-300" aria-label="Menu principal">
-      <div className="p-6">
-        <h1 className="text-xl font-bold text-slate-900 dark:text-white flex items-center gap-2">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white text-xs">
-            <Activity size={18} strokeWidth={3} />
-          </div>
-          Menu
-        </h1>
-      </div>
-      <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-8 text-left">
+      <nav className="flex-1 px-4 pt-6 space-y-1 overflow-y-auto pb-8 text-left">
         <NavLink to="/" className={linkClass}>
           <House size={18} />
           Inicio

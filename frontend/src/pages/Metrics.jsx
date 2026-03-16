@@ -174,7 +174,7 @@ export default function Metrics() {
                     <table className="w-full text-left border-collapse">
                         <thead>
                             <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                                <th onClick={() => handleSort('name')} className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors">
+                                <th onClick={() => handleSort('name')} className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors w-1/3">
                                     <div className="flex items-center gap-2">Nombre <SortIcon columnKey="name" /></div>
                                 </th>
                                 <th onClick={() => handleSort('description')} className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors">
@@ -183,13 +183,12 @@ export default function Metrics() {
                                 <th onClick={() => handleSort('data_type')} className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest cursor-pointer hover:text-indigo-600 transition-colors">
                                     <div className="flex items-center gap-2">Tipo <SortIcon columnKey="data_type" /></div>
                                 </th>
-                                <th className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest">Dimensiones</th>
                                 <th className="p-5 font-bold text-slate-400 text-[11px] uppercase tracking-widest text-right">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {loading ? (
-                                <tr><td colSpan="5" className="p-12 text-center text-slate-400">Cargando...</td></tr>
+                                <tr><td colSpan="4" className="p-12 text-center text-slate-400">Cargando...</td></tr>
                             ) : sortedAndFilteredData.length > 0 ? (
                                 sortedAndFilteredData.map((m) => (
                                     <tr key={m.id_metric} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors group">
@@ -204,20 +203,6 @@ export default function Metrics() {
                                                 {getDataTypeLabel(m.data_type)}
                                             </span>
                                         </td>
-                                        <td className="p-5">
-                                            <div className="flex flex-wrap gap-1">
-                                                {m.dimension_ids && m.dimension_ids.length > 0 ? (
-                                                    m.dimension_ids.map(dimId => (
-                                                        <span key={dimId} className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 text-[10px] font-medium border border-slate-200 dark:border-slate-700 flex items-center gap-1">
-                                                            <Layers size={10} />
-                                                            {dimensionsMap[dimId] || dimId}
-                                                        </span>
-                                                    ))
-                                                ) : (
-                                                    <span className="text-slate-300 text-xs italic">Sin dimensiones</span>
-                                                )}
-                                            </div>
-                                        </td>
                                         <td className="p-5 text-right flex justify-end gap-1">
                                             <button onClick={() => handleEditMetric(m)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Editar">
                                                 <Settings size={18} />
@@ -229,7 +214,7 @@ export default function Metrics() {
                                     </tr>
                                 ))
                             ) : (
-                                <tr><td colSpan="5" className="p-12 text-center text-slate-400">No hay métricas registradas.</td></tr>
+                                <tr><td colSpan="4" className="p-12 text-center text-slate-400">No hay métricas registradas.</td></tr>
                             )}
                         </tbody>
                     </table>

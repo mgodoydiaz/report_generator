@@ -429,7 +429,7 @@ export default function Values() {
                             <table className="w-full text-left border-collapse">
                                 <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 z-10 shadow-sm">
                                     <tr>
-                                        <th className="p-4 w-10 border-b border-slate-200 dark:border-slate-700">
+                                        <th className="px-4 py-2 w-10 border-b border-slate-200 dark:border-slate-700">
                                             <input
                                                 type="checkbox"
                                                 className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
@@ -438,11 +438,11 @@ export default function Values() {
                                             />
                                         </th>
                                         {dynamicColumns.map(col => (
-                                            <th key={col.key} className="p-4 font-bold text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
+                                            <th key={col.key} className="px-4 py-2 font-bold text-slate-500 text-xs uppercase tracking-wider border-b border-slate-200 dark:border-slate-700">
                                                 {col.label}
                                             </th>
                                         ))}
-                                        <th className="p-4 w-20 border-b border-slate-200 dark:border-slate-700"></th>
+                                        <th className="px-4 py-2 w-20 border-b border-slate-200 dark:border-slate-700"></th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -461,7 +461,7 @@ export default function Values() {
                                     ) : (
                                         metricData.map(row => (
                                             <tr key={row.id_data} className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/50 group transition-colors ${selectedIds.has(row.id_data) ? 'bg-indigo-50/50 dark:bg-indigo-900/10' : ''}`}>
-                                                <td className="p-4 border-b border-slate-50 dark:border-slate-800/50">
+                                                <td className="px-4 py-1 border-b border-slate-50 dark:border-slate-800/50">
                                                     <input
                                                         type="checkbox"
                                                         className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
@@ -510,12 +510,14 @@ export default function Values() {
                                                     }
 
                                                     return (
-                                                        <td key={col.key} className="p-4 text-sm text-slate-600 dark:text-slate-400 border-b border-slate-50 dark:border-slate-800/50">
-                                                            {cellContent}
+                                                        <td key={col.key} className="px-4 py-1 text-sm text-slate-600 dark:text-slate-400 border-b border-slate-50 dark:border-slate-800/50">
+                                                            <div className="max-w-[150px] truncate" title={typeof cellContent === 'string' ? cellContent : ''}>
+                                                                {cellContent}
+                                                            </div>
                                                         </td>
                                                     );
                                                 })}
-                                                <td className="p-4 text-right border-b border-slate-50 dark:border-slate-800/50">
+                                                <td className="px-4 py-1 text-right border-b border-slate-50 dark:border-slate-800/50">
                                                     <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                         <button
                                                             onClick={() => handleEditValue(row)}
