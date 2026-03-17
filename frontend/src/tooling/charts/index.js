@@ -1,4 +1,4 @@
-export { LOGRO_COLORS, CURSO_COLORS, pct, avg } from './constants';
+export { LOGRO_COLORS, CURSO_COLORS, pct, avg, formatValue, formatDomain } from './constants';
 export { default as KPICard } from './KPICard';
 export { default as NivelBadge } from './NivelBadge';
 export { default as AvancePill } from './AvancePill';

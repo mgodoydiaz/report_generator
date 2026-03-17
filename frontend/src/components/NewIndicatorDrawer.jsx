@@ -20,6 +20,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         metric_ids: [],
         column_roles: {},
         role_labels: {},
+        role_formats: {},
         filter_dimensions: [],
         temporal_config: { levels: [] },
         achievement_levels: []
@@ -45,6 +46,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 metric_ids: initialData.metric_ids || [],
                 column_roles: initialData.column_roles || {},
                 role_labels: initialData.role_labels || {},
+                role_formats: initialData.role_formats || {},
                 filter_dimensions: initialData.filter_dimensions || [],
                 temporal_config: initialData.temporal_config || { levels: [] },
                 achievement_levels: initialData.achievement_levels || []
@@ -57,6 +59,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 metric_ids: [],
                 column_roles: {},
                 role_labels: {},
+                role_formats: {},
                 filter_dimensions: [],
                 temporal_config: { levels: [] },
                 achievement_levels: []
@@ -617,16 +620,47 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                             <div key={role.key}>
                                                 <div className="flex items-start justify-between mb-2 gap-4">
                                                     <div className="flex-1">
-                                                        <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-2 flex-wrap">
                                                             <span className="text-sm font-semibold text-slate-600 dark:text-slate-300">{role.label}</span>
                                                             {["logro_1", "logro_2"].includes(role.key) && (
-                                                                <input
-                                                                    type="text"
-                                                                    value={formData.role_labels?.[role.key] || ""}
-                                                                    onChange={(e) => setFormData(prev => ({ ...prev, role_labels: { ...prev.role_labels, [role.key]: e.target.value } }))}
-                                                                    placeholder={`Ej: ${role.key === 'logro_1' ? 'Logro' : 'Puntaje'}`}
-                                                                    className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 w-32 outline-none"
-                                                                />
+                                                                <>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={formData.role_labels?.[role.key] || ""}
+                                                                        onChange={(e) => setFormData(prev => ({ ...prev, role_labels: { ...prev.role_labels, [role.key]: e.target.value } }))}
+                                                                        placeholder={`Ej: ${role.key === 'logro_1' ? 'Logro' : 'Puntaje'}`}
+                                                                        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 w-28 outline-none"
+                                                                        title="Etiqueta personalizada"
+                                                                    />
+                                                                    <select
+                                                                        value={(formData.role_formats?.[role.key] || '%.0').split('.')[0]}
+                                                                        onChange={(e) => {
+                                                                            const decimals = (formData.role_formats?.[role.key] || '%.0').split('.')[1] ?? '0';
+                                                                            setFormData(prev => ({ ...prev, role_formats: { ...prev.role_formats, [role.key]: `${e.target.value}.${decimals}` } }));
+                                                                        }}
+                                                                        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                                        title="Tipo de formato"
+                                                                    >
+                                                                        <option value="%">% Porcentaje</option>
+                                                                        <option value="#"># Número</option>
+                                                                        <option value="T">T Texto</option>
+                                                                    </select>
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        max="6"
+                                                                        value={(formData.role_formats?.[role.key] || '%.0').split('.')[1] ?? '0'}
+                                                                        onChange={(e) => {
+                                                                            const fType = (formData.role_formats?.[role.key] || '%.0').split('.')[0];
+                                                                            setFormData(prev => ({ ...prev, role_formats: { ...prev.role_formats, [role.key]: `${fType}.${e.target.value}` } }));
+                                                                        }}
+                                                                        className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-xs w-14 text-slate-700 dark:text-slate-200 focus:ring-1 focus:ring-indigo-500 outline-none"
+                                                                        title="Decimales"
+                                                                    />
+                                                                    <span className="text-[10px] text-slate-400 font-mono bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                                        {formData.role_formats?.[role.key] || '%.0'}
+                                                                    </span>
+                                                                </>
                                                             )}
                                                         </div>
                                                         <p className="text-[10px] text-slate-400 leading-tight mt-1">{role.description}</p>

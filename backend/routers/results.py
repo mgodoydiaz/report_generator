@@ -200,6 +200,16 @@ async def get_indicator_data(indicator_id: int, filters: Optional[str] = Query(N
             elif isinstance(rl, dict):
                  role_labels = rl
 
+        # 11b. Obtener role_formats del indicador
+        role_formats = {}
+        if not ind_row.empty:
+            rf = ind_row.iloc[0].get('role_formats')
+            if isinstance(rf, str) and rf:
+                try: role_formats = json.loads(rf)
+                except: pass
+            elif isinstance(rf, dict):
+                role_formats = rf
+
         # 12. Obtener achievement_levels del indicador
         achievement_levels = []
         if not ind_row.empty:
@@ -216,6 +226,7 @@ async def get_indicator_data(indicator_id: int, filters: Optional[str] = Query(N
             "data": data_by_metric,
             "column_roles": column_roles,
             "role_labels": role_labels,
+            "role_formats": role_formats,
             "filter_dimensions": filter_dimensions,
             "temporal_config": temporal_config,
             "achievement_levels": achievement_levels

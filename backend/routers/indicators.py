@@ -16,6 +16,7 @@ class IndicatorBase(BaseModel):
     type: str = "Evaluación" # Evaluación, Estudio, Alerta
     column_roles: Optional[Dict[str, Any]] = None  # {"logro_1": [{"metric_id": 1, "column": "Rend"}], ...}
     role_labels: Optional[Dict[str, str]] = None # Custom names for columns, e.g., {"logro_1": "Logro"}
+    role_formats: Optional[Dict[str, str]] = None # Display format per role, e.g., {"logro_1": "%.0", "logro_2": "#.0"}
     filter_dimensions: Optional[List[int]] = None  # IDs de dimensiones que aparecen como filtros en Results
     temporal_config: Optional[Dict[str, Any]] = None
     achievement_levels: Optional[List[str]] = None
@@ -74,6 +75,14 @@ async def get_indicators():
             elif not isinstance(rl, dict):
                 indicator['role_labels'] = {}
 
+            # Parse role_formats JSON
+            rf = indicator.get('role_formats')
+            if isinstance(rf, str) and rf:
+                try: indicator['role_formats'] = json.loads(rf)
+                except: indicator['role_formats'] = {}
+            elif not isinstance(rf, dict):
+                indicator['role_formats'] = {}
+
             # Parse temporal_config JSON
             tc = indicator.get('temporal_config')
             if isinstance(tc, str) and tc:
@@ -123,6 +132,7 @@ async def create_indicator(indicator: IndicatorCreate):
             "type": indicator.type,
             "column_roles": json.dumps(indicator.column_roles or {}, ensure_ascii=False),
             "role_labels": json.dumps(indicator.role_labels or {}, ensure_ascii=False),
+            "role_formats": json.dumps(indicator.role_formats or {}, ensure_ascii=False),
             "filter_dimensions": json.dumps(indicator.filter_dimensions or [], ensure_ascii=False),
             "temporal_config": json.dumps(indicator.temporal_config or {}, ensure_ascii=False),
             "achievement_levels": json.dumps(indicator.achievement_levels or [], ensure_ascii=False),
@@ -164,6 +174,8 @@ async def update_indicator(indicator_id: int, indicator: IndicatorUpdate):
             df.at[idx, 'column_roles'] = json.dumps(indicator.column_roles, ensure_ascii=False)
         if indicator.role_labels is not None:
             df.at[idx, 'role_labels'] = json.dumps(indicator.role_labels, ensure_ascii=False)
+        if indicator.role_formats is not None:
+            df.at[idx, 'role_formats'] = json.dumps(indicator.role_formats, ensure_ascii=False)
         if indicator.filter_dimensions is not None:
             df.at[idx, 'filter_dimensions'] = json.dumps(indicator.filter_dimensions, ensure_ascii=False)
         if indicator.temporal_config is not None:

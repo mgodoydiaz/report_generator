@@ -3,16 +3,17 @@ import {
     RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
     Legend, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { CURSO_COLORS, pct, avg } from './constants';
+import { CURSO_COLORS, avg, formatValue, formatDomain } from './constants';
 
-export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {} }) {
+export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {}, roleFormats = {}, dimension = 'habilidad' }) {
     if (!data || !data.length) {
         return <p className="text-slate-400 text-sm">Sin datos de habilidades</p>;
     }
 
-    const habilidades = [...new Set(data.map(r => r._habilidad).filter(Boolean))];
+    const field = dimension === 'habilidad_2' ? '_habilidad_2' : '_habilidad';
+    const habilidades = [...new Set(data.map(r => r[field]).filter(Boolean))];
     if (!habilidades.length) {
-        return <p className="text-slate-400 text-sm">Sin datos de habilidades</p>;
+        return <p className="text-slate-400 text-sm">Sin datos para la dimensión seleccionada</p>;
     }
 
     const cursoList = cursos && cursos.length
@@ -28,17 +29,19 @@ export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {} 
         };
         if (showByCurso) {
             cursoList.forEach(curso => {
-                const subset = data.filter(r => r._habilidad === h && r._curso === curso);
+                const subset = data.filter(r => r[field] === h && r._curso === curso);
                 entry[curso] = subset.length ? avg(subset, '_logro_pregunta') : 0;
             });
         } else {
-            const subset = data.filter(r => r._habilidad === h);
+            const subset = data.filter(r => r[field] === h);
             entry['Logro'] = subset.length ? avg(subset, '_logro_pregunta') : 0;
         }
         return entry;
     });
 
     const dataKeys = showByCurso ? cursoList : ['Logro'];
+    const fmtStr = roleFormats.logro_1;
+    const fmt = (v) => formatValue(v, fmtStr);
 
     return (
         <ResponsiveContainer width="100%" height={300}>
@@ -50,11 +53,11 @@ export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {} 
                 />
                 <PolarRadiusAxis
                     angle={90}
-                    domain={[0, 1]}
-                    tickFormatter={pct}
+                    domain={formatDomain(fmtStr)}
+                    tickFormatter={fmt}
                     tick={{ fontSize: 10, fill: '#94a3b8' }}
                 />
-                <Tooltip formatter={(value, name) => [pct(value), name]} />
+                <Tooltip formatter={(value, name) => [fmt(value), name]} />
                 {dataKeys.length > 1 && (
                     <Legend iconType="circle" wrapperStyle={{ fontSize: 13 }} />
                 )}

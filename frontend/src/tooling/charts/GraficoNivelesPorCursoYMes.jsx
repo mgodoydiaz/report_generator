@@ -6,7 +6,7 @@ import {
 import { LOGRO_COLORS } from './constants';
 
 
-export default function GraficoNivelesPorCursoYMes({ data, cursos, achievement_levels = [] }) {
+export default function GraficoNivelesPorCursoYMes({ data, cursos, achievement_levels = [], temporalConfig = null }) {
     const levelsToUse = achievement_levels?.length > 0
         ? achievement_levels
         : ['Insuficiente', 'Elemental', 'Adecuado'];
@@ -20,6 +20,8 @@ export default function GraficoNivelesPorCursoYMes({ data, cursos, achievement_l
     const pairs = [];
     const cursoStartIndices = {};  // curso → índice de inicio en pairs[]
 
+    const useTemporalLabel = temporalConfig?.levels?.length > 1;
+
     cursoList.forEach(curso => {
         const cursoDatos = data.filter(r => r._curso === curso);
         const evals = [...new Set(cursoDatos.map(r => r._evaluacion_num).filter(v => v != null))].sort((a, b) => a - b);
@@ -29,9 +31,14 @@ export default function GraficoNivelesPorCursoYMes({ data, cursos, achievement_l
 
         evalList.forEach((ev, evIdx) => {
             const alumnos = cursoDatos.filter(r => r._evaluacion_num === ev);
+            // Etiqueta: "2024 / AGOSTO" si hay config temporal, si no el número de evaluación
+            const temporalRow = alumnos.find(r => r._temporal_label);
+            const evLabel = (useTemporalLabel && temporalRow?._temporal_label)
+                ? temporalRow._temporal_label
+                : String(ev);
             const entry = {
                 _key: `${curso}__${ev}`,   // clave única para XAxis
-                _ev: String(ev),
+                _ev: evLabel,
                 _curso: curso,
             };
             levelsToUse.forEach(level => {

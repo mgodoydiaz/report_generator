@@ -10,7 +10,8 @@ function buildRoleMap(columnRoles) {
         if (!Array.isArray(entries)) continue;
         roleMap[role] = {};
         for (const e of entries) {
-            if (e.metric_id && e.column) {
+            // First-wins: si ya hay una columna para este metric_id, no sobreescribir.
+            if (e.metric_id && e.column && !(e.metric_id in roleMap[role])) {
                 roleMap[role][e.metric_id] = e.column;
             }
         }
@@ -43,14 +44,63 @@ function resolveRoleValue(role, metricId, roleMap, val, djson, dimsMap) {
 }
 
 /**
+ * Ordena etiquetas temporales según los niveles del temporal_config.
+ * Soporta sort_mode: "numeric", "custom" (con order[]), o alfabético.
+ */
+function sortTemporalLabels(labels, temporalConfig) {
+    const levels = temporalConfig.levels;
+    return [...labels].sort((a, b) => {
+        const aParts = a.split(' / ');
+        const bParts = b.split(' / ');
+        for (let i = 0; i < levels.length; i++) {
+            const level = levels[i];
+            const aVal = aParts[i] ?? '';
+            const bVal = bParts[i] ?? '';
+            let cmp = 0;
+            if (level.sort_mode === 'numeric') {
+                cmp = (parseFloat(aVal) || 0) - (parseFloat(bVal) || 0);
+            } else if (level.sort_mode === 'custom' && level.order?.length) {
+                const aI = level.order.indexOf(aVal);
+                const bI = level.order.indexOf(bVal);
+                cmp = (aI === -1 ? Infinity : aI) - (bI === -1 ? Infinity : bI);
+            } else {
+                cmp = aVal.localeCompare(bVal);
+            }
+            if (cmp !== 0) return cmp;
+        }
+        return 0;
+    });
+}
+
+/**
+ * Construye la etiqueta temporal de una fila concatenando las dimensiones del temporal_config.
+ * Ej. temporal_config con niveles [Año, Mes] + djson {4:"2024", 9:"AGOSTO"} → "2024 / AGOSTO"
+ * Si solo hay un nivel, retorna el valor directamente sin separador.
+ */
+function buildTemporalLabel(djson, dimsMap, temporalConfig) {
+    if (!temporalConfig?.levels?.length) return undefined;
+    const parts = [];
+    for (const level of temporalConfig.levels) {
+        // Buscar la dimensión cuyo nombre coincida con el label del nivel
+        const dimId = Object.keys(dimsMap).find(k =>
+            dimsMap[k].name.toLowerCase() === level.label.toLowerCase()
+        );
+        if (dimId && djson[dimId] != null) {
+            parts.push(String(djson[dimId]));
+        }
+    }
+    return parts.length ? parts.join(' / ') : undefined;
+}
+
+/**
  * Procesa los datos crudos del backend al formato que consume el dashboard.
  * Usa column_roles del indicador para mapear campos explícitamente.
  *
- * @param {Object} result - { metrics, dimensions, data, column_roles } del endpoint /results/indicator/:id/data
+ * @param {Object} result - { metrics, dimensions, data, column_roles, temporal_config } del endpoint /results/indicator/:id/data
  * @returns {{ estudiantes: Array, preguntas: Array, cursos: string[], dimsMap: Object, activeRoles: Object }}
  */
 export function processDataForDashboard(result) {
-    const { metrics, dimensions: dims, data, column_roles: columnRoles, role_labels: roleLabels } = result;
+    const { metrics, dimensions: dims, data, column_roles: columnRoles, role_labels: roleLabels, role_formats: roleFormats, temporal_config: temporalConfig } = result;
     const dimsMap = dims || {};
     const roleMap = buildRoleMap(columnRoles);
 
@@ -116,6 +166,10 @@ export function processDataForDashboard(result) {
             const evalNum = resolveRoleValue("evaluacion_num", mid, roleMap, val, djson, dimsMap);
             if (evalNum !== undefined) entry._evaluacion_num = evalNum;
 
+            // temporal_label → etiqueta concatenada desde temporal_config (ej. "2024 / AGOSTO")
+            const tempLabel = buildTemporalLabel(djson, dimsMap, temporalConfig);
+            if (tempLabel !== undefined) entry._temporal_label = tempLabel;
+
             // ── Bucketing logic ──
             if (hasPregunta) {
                 if (entry._rend !== undefined) entry._logro_pregunta = entry._rend;
@@ -130,15 +184,30 @@ export function processDataForDashboard(result) {
         }
     }
 
+    // Si hay temporal_config, reemplazar _evaluacion_num por el índice ordinal del _temporal_label
+    // ordenado según la config. Esto corrige el problema de que column_roles.evaluacion_num
+    // solo puede apuntar a una columna por metric_id (la última gana), ignorando las demás.
+    if (temporalConfig?.levels?.length > 0) {
+        const allEntries = [...estudiantes, ...preguntas];
+        const uniqueLabels = [...new Set(allEntries.map(e => e._temporal_label).filter(Boolean))];
+        const sortedLabels = sortTemporalLabels(uniqueLabels, temporalConfig);
+        const labelToNum = Object.fromEntries(sortedLabels.map((lbl, i) => [lbl, i + 1]));
+        for (const e of allEntries) {
+            if (e._temporal_label) e._evaluacion_num = labelToNum[e._temporal_label];
+        }
+    }
+
     const cursos = [...new Set(estudiantes.map(e => e._curso).filter(Boolean))].sort();
-    return { 
-        estudiantes, 
-        preguntas, 
-        cursos, 
-        dimsMap, 
-        activeRoles, 
+    return {
+        estudiantes,
+        preguntas,
+        cursos,
+        dimsMap,
+        activeRoles,
         roleLabels: roleLabels || {},
-        achievement_levels: result.achievement_levels || []
+        roleFormats: roleFormats || {},
+        achievement_levels: result.achievement_levels || [],
+        temporalConfig: temporalConfig || null,
     };
 }
 
@@ -148,7 +217,7 @@ export function processDataForDashboard(result) {
  */
 export function computeDashboardKPIs(dashboardData) {
     if (!dashboardData) return null;
-    const { estudiantes, preguntas, cursos, activeRoles, roleLabels } = dashboardData;
+    const { estudiantes, preguntas, cursos, activeRoles, roleLabels, roleFormats, temporalConfig } = dashboardData;
 
     // Contar alumnos únicos por nombre (si existe) para evitar duplicados en desgloses
     const studentNames = estudiantes.map(e => e._nombre).filter(Boolean);
@@ -167,6 +236,9 @@ export function computeDashboardKPIs(dashboardData) {
 
     return {
         totalAlumnos, logroPromedio, simcePromedio, nivelPredominante,
-        cursos, estudiantes, preguntas, activeRoles, roleLabels, achievement_levels: dashboardData.achievement_levels || []
+        cursos, estudiantes, preguntas, activeRoles, roleLabels,
+        roleFormats: roleFormats || {},
+        achievement_levels: dashboardData.achievement_levels || [],
+        temporalConfig: temporalConfig || null,
     };
 }

@@ -6,16 +6,24 @@ import { DEFAULT_LAYOUT } from '../tooling/dashboardRenderer';
 
 // ── Catálogo de componentes disponibles ──────────────────────────────────────
 
+// Componentes que permiten elegir dimensión (habilidad vs habilidad_2) al agregar
+const DIMENSION_PICKER_IDS = new Set(['GraficoHabilidades', 'GraficoRadarHabilidades']);
+
+const DIMENSION_OPTIONS = [
+    { value: 'habilidad',   label: 'Habilidad',             requires: 'habilidad' },
+    { value: 'habilidad_2', label: 'Habilidad 2 / Eje Temático', requires: 'habilidad_2' },
+];
+
 const CHART_COMPONENTS = [
     { id: 'GraficoLogroPorCurso',       label: 'Logro Promedio por Curso',       type: 'chart',  requires: ['logro_1'] },
     { id: 'GraficoBoxplotPorCurso',     label: 'Distribución por Curso (Boxplot)', type: 'chart', requires: ['logro_1'] },
     { id: 'GraficoNivelesPorCurso',     label: 'Alumnos por Nivel por Curso',    type: 'chart',  requires: ['nivel_de_logro'] },
-    { id: 'GraficoHabilidades',         label: 'Logro por Habilidad',            type: 'chart',  requires: ['habilidad'] },
-    { id: 'GraficoDistribucionNiveles',         label: 'Distribución de Niveles (Pie)',       type: 'chart', requires: ['nivel_de_logro'] },
-    { id: 'GraficoNivelesPorCursoYMes',         label: 'Niveles por Curso y Evaluación',      type: 'chart', requires: ['nivel_de_logro', 'evaluacion_num'] },
+    { id: 'GraficoHabilidades',         label: 'Logro por Habilidad',            type: 'chart',  requires: ['habilidad'], dimensionPicker: true },
+    { id: 'GraficoDistribucionNiveles', label: 'Distribución de Niveles (Pie)',  type: 'chart',  requires: ['nivel_de_logro'] },
+    { id: 'GraficoNivelesPorCursoYMes',          label: 'Niveles por Curso y Evaluación',        type: 'chart', requires: ['nivel_de_logro', 'evaluacion_num'] },
     { id: 'GraficoPromedioAgrupadoPorDimension', label: 'Logro Promedio por Curso y Evaluación', type: 'chart', requires: ['logro_1', 'evaluacion_num'] },
-    { id: 'GraficoTendenciaTemporal',            label: 'Tendencia Temporal por Curso',        type: 'chart', requires: ['logro_1', 'evaluacion_num'] },
-    { id: 'GraficoRadarHabilidades',             label: 'Radar de Habilidades',                type: 'chart', requires: ['habilidad'] },
+    { id: 'GraficoTendenciaTemporal',            label: 'Tendencia Temporal por Curso',          type: 'chart', requires: ['logro_1', 'evaluacion_num'] },
+    { id: 'GraficoRadarHabilidades',             label: 'Radar de Habilidades',                  type: 'chart', requires: ['habilidad'], dimensionPicker: true },
 ];
 
 const TABLE_COMPONENTS = [
@@ -77,7 +85,12 @@ function ItemBadge({ item, onRemove }) {
         <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold ${typeColor}`}>
             <GripVertical size={12} className="opacity-40" />
             <span>{itemLabel(item)}</span>
-            {meta?.requires?.length > 0 && (
+            {item.dimension && (
+                <span className="opacity-70 font-normal italic">
+                    {DIMENSION_OPTIONS.find(d => d.value === item.dimension)?.label ?? item.dimension}
+                </span>
+            )}
+            {!item.dimension && meta?.requires?.length > 0 && (
                 <span className="opacity-50 font-normal">({requiresLabel(meta.requires)})</span>
             )}
             <button onClick={onRemove} className="ml-1 opacity-50 hover:opacity-100 transition-opacity">
@@ -89,13 +102,29 @@ function ItemBadge({ item, onRemove }) {
 
 function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast }) {
     const [showAddItem, setShowAddItem] = useState(false);
+    const [pendingComp, setPendingComp] = useState(null); // comp que espera elección de dimensión
 
     const handleAddItem = (compMeta) => {
+        if (compMeta.dimensionPicker) {
+            setPendingComp(compMeta);
+            return;
+        }
+        commitAddItem(compMeta, null);
+    };
+
+    const commitAddItem = (compMeta, dimension) => {
         const newItem = compMeta.type === 'kpis' || compMeta.type === 'course_selector'
             ? { type: compMeta.type }
             : { type: compMeta.type, component: compMeta.id, requires: compMeta.requires };
+        if (dimension) {
+            newItem.dimension = dimension;
+            // Ajustar requires según la dimensión elegida
+            const dimOpt = DIMENSION_OPTIONS.find(d => d.value === dimension);
+            if (dimOpt) newItem.requires = [dimOpt.requires];
+        }
         onUpdate({ ...row, items: [...row.items, newItem] });
         setShowAddItem(false);
+        setPendingComp(null);
     };
 
     const handleRemoveItem = (itemIdx) => {
@@ -159,7 +188,7 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                         Agregar
                     </button>
 
-                    {showAddItem && (
+                    {showAddItem && !pendingComp && (
                         <div className="absolute left-0 top-8 z-50 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                             {[
                                 { label: 'Especiales', items: SPECIAL_COMPONENTS },
@@ -183,6 +212,26 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                                         </button>
                                     ))}
                                 </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {/* Sub-menú de dimensión para GraficoHabilidades / GraficoRadarHabilidades */}
+                    {showAddItem && pendingComp && (
+                        <div className="absolute left-0 top-8 z-50 w-64 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                            <div className="px-3 py-2 bg-indigo-50 dark:bg-indigo-900/30 border-b border-indigo-100 dark:border-indigo-800 flex items-center gap-2">
+                                <button onClick={() => setPendingComp(null)} className="text-indigo-400 hover:text-indigo-600 text-xs">←</button>
+                                <span className="text-[10px] font-bold uppercase tracking-widest text-indigo-500">{pendingComp.label} — Dimensión</span>
+                            </div>
+                            {DIMENSION_OPTIONS.map(opt => (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => commitAddItem(pendingComp, opt.value)}
+                                    className="w-full text-left px-3 py-2.5 text-xs hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors"
+                                >
+                                    <span className="font-semibold text-slate-700 dark:text-slate-200">{opt.label}</span>
+                                    <span className="ml-1 text-slate-400">(rol: {opt.requires})</span>
+                                </button>
                             ))}
                         </div>
                     )}

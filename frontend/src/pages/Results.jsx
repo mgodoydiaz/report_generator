@@ -30,14 +30,9 @@ export default function Results() {
     const fetchInitialData = async () => {
         setLoading(true);
         try {
-            const [indRes, dimRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/indicators`),
-                fetch(`${API_BASE_URL}/dimensions`),
-            ]);
+            const indRes = await fetch(`${API_BASE_URL}/indicators`);
             const indData = indRes.ok ? await indRes.json() : [];
-            const dimData = dimRes.ok ? await dimRes.json() : [];
             setIndicators(Array.isArray(indData) ? indData : []);
-            setDimensions(Array.isArray(dimData) ? dimData : []);
         } catch (err) {
             toast.error("Error al cargar datos iniciales: " + err.message);
         } finally {
@@ -60,7 +55,6 @@ export default function Results() {
                 if (!res.ok) throw new Error("Error al cargar dimensiones del indicador");
                 const result = await res.json();
                 setIndicatorDims(result.dimensions || {});
-                setIndicatorMetrics(result.metrics || []);
                 setFilterDimensionIds(result.filter_dimensions || []);
                 setSelectedFilters({});
                 setDashboardData(null);

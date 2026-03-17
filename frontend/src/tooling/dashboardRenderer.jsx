@@ -29,7 +29,7 @@
 import React, { useState } from 'react';
 import { Users, Target, Award, BarChart3 } from 'lucide-react';
 import {
-    pct, CURSO_COLORS,
+    pct, formatValue, CURSO_COLORS,
     KPICard, MetricToggle,
     GraficoLogroPorCurso, GraficoBoxplotPorCurso,
     GraficoNivelesPorCurso, GraficoHabilidades,
@@ -90,12 +90,13 @@ const COMPONENT_MAP = {
 };
 
 // Props estándar que cada componente acepta (subset de dashboardComputed)
-function buildComponentProps(componentId, ctx) {
+function buildComponentProps(componentId, ctx, item = {}) {
     const { computed, datosCurso, onCursoClick, cursoActivo, metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot } = ctx;
     const base = {
         data: computed.estudiantes,
         cursos: computed.cursos,
         roleLabels: computed.roleLabels,
+        roleFormats: computed.roleFormats,
         activeRoles: computed.activeRoles,
         achievement_levels: computed.achievement_levels,
         onCursoClick,
@@ -127,19 +128,19 @@ function buildComponentProps(componentId, ctx) {
         case 'GraficoDistribucionNiveles':
             return base;
         case 'GraficoHabilidades':
-            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
+            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item?.dimension || 'habilidad' };
         case 'GraficoNivelesPorCursoYMes':
-            return { data: computed.estudiantes, cursos: computed.cursos, achievement_levels: computed.achievement_levels };
+            return { data: computed.estudiantes, cursos: computed.cursos, achievement_levels: computed.achievement_levels, temporalConfig: computed.temporalConfig };
         case 'GraficoPromedioAgrupadoPorDimension':
-            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels };
+            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
         case 'GraficoTendenciaTemporal':
-            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels };
+            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
         case 'GraficoRadarHabilidades':
-            return { data: datosCurso.preguntas, cursos: computed.cursos, roleLabels: computed.roleLabels };
+            return { data: datosCurso.preguntas, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item?.dimension || 'habilidad' };
         case 'TablaResumenCursos':
             return base;
         case 'TablaAlumnos':
-            return { data: datosCurso.estudiantes, roleLabels: computed.roleLabels, activeRoles: computed.activeRoles };
+            return { data: datosCurso.estudiantes, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, activeRoles: computed.activeRoles };
         case 'TablaPreguntas':
             return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
         default:
@@ -185,10 +186,10 @@ function ItemRenderer({ item, ctx }) {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KPICard label="Total alumnos" value={computed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
                 {activeRoles?.logro_1 && (
-                    <KPICard label={computed.roleLabels?.logro_1 || 'Logro promedio'} value={computed.logroPromedio ? pct(computed.logroPromedio) : '—'} sub="rendimiento general" icon={Target} color="emerald" />
+                    <KPICard label={computed.roleLabels?.logro_1 || 'Logro promedio'} value={computed.logroPromedio != null ? formatValue(computed.logroPromedio, computed.roleFormats?.logro_1) : '—'} sub="rendimiento general" icon={Target} color="emerald" />
                 )}
                 {activeRoles?.logro_2 && (
-                    <KPICard label={computed.roleLabels?.logro_2 || 'Puntaje promedio'} value={computed.simcePromedio ? Math.round(computed.simcePromedio) : '—'} sub="puntaje estimado" icon={BarChart3} color="rose" />
+                    <KPICard label={computed.roleLabels?.logro_2 || 'Puntaje promedio'} value={computed.simcePromedio != null ? formatValue(computed.simcePromedio, computed.roleFormats?.logro_2) : '—'} sub="puntaje estimado" icon={BarChart3} color="rose" />
                 )}
                 {activeRoles?.nivel_de_logro && (
                     <KPICard label={computed.roleLabels?.nivel_de_logro || 'Nivel predominante'} value={computed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
@@ -222,7 +223,7 @@ function ItemRenderer({ item, ctx }) {
     const Comp = COMPONENT_MAP[item.component];
     if (!Comp) return null;
 
-    const props = buildComponentProps(item.component, ctx);
+    const props = buildComponentProps(item.component, ctx, item);
     const title = AUTO_TITLES[item.component];
 
     // Ocultar tablas vacías
