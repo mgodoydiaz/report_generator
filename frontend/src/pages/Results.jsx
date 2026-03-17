@@ -1,23 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import {
-    ChartColumn, RefreshCcw, Play, Users, Target, Award, BarChart3
-} from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { ChartColumn, RefreshCcw, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
-import {
-    pct, CURSO_COLORS,
-    KPICard, MetricToggle,
-    GraficoLogroPorCurso, GraficoBoxplotPorCurso,
-    GraficoNivelesPorCurso, GraficoHabilidades,
-    GraficoDistribucionNiveles,
-    TablaAlumnos, TablaPreguntas, TablaResumenCursos,
-} from '../tooling/charts';
+import { DashboardRenderer } from '../tooling/dashboardRenderer';
 
 export default function Results() {
     // ── Estado: datos del backend ──
     const [indicators, setIndicators] = useState([]);
-    const [dimensions, setDimensions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingDashboard, setLoadingDashboard] = useState(false);
 
@@ -25,15 +15,12 @@ export default function Results() {
     const [selectedIndicator, setSelectedIndicator] = useState("");
     const [selectedFilters, setSelectedFilters] = useState({});
     const [indicatorDims, setIndicatorDims] = useState({});
-    const [indicatorMetrics, setIndicatorMetrics] = useState([]);
     const [filterDimensionIds, setFilterDimensionIds] = useState([]);
 
     // ── Estado: dashboard ──
     const [dashboardData, setDashboardData] = useState(null);
-    const [tab, setTab] = useState("general");
+    const [indicatorLayout, setIndicatorLayout] = useState(null);
     const [cursoActivo, setCursoActivo] = useState(null);
-    const [metricLogro, setMetricLogro] = useState("logro");   // "logro" = logro_1, "simce" = logro_2
-    const [metricBoxplot, setMetricBoxplot] = useState("logro");
 
     // ── Carga inicial ──
     useEffect(() => {
@@ -62,9 +49,9 @@ export default function Results() {
     useEffect(() => {
         if (!selectedIndicator) {
             setIndicatorDims({});
-            setIndicatorMetrics([]);
-            setSelectedFilters({});
+                        setSelectedFilters({});
             setFilterDimensionIds([]);
+            setIndicatorLayout(null);
             return;
         }
         const loadIndicatorDims = async () => {
@@ -78,14 +65,16 @@ export default function Results() {
                 setSelectedFilters({});
                 setDashboardData(null);
                 setCursoActivo(null);
-                setTab("general");
+                // Cargar layout del indicador seleccionado
+                const indObj = indicators.find(i => String(i.id_indicator) === String(selectedIndicator));
+                setIndicatorLayout(indObj?.dashboard_layout || null);
             } catch (err) {
                 toast.error(err.message);
                 setIndicatorDims({});
             }
         };
         loadIndicatorDims();
-    }, [selectedIndicator]);
+    }, [selectedIndicator, indicators]);
 
     // ── Generar Dashboard ──
     const handleGenerateDashboard = async () => {
@@ -96,7 +85,6 @@ export default function Results() {
         setLoadingDashboard(true);
         setDashboardData(null);
         setCursoActivo(null);
-        setTab("general");
 
         try {
             const filtersParam = Object.keys(selectedFilters).length > 0
@@ -129,11 +117,6 @@ export default function Results() {
         };
     }, [dashboardData, cursoActivo]);
 
-    const handleCursoClick = (c) => {
-        setCursoActivo(c);
-        setTab("curso");
-    };
-
     // ── Dimensiones de filtro (solo las configuradas en el indicador) ──
     const sortedDimKeys = useMemo(() => {
         if (!filterDimensionIds || filterDimensionIds.length === 0) return [];
@@ -153,12 +136,6 @@ export default function Results() {
             });
     }, [indicatorDims, filterDimensionIds]);
 
-    // ── Tabs ──
-    const tabStyle = (active) =>
-        `px-5 py-2.5 rounded-t-xl font-bold text-sm border-b-2 transition-all cursor-pointer ${active
-            ? 'text-indigo-600 border-indigo-600 bg-white dark:bg-slate-900 dark:text-indigo-400 dark:border-indigo-400'
-            : 'text-slate-400 border-transparent hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-        }`;
 
     // ══════════════════════════════════════════════════════════════════════════
     // ██  RENDER
@@ -249,178 +226,13 @@ export default function Results() {
 
             {/* ── Dashboard ── */}
             {dashboardData && dashboardComputed && (
-                <>
-                    {/* Tabs */}
-                    <div>
-                        <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
-                            <button className={tabStyle(tab === "general")} onClick={() => setTab("general")}>Vista General</button>
-                            <button className={tabStyle(tab === "curso")} onClick={() => setTab("curso")}>
-                                {cursoActivo ? `Detalle Curso ${cursoActivo}` : "Detalle Curso"}
-                            </button>
-                        </div>
-
-                        <div className="bg-white dark:bg-slate-900 rounded-b-3xl rounded-tr-3xl border border-t-0 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                            {/* TAB: GENERAL */}
-                            {tab === "general" && (
-                                <div className="space-y-8">
-                                    {/* KPIs */}
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <KPICard label="Total alumnos" value={dashboardComputed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
-                                        {dashboardComputed.activeRoles?.logro_1 && (
-                                            <KPICard label={dashboardComputed.roleLabels?.logro_1 || "Logro promedio"} value={dashboardComputed.logroPromedio ? pct(dashboardComputed.logroPromedio) : "—"} sub="rendimiento general" icon={Target} color="emerald" />
-                                        )}
-                                        {dashboardComputed.activeRoles?.logro_2 && (
-                                            <KPICard label={dashboardComputed.roleLabels?.logro_2 || "Puntaje promedio"} value={dashboardComputed.simcePromedio ? Math.round(dashboardComputed.simcePromedio) : "—"} sub="puntaje estimado" icon={BarChart3} color="rose" />
-                                        )}
-                                        {dashboardComputed.activeRoles?.nivel_de_logro && (
-                                            <KPICard label={dashboardComputed.roleLabels?.nivel_de_logro || "Nivel predominante"} value={dashboardComputed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
-                                        )}
-                                    </div>
-
-                                    {/* Tabla resumen */}
-                                    {dashboardComputed.cursos.length > 0 && (
-                                        <div>
-                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Resumen por Curso</h3>
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden">
-                                                <TablaResumenCursos
-                                                    data={dashboardComputed.estudiantes}
-                                                    cursos={dashboardComputed.cursos}
-                                                    onCursoClick={handleCursoClick}
-                                                    cursoActivo={cursoActivo}
-                                                    roleLabels={dashboardComputed.roleLabels}
-                                                    activeRoles={dashboardComputed.activeRoles}
-                                                    achievement_levels={dashboardComputed.achievement_levels}
-                                                />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Gráficos en grid 2x2 */}
-                                    {dashboardComputed.cursos.length > 0 && (
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                            {/* Logro Promedio por Curso — requiere logro_1 o logro_2 */}
-                                            {(dashboardComputed.activeRoles?.logro_1 || dashboardComputed.activeRoles?.logro_2) && (
-                                                <div>
-                                                    <div className="flex items-center justify-between mb-4">
-                                                        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Logro Promedio por Curso</h3>
-                                                        {dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 && (
-                                                            <MetricToggle value={metricLogro} onChange={setMetricLogro} roleLabels={dashboardComputed.roleLabels} />
-                                                        )}
-                                                    </div>
-                                                    <GraficoLogroPorCurso
-                                                        data={dashboardComputed.estudiantes}
-                                                        cursos={dashboardComputed.cursos}
-                                                        metric={dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 ? metricLogro : (dashboardComputed.activeRoles?.logro_1 ? "logro" : "simce")}
-                                                        roleLabels={dashboardComputed.roleLabels}
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* Boxplot — requiere logro_1 o logro_2 */}
-                                            {(dashboardComputed.activeRoles?.logro_1 || dashboardComputed.activeRoles?.logro_2) && (
-                                                <div>
-                                                    <div className="flex items-center justify-between mb-4">
-                                                        <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">Distribución por Curso</h3>
-                                                        {dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 && (
-                                                            <MetricToggle value={metricBoxplot} onChange={setMetricBoxplot} roleLabels={dashboardComputed.roleLabels} />
-                                                        )}
-                                                    </div>
-                                                    <GraficoBoxplotPorCurso
-                                                        data={dashboardComputed.estudiantes}
-                                                        cursos={dashboardComputed.cursos}
-                                                        metric={dashboardComputed.activeRoles?.logro_1 && dashboardComputed.activeRoles?.logro_2 ? metricBoxplot : (dashboardComputed.activeRoles?.logro_1 ? "logro" : "simce")}
-                                                        roleLabels={dashboardComputed.roleLabels}
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* Distribución de Niveles — requiere nivel_de_logro */}
-                                            {dashboardComputed.activeRoles?.nivel_de_logro && dashboardComputed.estudiantes.some(e => e._logro) && (
-                                                <div>
-                                                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Distribución de Niveles de Logro</h3>
-                                                    <GraficoDistribucionNiveles 
-                                                        data={dashboardComputed.estudiantes} 
-                                                        achievement_levels={dashboardComputed.achievement_levels} 
-                                                    />
-                                                </div>
-                                            )}
-
-                                            {/* Alumnos por Nivel — requiere nivel_de_logro */}
-                                            {dashboardComputed.activeRoles?.nivel_de_logro && (
-                                                <div>
-                                                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Alumnos por Nivel de Logro</h3>
-                                                    <GraficoNivelesPorCurso
-                                                        data={dashboardComputed.estudiantes}
-                                                        cursos={dashboardComputed.cursos}
-                                                        achievement_levels={dashboardComputed.achievement_levels}
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {/* TAB: DETALLE CURSO */}
-                            {tab === "curso" && cursoActivo && (
-                                <div className="space-y-8">
-                                    <div className="flex gap-2 flex-wrap">
-                                        {dashboardComputed.cursos.map((c, i) => (
-                                            <button key={c} onClick={() => setCursoActivo(c)}
-                                                className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${cursoActivo === c
-                                                    ? 'text-white shadow-lg'
-                                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                                    }`}
-                                                style={cursoActivo === c ? { background: CURSO_COLORS[i % CURSO_COLORS.length] } : {}}
-                                            >
-                                                {c}
-                                            </button>
-                                        ))}
-                                    </div>
-
-                                    {dashboardComputed.activeRoles?.habilidad && datosCurso.preguntas.length > 0 && (
-                                        <div>
-                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Habilidad</h3>
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm">
-                                                <GraficoHabilidades data={datosCurso.preguntas} roleLabels={dashboardComputed.roleLabels} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {datosCurso.estudiantes.length > 0 && (
-                                        <div>
-                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Estudiante</h3>
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                                                <TablaAlumnos data={datosCurso.estudiantes} roleLabels={dashboardComputed.roleLabels} activeRoles={dashboardComputed.activeRoles} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {datosCurso.preguntas.length > 0 && (
-                                        <div>
-                                            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-4">Logro por Pregunta</h3>
-                                            <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
-                                                <TablaPreguntas data={datosCurso.preguntas} roleLabels={dashboardComputed.roleLabels} />
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {datosCurso.estudiantes.length === 0 && datosCurso.preguntas.length === 0 && (
-                                        <div className="text-center py-16 text-slate-400">
-                                            No hay datos para el curso {cursoActivo} con los filtros seleccionados.
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-
-                            {tab === "curso" && !cursoActivo && (
-                                <div className="text-center py-16 text-slate-400">
-                                    Selecciona un curso desde la tabla de resumen para ver el detalle.
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </>
+                <DashboardRenderer
+                    layout={indicatorLayout}
+                    computed={dashboardComputed}
+                    datosCurso={datosCurso}
+                    cursoActivo={cursoActivo}
+                    setCursoActivo={setCursoActivo}
+                />
             )}
 
             {/* Estado vacío */}

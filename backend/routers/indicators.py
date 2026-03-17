@@ -19,6 +19,7 @@ class IndicatorBase(BaseModel):
     filter_dimensions: Optional[List[int]] = None  # IDs de dimensiones que aparecen como filtros en Results
     temporal_config: Optional[Dict[str, Any]] = None
     achievement_levels: Optional[List[str]] = None
+    dashboard_layout: Optional[Dict[str, Any]] = None  # Layout de tabs/secciones para Results
 
 class IndicatorCreate(IndicatorBase):
     metric_ids: List[int] = []
@@ -91,6 +92,14 @@ async def get_indicators():
             elif not isinstance(al, list):
                 indicator['achievement_levels'] = []
 
+            # Parse dashboard_layout JSON
+            dl = indicator.get('dashboard_layout')
+            if isinstance(dl, str) and dl:
+                try: indicator['dashboard_layout'] = json.loads(dl)
+                except: indicator['dashboard_layout'] = {}
+            elif not isinstance(dl, dict):
+                indicator['dashboard_layout'] = {}
+
             results.append(indicator)
             
         return results
@@ -117,9 +126,10 @@ async def create_indicator(indicator: IndicatorCreate):
             "filter_dimensions": json.dumps(indicator.filter_dimensions or [], ensure_ascii=False),
             "temporal_config": json.dumps(indicator.temporal_config or {}, ensure_ascii=False),
             "achievement_levels": json.dumps(indicator.achievement_levels or [], ensure_ascii=False),
+            "dashboard_layout": json.dumps(indicator.dashboard_layout or {}, ensure_ascii=False),
             "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         }
-        
+
         # Convert to single-row dataframe and concat
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         save_df(df, INDICATORS_DB_PATH)
@@ -160,6 +170,8 @@ async def update_indicator(indicator_id: int, indicator: IndicatorUpdate):
             df.at[idx, 'temporal_config'] = json.dumps(indicator.temporal_config, ensure_ascii=False)
         if indicator.achievement_levels is not None:
             df.at[idx, 'achievement_levels'] = json.dumps(indicator.achievement_levels, ensure_ascii=False)
+        if indicator.dashboard_layout is not None:
+            df.at[idx, 'dashboard_layout'] = json.dumps(indicator.dashboard_layout, ensure_ascii=False)
         df.at[idx, 'updated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         save_df(df, INDICATORS_DB_PATH)
         

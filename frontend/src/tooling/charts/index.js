@@ -11,3 +11,7 @@ export { default as GraficoDistribucionNiveles } from './GraficoDistribucionNive
 export { default as TablaAlumnos } from './TablaAlumnos';
 export { default as TablaPreguntas } from './TablaPreguntas';
 export { default as TablaResumenCursos } from './TablaResumenCursos';
+export { default as GraficoNivelesPorCursoYMes } from './GraficoNivelesPorCursoYMes';
+export { default as GraficoPromedioAgrupadoPorDimension } from './GraficoPromedioAgrupadoPorDimension';
+export { default as GraficoTendenciaTemporal } from './GraficoTendenciaTemporal';
+export { default as GraficoRadarHabilidades } from './GraficoRadarHabilidades';
