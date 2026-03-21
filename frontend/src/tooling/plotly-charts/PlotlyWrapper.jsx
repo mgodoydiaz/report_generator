@@ -21,9 +21,6 @@ export default function PlotlyWrapper({ data = [], layout = {}, height, config =
 
     const mergedLayout = {
         autosize: true,
-        paper_bgcolor: 'transparent',
-        plot_bgcolor: 'transparent',
-        dragmode: false,
         margin: { t: 16, r: 16, b: 40, l: 48, pad: 0 },
         font: { ...BASE_FONT, color: fontColor },
         xaxis: {
@@ -45,7 +42,7 @@ export default function PlotlyWrapper({ data = [], layout = {}, height, config =
             ...(layout.legend || {}),
         },
         ...layout,
-        // These always override user layout to ensure consistent appearance
+        // Estos siempre sobreescriben el layout del componente para apariencia consistente
         paper_bgcolor: 'transparent',
         plot_bgcolor: 'transparent',
         dragmode: false,

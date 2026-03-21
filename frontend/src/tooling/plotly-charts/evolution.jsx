@@ -7,7 +7,7 @@
 
 import React from 'react';
 import PlotlyWrapper from './PlotlyWrapper';
-import { avg, CATEGORY_COLORS } from './constants';
+import { avg, formatRange, CATEGORY_COLORS } from './constants';
 
 // ── TrendLine ─────────────────────────────────────────────────────────────────
 /**
@@ -32,6 +32,7 @@ export function TrendLine({
     periodLabels = {},
     valueLabel = 'Valor',
     formatValue: fmt = (v) => String(v),
+    formatStr,
     colors = CATEGORY_COLORS,
     height,
 }) {
@@ -68,11 +69,14 @@ export function TrendLine({
     });
 
     const hasLongLabels = xLabels.some(l => l.length > 6);
+    const [yMin, yMax] = formatRange(formatStr);
+    const isPct = formatStr?.split('.')[0] === '%';
 
     return (
         <PlotlyWrapper
             data={traces}
             layout={{
+                yaxis: { range: [yMin, yMax ?? null], tickformat: isPct ? '.0%' : undefined },
                 legend: { orientation: 'h', y: -0.25 },
                 margin: { t: 24, r: 16, b: hasLongLabels ? 70 : 50, l: 48 },
                 xaxis: { tickangle: hasLongLabels ? -30 : 0 },

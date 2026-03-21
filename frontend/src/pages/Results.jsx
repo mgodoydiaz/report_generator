@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { ChartColumn, RefreshCcw, Play } from 'lucide-react';
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { ChartColumn, RefreshCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
@@ -22,6 +22,10 @@ export default function Results() {
     const [indicatorLayout, setIndicatorLayout] = useState(null);
     const [cursoActivo, setCursoActivo] = useState(null);
 
+    const debounceTimer = useRef(null);
+    const currentIndicatorRef = useRef(null); // evita race conditions
+    const indicatorsRef = useRef([]); // ref para acceder a indicators sin crear dependencias reactivas
+
     // ── Carga inicial ──
     useEffect(() => {
         fetchInitialData();
@@ -32,7 +36,9 @@ export default function Results() {
         try {
             const indRes = await fetch(`${API_BASE_URL}/indicators`);
             const indData = indRes.ok ? await indRes.json() : [];
-            setIndicators(Array.isArray(indData) ? indData : []);
+            const arr = Array.isArray(indData) ? indData : [];
+            setIndicators(arr);
+            indicatorsRef.current = arr;
         } catch (err) {
             toast.error("Error al cargar datos iniciales: " + err.message);
         } finally {
@@ -40,69 +46,113 @@ export default function Results() {
         }
     };
 
-    // ── Al seleccionar un indicador, cargar sus dimensiones disponibles ──
+    // ── Al seleccionar un indicador, cargar dimensiones y lanzar dashboard ──
     useEffect(() => {
         if (!selectedIndicator) {
             setIndicatorDims({});
-                        setSelectedFilters({});
+            setSelectedFilters({});
             setFilterDimensionIds([]);
             setIndicatorLayout(null);
+            setDashboardData(null);
+            setCursoActivo(null);
             return;
         }
+
         const loadIndicatorDims = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`);
-                if (!res.ok) throw new Error("Error al cargar dimensiones del indicador");
-                const result = await res.json();
+                // Fetch en paralelo: datos del indicador + indicador fresco (layout actualizado del servidor)
+                const [dataRes, indRes] = await Promise.all([
+                    fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`),
+                    fetch(`${API_BASE_URL}/indicators`),
+                ]);
+                if (!dataRes.ok) throw new Error("Error al cargar dimensiones del indicador");
+                const result = await dataRes.json();
                 setIndicatorDims(result.dimensions || {});
                 setFilterDimensionIds(result.filter_dimensions || []);
                 setSelectedFilters({});
-                setDashboardData(null);
                 setCursoActivo(null);
-                // Cargar layout del indicador seleccionado
-                const indObj = indicators.find(i => String(i.id_indicator) === String(selectedIndicator));
-                setIndicatorLayout(indObj?.dashboard_layout || null);
+
+                // Usar los indicadores frescos del servidor para obtener el layout actualizado
+                // SIN llamar a setIndicators (evita re-disparar este useEffect)
+                const freshIndicators = indRes.ok ? await indRes.json() : indicatorsRef.current;
+                if (Array.isArray(freshIndicators)) indicatorsRef.current = freshIndicators;
+                const indObj = (Array.isArray(freshIndicators) ? freshIndicators : indicatorsRef.current)
+                    .find(i => String(i.id_indicator) === String(selectedIndicator));
+                const layout = indObj?.dashboard_layout;
+                // DEBUG — quitar cuando se confirme que el layout llega correcto
+                console.log('[Results] dashboard_layout recibido del servidor:', JSON.stringify(layout, null, 2));
+                // layout válido = objeto con tabs. {} vacío o null → null
+                setIndicatorLayout(layout?.tabs?.length ? layout : null);
+
+                // Procesar datos inmediatamente (sin filtros aún)
+                const processed = processDataForDashboard(result);
+                setDashboardData(processed);
             } catch (err) {
                 toast.error(err.message);
                 setIndicatorDims({});
             }
         };
-        loadIndicatorDims();
-    }, [selectedIndicator, indicators]);
 
-    // ── Generar Dashboard ──
-    const handleGenerateDashboard = async () => {
-        if (!selectedIndicator) {
-            toast.error("Selecciona un indicador");
-            return;
-        }
+        loadIndicatorDims();
+    }, [selectedIndicator]); // ← SIN indicators en dependencias para evitar loop infinito
+
+    // ── Filtros reactivos con debounce (300ms) ──
+    useEffect(() => {
+        if (!selectedIndicator) return;
+
+        // No relanzar en el primer render cuando selectedFilters está vacío
+        // (la carga inicial ya se hizo sin filtros)
+        clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(() => {
+            fetchDashboard(selectedIndicator, selectedFilters);
+        }, 300);
+
+        return () => clearTimeout(debounceTimer.current);
+    }, [selectedFilters]);
+
+    const fetchDashboard = async (indicatorId, filters) => {
+        if (!indicatorId) return;
+        currentIndicatorRef.current = indicatorId;
         setLoadingDashboard(true);
-        setDashboardData(null);
-        setCursoActivo(null);
 
         try {
-            const filtersParam = Object.keys(selectedFilters).length > 0
-                ? `?filters=${encodeURIComponent(JSON.stringify(selectedFilters))}`
+            const filtersParam = Object.keys(filters).length > 0
+                ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
                 : "";
-            const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data${filtersParam}`);
+            const res = await fetch(`${API_BASE_URL}/results/indicator/${indicatorId}/data${filtersParam}`);
             if (!res.ok) throw new Error("Error al generar dashboard");
+
+            // Descartar respuesta si el indicador cambió mientras esperábamos
+            if (currentIndicatorRef.current !== indicatorId) return;
+
             const result = await res.json();
             const processed = processDataForDashboard(result);
             setDashboardData(processed);
+            setCursoActivo(null);
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
                 toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
             }
         } catch (err) {
-            toast.error(err.message);
+            if (currentIndicatorRef.current === indicatorId) {
+                toast.error(err.message);
+            }
         } finally {
-            setLoadingDashboard(false);
+            if (currentIndicatorRef.current === indicatorId) {
+                setLoadingDashboard(false);
+            }
         }
     };
+
+    const handleClearFilters = () => {
+        setSelectedFilters({});
+    };
+
+    const hasActiveFilters = Object.keys(selectedFilters).length > 0;
 
     // ── Datos computados del dashboard ──
     const dashboardComputed = useMemo(() => computeDashboardKPIs(dashboardData), [dashboardData]);
 
-    // ── Filtros del curso activo ──
+    // ── Datos del curso activo ──
     const datosCurso = useMemo(() => {
         if (!dashboardData || !cursoActivo) return { estudiantes: [], preguntas: [] };
         return {
@@ -111,7 +161,7 @@ export default function Results() {
         };
     }, [dashboardData, cursoActivo]);
 
-    // ── Dimensiones de filtro (solo las configuradas en el indicador) ──
+    // ── Dimensiones de filtro ordenadas por prioridad ──
     const sortedDimKeys = useMemo(() => {
         if (!filterDimensionIds || filterDimensionIds.length === 0) return [];
         const priority = ["indicador", "año", "asignatura", "ensayo", "mes", "prueba"];
@@ -129,7 +179,6 @@ export default function Results() {
                 return nameA.localeCompare(nameB);
             });
     }, [indicatorDims, filterDimensionIds]);
-
 
     // ══════════════════════════════════════════════════════════════════════════
     // ██  RENDER
@@ -158,6 +207,7 @@ export default function Results() {
             {/* ── Panel de selectores ── */}
             <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
                 <div className="flex flex-wrap items-end gap-4">
+                    {/* Selector de indicador */}
                     <div className="flex-1 min-w-50">
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Indicador</label>
                         <select
@@ -173,6 +223,7 @@ export default function Results() {
                         </select>
                     </div>
 
+                    {/* Filtros de dimensión */}
                     {sortedDimKeys.map(dimId => {
                         const dim = indicatorDims[dimId];
                         if (!dim || !dim.values || dim.values.length === 0) return null;
@@ -201,20 +252,25 @@ export default function Results() {
                         );
                     })}
 
-                    <div>
-                        <button
-                            onClick={handleGenerateDashboard}
-                            disabled={!selectedIndicator || loadingDashboard}
-                            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white px-6 py-2.5 rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 dark:shadow-indigo-900/20 transition-all active:scale-95 disabled:cursor-not-allowed"
-                        >
-                            {loadingDashboard ? (
-                                <RefreshCcw size={16} className="animate-spin" />
-                            ) : (
-                                <Play size={16} strokeWidth={3} />
-                            )}
-                            Generar Dashboard
-                        </button>
-                    </div>
+                    {/* Botón limpiar filtros */}
+                    {hasActiveFilters && (
+                        <div className="flex items-end">
+                            <button
+                                onClick={handleClearFilters}
+                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-all"
+                            >
+                                <X size={14} />
+                                Limpiar filtros
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Spinner de actualización reactiva */}
+                    {loadingDashboard && selectedIndicator && (
+                        <div className="flex items-end pb-2.5">
+                            <RefreshCcw size={16} className="animate-spin text-indigo-400" />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -229,23 +285,24 @@ export default function Results() {
                 />
             )}
 
-            {/* Estado vacío */}
-            {!dashboardData && !loadingDashboard && (
+            {/* Estado vacío — no se ha seleccionado indicador */}
+            {!selectedIndicator && !loading && (
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-16 text-center">
                     <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
                         <ChartColumn size={32} className="text-slate-300 dark:text-slate-600" />
                     </div>
                     <h3 className="text-lg font-bold text-slate-600 dark:text-slate-300 mb-2">Selecciona un indicador</h3>
                     <p className="text-slate-400 text-sm max-w-md mx-auto">
-                        Elige un indicador y los filtros deseados, luego presiona "Generar Dashboard" para visualizar los resultados.
+                        Elige un indicador para visualizar su dashboard. Los filtros se actualizan automáticamente.
                     </p>
                 </div>
             )}
 
-            {loadingDashboard && (
+            {/* Cargando dashboard por primera vez */}
+            {loadingDashboard && !dashboardData && (
                 <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-16 text-center">
                     <RefreshCcw size={32} className="animate-spin text-indigo-500 mx-auto mb-4" />
-                    <p className="text-slate-500 font-semibold">Generando dashboard...</p>
+                    <p className="text-slate-500 font-semibold">Cargando dashboard...</p>
                 </div>
             )}
         </div>

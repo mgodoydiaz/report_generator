@@ -13,7 +13,9 @@
       "Bash(npm run:*)",
       "Bash(python:*)",
       "Bash(conda run -n rgenerator python -c \":*)",
-      "Bash(conda run:*)"
+      "Bash(conda run:*)",
+      "Bash(npm install:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }

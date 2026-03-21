@@ -10,7 +10,7 @@
 
 import React from 'react';
 import PlotlyWrapper from './PlotlyWrapper';
-import { CATEGORY_COLORS, LOGRO_COLORS, levelColors } from './constants';
+import { CATEGORY_COLORS, LOGRO_COLORS, levelColors, formatRange } from './constants';
 
 // ── BoxPlotByGroup ────────────────────────────────────────────────────────────
 /**
@@ -29,6 +29,7 @@ export function BoxPlotByGroup({
     groupField = '_curso',
     valueField = '_rend',
     formatValue: fmt = (v) => String(v),
+    formatStr,
     colors = CATEGORY_COLORS,
     height,
 }) {
@@ -47,11 +48,15 @@ export function BoxPlotByGroup({
 
     if (!traces.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
 
+    const [yMin, yMax] = formatRange(formatStr);
+    const isPct = formatStr?.split('.')[0] === '%';
+
     return (
         <PlotlyWrapper
             data={traces}
             layout={{
                 showlegend: false,
+                yaxis: { range: [yMin, yMax ?? null], tickformat: isPct ? '.0%' : undefined },
                 margin: { t: 16, r: 16, b: 40, l: 48 },
             }}
             height={height || 280}

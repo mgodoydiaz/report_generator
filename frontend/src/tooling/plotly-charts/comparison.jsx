@@ -11,6 +11,17 @@ import React from 'react';
 import PlotlyWrapper from './PlotlyWrapper';
 import { avg, formatValue, formatRange, CATEGORY_COLORS } from './constants';
 
+/** Construye props de eje Y desde un formatStr (para eje numérico/porcentaje). */
+function yAxisProps(formatStr) {
+    const [yMin, yMax] = formatRange(formatStr);
+    const isPct = formatStr?.split('.')[0] === '%';
+    return {
+        range: [yMin, yMax ?? null],
+        tickformat: isPct ? '.0%' : undefined,
+        ticksuffix: (!isPct && formatStr?.split('.')[0] === '#') ? '' : undefined,
+    };
+}
+
 // ── BarByGroup ────────────────────────────────────────────────────────────────
 /**
  * Props:
@@ -30,6 +41,7 @@ export function BarByGroup({
     valueField = '_rend',
     valueLabel = 'Valor',
     formatValue: fmt = (v) => String(v),
+    formatStr,
     colors = CATEGORY_COLORS,
     height,
 }) {
@@ -52,14 +64,15 @@ export function BarByGroup({
         hovertemplate: `<b>%{x}</b><br>${valueLabel}: %{text}<extra></extra>`,
     };
 
-    const [yMin, yMax] = formatRange(null);
     const maxVal = Math.max(...values.filter(v => !isNaN(v)), 0);
+    const yax = yAxisProps(formatStr);
+    if (!yax.range[1]) yax.range[1] = maxVal * 1.15 || 1;
 
     return (
         <PlotlyWrapper
             data={[trace]}
             layout={{
-                yaxis: { range: [0, (yMax ?? (maxVal * 1.15 || 1))] },
+                yaxis: yax,
                 margin: { t: 24, r: 16, b: 40, l: 48 },
             }}
             height={height || 260}
@@ -84,6 +97,7 @@ export function HorizontalBarByDimension({
     valueField = '_logro_pregunta',
     valueLabel = 'Valor',
     formatValue: fmt = (v) => String(v),
+    formatStr,
     color = CATEGORY_COLORS[0],
     height,
 }) {
@@ -107,13 +121,14 @@ export function HorizontalBarByDimension({
     };
 
     const dynamicHeight = Math.max(200, dims.length * 44 + 60);
+    const isPct = formatStr?.split('.')[0] === '%';
 
     return (
         <PlotlyWrapper
             data={[trace]}
             layout={{
                 margin: { t: 16, r: 60, b: 40, l: 100 },
-                xaxis: { range: [0, null] },
+                xaxis: { range: [0, isPct ? 1.1 : null], tickformat: isPct ? '.0%' : undefined },
                 yaxis: { automargin: true },
             }}
             height={height || dynamicHeight}
@@ -144,6 +159,7 @@ export function GroupedBarByPeriod({
     periodLabels = {},
     valueLabel = 'Valor',
     formatValue: fmt = (v) => String(v),
+    formatStr,
     colors = CATEGORY_COLORS,
     height,
 }) {
@@ -173,6 +189,7 @@ export function GroupedBarByPeriod({
             data={traces}
             layout={{
                 barmode: 'group',
+                yaxis: yAxisProps(formatStr),
                 legend: { orientation: 'h', y: -0.2 },
                 margin: { t: 24, r: 16, b: 60, l: 48 },
             }}

@@ -1,33 +1,17 @@
 /**
  * dashboardRenderer.jsx
  *
- * Renderiza un dashboard a partir de un `dashboard_layout` (leído del indicador).
- * Si el indicador no tiene layout configurado, usa DEFAULT_LAYOUT como fallback.
+ * Renderiza un dashboard a partir de un dashboard_layout (leído del indicador).
+ * Si el indicador no tiene layout configurado, muestra un placeholder vacío.
  *
- * Estructura del layout:
- * {
- *   tabs: [
- *     {
- *       id: string,
- *       label: string,
- *       rows: [
- *         {
- *           cols: 1 | 2 | 3 | 4,
- *           items: [
- *             { type: 'kpis' }
- *             { type: 'course_selector' }
- *             { type: 'table', component: 'TablaResumenCursos' }
- *             { type: 'chart', component: 'GraficoLogroPorCurso', requires: ['logro_1'] }
- *           ]
- *         }
- *       ]
- *     }
- *   ]
- * }
+ * Los gráficos Plotly usan campos explícitos (valueField, groupField, etc.) configurados
+ * en el Editor de Layout. Si algún campo requerido falta, se muestra un error en pantalla
+ * y un toast de aviso.
  */
 
-import React, { useState } from 'react';
-import { Users, Target, Award, BarChart3 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Users, Target, Award, BarChart3, AlertTriangle, LayoutGrid } from 'lucide-react';
+import toast from 'react-hot-toast';
 import {
     pct, formatValue, CURSO_COLORS,
     KPICard, MetricToggle,
@@ -46,9 +30,10 @@ import {
     SummaryTable, DetailListTable, DetailListWithProgress,
 } from './plotly-charts';
 
-// ── Layout por defecto (SIMCE) — usado como fallback ─────────────────────────
+// ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
+// No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
 
-export const DEFAULT_LAYOUT = {
+export const SIMCE_PRESET_LAYOUT = {
     tabs: [
         {
             id: 'general',
@@ -79,41 +64,109 @@ export const DEFAULT_LAYOUT = {
     ],
 };
 
-// ── Mapa de nombre → componente React ────────────────────────────────────────
+// ── Mapa nombre → componente React ────────────────────────────────────────────
 
 const COMPONENT_MAP = {
-    // ── Recharts legacy (mantener para layouts guardados) ──
-    GraficoLogroPorCurso,
-    GraficoBoxplotPorCurso,
-    GraficoNivelesPorCurso,
-    GraficoHabilidades,
-    GraficoDistribucionNiveles,
-    GraficoNivelesPorCursoYMes,
-    GraficoPromedioAgrupadoPorDimension,
-    GraficoTendenciaTemporal,
-    GraficoRadarHabilidades,
-    TablaResumenCursos,
-    TablaAlumnos,
-    TablaPreguntas,
-
-    // ── Plotly — nuevos nombres genéricos ──
-    BarByGroup,
-    HorizontalBarByDimension,
-    GroupedBarByPeriod,
-    BoxPlotByGroup,
-    PieComposition,
-    StackedCountByGroup,
-    StackedCountByGroupAndPeriod,
-    TrendLine,
-    RadarProfile,
-    SummaryTable,
-    DetailListTable,
-    DetailListWithProgress,
+    GraficoLogroPorCurso, GraficoBoxplotPorCurso, GraficoNivelesPorCurso,
+    GraficoHabilidades, GraficoDistribucionNiveles, GraficoNivelesPorCursoYMes,
+    GraficoPromedioAgrupadoPorDimension, GraficoTendenciaTemporal, GraficoRadarHabilidades,
+    TablaResumenCursos, TablaAlumnos, TablaPreguntas,
+    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod,
+    BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
+    TrendLine, RadarProfile, SummaryTable, DetailListTable, DetailListWithProgress,
 };
 
-// Props estándar que cada componente acepta (subset de dashboardComputed)
-function buildComponentProps(componentId, ctx, item = {}) {
-    const { computed, datosCurso, onCursoClick, cursoActivo, metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot } = ctx;
+// ── Campos requeridos por componente Plotly ───────────────────────────────────
+// Los componentes legacy no tienen validación de campos.
+
+const PLOTLY_REQUIRED_FIELDS = {
+    BarByGroup:                   ['groupField', 'valueField'],
+    BoxPlotByGroup:               ['groupField', 'valueField'],
+    PieComposition:               ['categoryField'],
+    StackedCountByGroup:          ['groupField', 'categoryField'],
+    HorizontalBarByDimension:     ['dimensionField', 'valueField'],
+    GroupedBarByPeriod:           ['groupField', 'periodField', 'valueField'],
+    StackedCountByGroupAndPeriod: ['groupField', 'periodField', 'categoryField'],
+    TrendLine:                    ['groupField', 'periodField', 'valueField'],
+    RadarProfile:                 ['groupField', 'axisField', 'valueField'],
+    DetailListWithProgress:       ['dimensionField', 'progressField'],
+    SummaryTable:                 [],
+    DetailListTable:              [],
+};
+
+function getMissingFields(componentId, item) {
+    const required = PLOTLY_REQUIRED_FIELDS[componentId];
+    if (!required) return [];
+    // valueField puede ser string o array — ambos son válidos
+    return required.filter(f => {
+        const v = item[f];
+        return !v || (Array.isArray(v) && v.length === 0);
+    });
+}
+
+// Dado un item, devuelve el valueField activo (string).
+// Si valueField es array, necesita el índice activo para resolver cuál usar.
+function resolveValueField(item, activeIdx) {
+    if (Array.isArray(item.valueField)) return item.valueField[activeIdx] ?? item.valueField[0];
+    return item.valueField;
+}
+
+// ── Mapa campo interno → rol (para derivar formatStr/label desde roleFormats/roleLabels) ──
+
+const FIELD_TO_ROLE = {
+    '_rend':     'logro_1',
+    '_simce':    'logro_2',
+    '_logro':    'nivel_de_logro',
+    '_habilidad':'habilidad',
+};
+
+// Formato por defecto por campo — cuando roleFormats no tiene el rol configurado
+const FIELD_DEFAULT_FORMAT = {
+    '_rend':     '%.0',   // porcentaje sin decimales
+    '_simce':    '#.0',   // número entero
+    '_logro':    'T',     // texto
+    '_habilidad':'T',     // texto
+};
+
+// Label por defecto por campo
+const FIELD_DEFAULT_LABEL = {
+    '_rend':     'Logro',
+    '_simce':    'Puntaje',
+    '_logro':    'Nivel',
+    '_habilidad':'Habilidad',
+};
+
+/**
+ * Dada la instancia `item` y los `roleFormats` del indicador,
+ * devuelve el formatStr que corresponde al valueField activo.
+ * Prioridad: item.formatStr > roleFormats del rol > default por campo
+ */
+function deriveFormatStr(activeValueField, itemFormatStr, roleFormats) {
+    if (itemFormatStr) return itemFormatStr;
+    const role = FIELD_TO_ROLE[activeValueField];
+    if (role && roleFormats?.[role]) return roleFormats[role];
+    return FIELD_DEFAULT_FORMAT[activeValueField] ?? '%.0';
+}
+
+/**
+ * Devuelve la etiqueta del valueField activo.
+ * Prioridad: item.valueLabel > roleLabels del rol > default por campo
+ */
+function deriveValueLabel(activeValueField, itemValueLabel, roleLabels) {
+    if (itemValueLabel) return itemValueLabel;
+    const role = FIELD_TO_ROLE[activeValueField];
+    if (role && roleLabels?.[role]) return roleLabels[role];
+    return FIELD_DEFAULT_LABEL[activeValueField] ?? activeValueField;
+}
+
+// ── Props por componente ──────────────────────────────────────────────────────
+
+function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
+    const {
+        computed, datosCurso, onCursoClick, cursoActivo,
+        metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
+    } = ctx;
+
     const base = {
         data: computed.estudiantes,
         cursos: computed.cursos,
@@ -125,20 +178,19 @@ function buildComponentProps(componentId, ctx, item = {}) {
         cursoActivo,
     };
 
-    // ── Resolución de campos configurables desde el layout (item) ──
-    // Los campos valueField, groupField, etc. pueden venir del JSON del indicador
-    // para hacer los gráficos Plotly completamente configurables.
-    const isSimce = metricLogro === 'simce';
-    const resolvedValueField = item.valueField ?? (isSimce ? '_simce' : '_rend');
-    const resolvedGroupField = item.groupField ?? '_curso';
-    const resolvedValueLabel = item.valueLabel ?? (isSimce ? (computed.roleLabels?.logro_2 || 'Val. secundario') : (computed.roleLabels?.logro_1 || 'Promedio'));
-    const resolvedFormatStr = item.formatStr ?? (isSimce ? computed.roleFormats?.logro_2 : computed.roleFormats?.logro_1);
+    // Resolver valueField activo (puede ser array con toggle)
+    const activeValueField = resolveValueField(item, activeValueIdx);
+
+    // Derivar formatStr y label desde roleFormats/roleLabels o defaults por campo
+    const resolvedFormatStr = deriveFormatStr(activeValueField, item.formatStr, computed.roleFormats);
+    const resolvedValueLabel = deriveValueLabel(activeValueField, item.valueLabel, computed.roleLabels);
+
     const fmtFn = (v) => formatValue(v, resolvedFormatStr);
+
     const temporalLabels = (() => {
         const map = {};
         if (computed.temporalConfig) {
-            const allEntries = computed.estudiantes;
-            allEntries.forEach(e => {
+            computed.estudiantes.forEach(e => {
                 if (e._evaluacion_num != null && e._temporal_label) {
                     map[e._evaluacion_num] = e._temporal_label;
                 }
@@ -173,7 +225,7 @@ function buildComponentProps(componentId, ctx, item = {}) {
         case 'GraficoDistribucionNiveles':
             return base;
         case 'GraficoHabilidades':
-            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item?.dimension || 'habilidad' };
+            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
         case 'GraficoNivelesPorCursoYMes':
             return { data: computed.estudiantes, cursos: computed.cursos, achievement_levels: computed.achievement_levels, temporalConfig: computed.temporalConfig };
         case 'GraficoPromedioAgrupadoPorDimension':
@@ -181,7 +233,7 @@ function buildComponentProps(componentId, ctx, item = {}) {
         case 'GraficoTendenciaTemporal':
             return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
         case 'GraficoRadarHabilidades':
-            return { data: datosCurso.preguntas, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item?.dimension || 'habilidad' };
+            return { data: datosCurso.preguntas, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
         case 'TablaResumenCursos':
             return base;
         case 'TablaAlumnos':
@@ -189,89 +241,94 @@ function buildComponentProps(componentId, ctx, item = {}) {
         case 'TablaPreguntas':
             return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
 
-        // ── Plotly — nuevos componentes genéricos ──
+        // ── Plotly — campos explícitos, sin fallbacks ──
         case 'BarByGroup':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                valueField: resolvedValueField,
+                groupField: item.groupField,
+                valueField: activeValueField,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
             };
         case 'BoxPlotByGroup':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                valueField: resolvedValueField,
+                groupField: item.groupField,
+                valueField: activeValueField,
                 formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
             };
         case 'PieComposition':
             return {
                 records: computed.estudiantes,
-                categoryField: item.categoryField ?? '_logro',
+                categoryField: item.categoryField,
                 categoryLevels: computed.achievement_levels || [],
             };
         case 'StackedCountByGroup':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                categoryField: item.categoryField ?? '_logro',
+                groupField: item.groupField,
+                categoryField: item.categoryField,
                 categoryLevels: computed.achievement_levels || [],
             };
         case 'StackedCountByGroupAndPeriod':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                categoryField: item.categoryField ?? '_logro',
+                groupField: item.groupField,
+                categoryField: item.categoryField,
                 categoryLevels: computed.achievement_levels || [],
-                periodField: item.periodField ?? '_evaluacion_num',
+                periodField: item.periodField,
                 periodLabels: temporalLabels,
             };
         case 'HorizontalBarByDimension':
             return {
                 records: datosCurso.preguntas,
-                dimensionField: item.dimensionField ?? '_habilidad',
-                valueField: item.valueField ?? '_logro_pregunta',
+                dimensionField: item.dimensionField,
+                valueField: activeValueField,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
             };
         case 'GroupedBarByPeriod':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                valueField: resolvedValueField,
-                periodField: item.periodField ?? '_evaluacion_num',
+                groupField: item.groupField,
+                valueField: activeValueField,
+                periodField: item.periodField,
                 periodLabels: temporalLabels,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
             };
         case 'TrendLine':
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                valueField: resolvedValueField,
-                periodField: item.periodField ?? '_evaluacion_num',
+                groupField: item.groupField,
+                valueField: activeValueField,
+                periodField: item.periodField,
                 periodLabels: temporalLabels,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
             };
         case 'RadarProfile':
             return {
                 records: datosCurso.preguntas,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
-                axisField: item.axisField ?? '_habilidad',
-                valueField: item.valueField ?? '_logro_pregunta',
+                groupField: item.groupField,
+                axisField: item.axisField,
+                valueField: activeValueField,
                 formatValue: fmtFn,
                 colors: CURSO_COLORS,
             };
@@ -279,15 +336,12 @@ function buildComponentProps(componentId, ctx, item = {}) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
+                groupField: item.groupField || '_curso',
                 groupColors: CURSO_COLORS,
-                valueField: item.valueField ?? '_rend',
-                valueLabel: computed.roleLabels?.logro_1 || 'Promedio',
-                formatValue: (v) => formatValue(v, computed.roleFormats?.logro_1),
-                valueField2: computed.activeRoles?.logro_2 ? '_simce' : null,
-                valueLabel2: computed.activeRoles?.logro_2 ? (computed.roleLabels?.logro_2 || 'Val. secundario') : null,
-                formatValue2: (v) => formatValue(v, computed.roleFormats?.logro_2),
-                categoryField: item.categoryField ?? '_logro',
+                valueField: item.valueField || null,
+                valueLabel: item.valueLabel || null,
+                formatValue: fmtFn,
+                categoryField: item.categoryField || null,
                 categoryLevels: computed.achievement_levels || [],
                 onGroupClick: onCursoClick,
                 activeGroup: cursoActivo,
@@ -295,20 +349,20 @@ function buildComponentProps(componentId, ctx, item = {}) {
         case 'DetailListTable':
             return {
                 records: datosCurso.estudiantes,
-                labelField: item.labelField ?? '_nombre',
-                valueField: item.valueField ?? '_rend',
-                formatValue: (v) => formatValue(v, computed.roleFormats?.logro_1),
-                badgeField: item.badgeField ?? '_logro',
+                labelField: item.labelField || '_nombre',
+                valueField: item.valueField || null,
+                formatValue: fmtFn,
+                badgeField: item.badgeField || null,
             };
         case 'DetailListWithProgress':
             return {
                 records: datosCurso.preguntas,
-                labelField: item.labelField ?? '_pregunta',
-                dimensionField: item.dimensionField ?? '_habilidad',
-                progressField: item.progressField ?? '_logro_pregunta',
-                progressLabel: computed.roleLabels?.logro_1 || 'Logro',
-                extraField: item.extraField ?? '_correcta',
-                extraLabel: item.extraLabel ?? 'Correcta',
+                labelField: item.labelField || '_pregunta',
+                dimensionField: item.dimensionField,
+                progressField: item.progressField,
+                progressLabel: item.progressLabel || item.progressField,
+                extraField: item.extraField || null,
+                extraLabel: item.extraLabel || null,
             };
 
         default:
@@ -316,62 +370,129 @@ function buildComponentProps(componentId, ctx, item = {}) {
     }
 }
 
-// ── Comprueba si un item debe mostrarse según sus requires ───────────────────
+// ── Visibilidad por roles ─────────────────────────────────────────────────────
 
 function itemIsVisible(item, activeRoles) {
     if (!item.requires || item.requires.length === 0) return true;
     return item.requires.every(role => activeRoles?.[role]);
 }
 
-// ── Títulos automáticos por componente ───────────────────────────────────────
+// ── Títulos automáticos ───────────────────────────────────────────────────────
 
 const AUTO_TITLES = {
-    // Recharts legacy
-    GraficoLogroPorCurso:                 'Logro Promedio por Curso',
-    GraficoBoxplotPorCurso:               'Distribución por Curso',
-    GraficoNivelesPorCurso:               'Alumnos por Nivel de Logro',
-    GraficoHabilidades:                   'Logro por Habilidad',
-    GraficoDistribucionNiveles:           'Distribución de Niveles de Logro',
-    GraficoNivelesPorCursoYMes:           'Niveles por Curso y Evaluación',
-    GraficoPromedioAgrupadoPorDimension:  'Logro Promedio por Curso y Evaluación',
-    GraficoTendenciaTemporal:             'Tendencia Temporal por Curso',
-    GraficoRadarHabilidades:              'Radar de Habilidades',
-    TablaResumenCursos:                   'Resumen por Curso',
-    TablaAlumnos:                         'Logro por Estudiante',
-    TablaPreguntas:                       'Logro por Pregunta',
-    // Plotly new
-    BarByGroup:                           'Promedio por Grupo',
-    BoxPlotByGroup:                       'Distribución por Grupo',
-    PieComposition:                       'Composición por Nivel',
-    StackedCountByGroup:                  'Conteo por Grupo y Nivel',
-    StackedCountByGroupAndPeriod:         'Niveles por Grupo y Evaluación',
-    HorizontalBarByDimension:             'Promedio por Dimensión',
-    GroupedBarByPeriod:                   'Promedio por Grupo y Evaluación',
-    TrendLine:                            'Tendencia Temporal',
-    RadarProfile:                         'Perfil de Dimensiones',
-    SummaryTable:                         'Resumen por Grupo',
-    DetailListTable:                      'Detalle de Items',
-    DetailListWithProgress:               'Detalle con Progreso',
+    GraficoLogroPorCurso: 'Logro Promedio por Curso',
+    GraficoBoxplotPorCurso: 'Distribución por Curso',
+    GraficoNivelesPorCurso: 'Alumnos por Nivel de Logro',
+    GraficoHabilidades: 'Logro por Habilidad',
+    GraficoDistribucionNiveles: 'Distribución de Niveles de Logro',
+    GraficoNivelesPorCursoYMes: 'Niveles por Curso y Evaluación',
+    GraficoPromedioAgrupadoPorDimension: 'Logro Promedio por Curso y Evaluación',
+    GraficoTendenciaTemporal: 'Tendencia Temporal por Curso',
+    GraficoRadarHabilidades: 'Radar de Habilidades',
+    TablaResumenCursos: 'Resumen por Curso',
+    TablaAlumnos: 'Logro por Estudiante',
+    TablaPreguntas: 'Logro por Pregunta',
+    BarByGroup: 'Promedio por Grupo',
+    BoxPlotByGroup: 'Distribución por Grupo',
+    PieComposition: 'Composición por Nivel',
+    StackedCountByGroup: 'Conteo por Grupo y Nivel',
+    StackedCountByGroupAndPeriod: 'Niveles por Grupo y Evaluación',
+    HorizontalBarByDimension: 'Promedio por Dimensión',
+    GroupedBarByPeriod: 'Promedio por Grupo y Evaluación',
+    TrendLine: 'Tendencia Temporal',
+    RadarProfile: 'Perfil de Dimensiones',
+    SummaryTable: 'Resumen por Grupo',
+    DetailListTable: 'Detalle de Items',
+    DetailListWithProgress: 'Detalle con Progreso',
 };
 
-// ── Renderer de un ítem individual ───────────────────────────────────────────
+// ── Error de configuración ────────────────────────────────────────────────────
+
+function MissingConfigError({ componentId, missingFields }) {
+    const firedRef = useRef(false);
+    useEffect(() => {
+        if (!firedRef.current) {
+            firedRef.current = true;
+            toast.error(
+                (AUTO_TITLES[componentId] || componentId) + ': faltan campos — ' + missingFields.join(', '),
+                { id: 'missing-' + componentId + '-' + missingFields.join('-') }
+            );
+        }
+    }, []);
+
+    return (
+        <div className="flex flex-col items-center justify-center gap-2 py-8 px-4 rounded-2xl border-2 border-dashed border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/10 text-center">
+            <AlertTriangle size={24} className="text-amber-500" />
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                Configuración incompleta
+            </p>
+            <p className="text-xs text-amber-600 dark:text-amber-500">
+                <span className="font-semibold">{AUTO_TITLES[componentId] || componentId}</span> requiere configurar:
+            </p>
+            <div className="flex flex-wrap gap-1 justify-center">
+                {missingFields.map(f => (
+                    <span key={f} className="px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 text-xs font-mono font-semibold">
+                        {f}
+                    </span>
+                ))}
+            </div>
+            <p className="text-[11px] text-amber-500 dark:text-amber-600 mt-1">
+                Edita el layout para configurar los ejes de este gráfico.
+            </p>
+        </div>
+    );
+}
+
+// ── Item renderer ─────────────────────────────────────────────────────────────
+
+// ── Toggle de valueField para componentes con múltiples valores ───────────────
+
+function ValueFieldToggle({ fields, activeIdx, onChange, computed }) {
+    // Intenta obtener una etiqueta legible para cada campo
+    const labelFor = (field) => {
+        const roleEntry = Object.entries(computed.roleLabels || {}).find(([, v]) => {
+            // Mapeo inverso campo → label buscando en roleLabels via ROLE_TO_FIELD
+            const FIELD_TO_ROLE = { '_rend': 'logro_1', '_simce': 'logro_2', '_habilidad': 'habilidad', '_habilidad_2': 'habilidad_2', '_logro': 'nivel_de_logro', '_evaluacion_num': 'evaluacion_num' };
+            return FIELD_TO_ROLE[field] && computed.roleLabels?.[FIELD_TO_ROLE[field]];
+        });
+        const FIELD_TO_ROLE = { '_rend': 'logro_1', '_simce': 'logro_2', '_habilidad': 'habilidad', '_habilidad_2': 'habilidad_2', '_logro': 'nivel_de_logro', '_evaluacion_num': 'evaluacion_num' };
+        return computed.roleLabels?.[FIELD_TO_ROLE[field]] || field;
+    };
+
+    return (
+        <div className="flex gap-1 p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg">
+            {fields.map((f, i) => (
+                <button
+                    key={f}
+                    onClick={() => onChange(i)}
+                    className={'px-2.5 py-1 rounded-md text-xs font-semibold transition-all ' + (i === activeIdx
+                        ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                        : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'
+                    )}
+                >
+                    {labelFor(f)}
+                </button>
+            ))}
+        </div>
+    );
+}
 
 function ItemRenderer({ item, ctx }) {
     const { computed, datosCurso, cursoActivo, setCursoActivo } = ctx;
     const { activeRoles } = computed;
+    const [activeValueIdx, setActiveValueIdx] = useState(0);
 
     if (!itemIsVisible(item, activeRoles)) return null;
 
-    // ── Especiales ──
     if (item.type === 'kpis') {
         return (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KPICard label="Total alumnos" value={computed.totalAlumnos} sub="en los cursos evaluados" icon={Users} color="indigo" />
                 {activeRoles?.logro_1 && (
-                    <KPICard label={computed.roleLabels?.logro_1 || 'Logro promedio'} value={computed.logroPromedio != null ? formatValue(computed.logroPromedio, computed.roleFormats?.logro_1) : '—'} sub="rendimiento general" icon={Target} color="emerald" />
+                    <KPICard label={computed.roleLabels?.logro_1 || 'Logro promedio'} value={computed.logroPromedio != null ? formatValue(computed.logroPromedio, computed.roleFormats?.logro_1) : '\u2014'} sub="rendimiento general" icon={Target} color="emerald" />
                 )}
                 {activeRoles?.logro_2 && (
-                    <KPICard label={computed.roleLabels?.logro_2 || 'Puntaje promedio'} value={computed.simcePromedio != null ? formatValue(computed.simcePromedio, computed.roleFormats?.logro_2) : '—'} sub="puntaje estimado" icon={BarChart3} color="rose" />
+                    <KPICard label={computed.roleLabels?.logro_2 || 'Puntaje promedio'} value={computed.simcePromedio != null ? formatValue(computed.simcePromedio, computed.roleFormats?.logro_2) : '\u2014'} sub="puntaje estimado" icon={BarChart3} color="rose" />
                 )}
                 {activeRoles?.nivel_de_logro && (
                     <KPICard label={computed.roleLabels?.nivel_de_logro || 'Nivel predominante'} value={computed.nivelPredominante} sub="más frecuente" icon={Award} color="amber" />
@@ -388,10 +509,10 @@ function ItemRenderer({ item, ctx }) {
                     <button
                         key={c}
                         onClick={() => setCursoActivo(c)}
-                        className={`px-4 py-2 rounded-xl font-bold text-sm transition-all ${cursoActivo === c
+                        className={'px-4 py-2 rounded-xl font-bold text-sm transition-all ' + (cursoActivo === c
                             ? 'text-white shadow-lg'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
-                        }`}
+                        )}
                         style={cursoActivo === c ? { background: CURSO_COLORS[i % CURSO_COLORS.length] } : {}}
                     >
                         {c}
@@ -401,26 +522,38 @@ function ItemRenderer({ item, ctx }) {
         );
     }
 
-    // ── Tablas y gráficos ──
     const Comp = COMPONENT_MAP[item.component];
     if (!Comp) return null;
 
-    const props = buildComponentProps(item.component, ctx, item);
+    const missingFields = getMissingFields(item.component, item);
+    if (missingFields.length > 0) {
+        return <MissingConfigError componentId={item.component} missingFields={missingFields} />;
+    }
+
+    const props = buildComponentProps(item.component, ctx, item, activeValueIdx);
     const title = AUTO_TITLES[item.component];
 
-    // Ocultar tablas vacías
     if (item.component === 'TablaAlumnos' && datosCurso.estudiantes.length === 0) return null;
     if (item.component === 'TablaPreguntas' && datosCurso.preguntas.length === 0) return null;
     if (item.component === 'GraficoHabilidades' && (!activeRoles?.habilidad || datosCurso.preguntas.length === 0)) return null;
 
     const isTable = item.type === 'table';
-    const hasToggle = props.toggle;
+    const hasLegacyToggle = props.toggle;
+    const hasValueToggle = Array.isArray(item.valueField) && item.valueField.length > 1;
 
     return (
         <div>
             <div className="flex items-center justify-between mb-4">
                 {title && <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">{title}</h3>}
-                {hasToggle && props.toggle}
+                {hasLegacyToggle && props.toggle}
+                {hasValueToggle && (
+                    <ValueFieldToggle
+                        fields={item.valueField}
+                        activeIdx={activeValueIdx}
+                        onChange={setActiveValueIdx}
+                        computed={computed}
+                    />
+                )}
             </div>
             <div className={isTable ? 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm' : ''}>
                 <Comp {...props} />
@@ -429,7 +562,7 @@ function ItemRenderer({ item, ctx }) {
     );
 }
 
-// ── Renderer de una fila ─────────────────────────────────────────────────────
+// ── Row renderer ──────────────────────────────────────────────────────────────
 
 const GRID_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-1 lg:grid-cols-2', 3: 'grid-cols-1 lg:grid-cols-3', 4: 'grid-cols-2 md:grid-cols-4' };
 
@@ -441,7 +574,7 @@ function RowRenderer({ row, ctx }) {
     const gridClass = GRID_COLS[cols] || 'grid-cols-1';
 
     return (
-        <div className={`grid ${gridClass} gap-8`}>
+        <div className={'grid ' + gridClass + ' gap-8'}>
             {visibleItems.map((item, idx) => (
                 <ItemRenderer key={idx} item={item} ctx={ctx} />
             ))}
@@ -449,43 +582,49 @@ function RowRenderer({ row, ctx }) {
     );
 }
 
-// ── Componente principal exportado ───────────────────────────────────────────
+// ── DashboardRenderer ─────────────────────────────────────────────────────────
 
-/**
- * @param {Object} layout       - dashboard_layout del indicador (o null → usa DEFAULT_LAYOUT)
- * @param {Object} computed     - resultado de computeDashboardKPIs()
- * @param {Object} datosCurso   - { estudiantes, preguntas } filtrados por cursoActivo
- * @param {string} cursoActivo
- * @param {Function} setCursoActivo
- * @param {Function} onCursoClick  - callback al hacer click en un curso (cambia tab)
- */
+// ── Placeholder para indicadores sin layout configurado ───────────────────────
+
+function EmptyLayoutPlaceholder() {
+    return (
+        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-16 text-center shadow-sm">
+            <div className="w-14 h-14 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                <LayoutGrid size={28} className="text-indigo-400" />
+            </div>
+            <h3 className="text-base font-bold text-slate-700 dark:text-slate-200 mb-2">
+                Este indicador no tiene layout configurado
+            </h3>
+            <p className="text-sm text-slate-400 max-w-sm mx-auto">
+                Ve a la página de <span className="font-semibold text-indigo-500">Indicadores</span>, abre el Editor de Layout y diseña el dashboard para este indicador.
+            </p>
+        </div>
+    );
+}
+
 export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick }) {
     const [activeTab, setActiveTab] = useState(0);
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
 
-    const resolvedLayout = (layout?.tabs?.length > 0) ? layout : DEFAULT_LAYOUT;
+    // Si no hay layout configurado, mostrar placeholder — sin fallback SIMCE
+    if (!layout?.tabs?.length) return <EmptyLayoutPlaceholder />;
+
+    const resolvedLayout = layout;
 
     const ctx = {
-        computed,
-        datosCurso,
-        cursoActivo,
-        setCursoActivo,
-        onCursoClick,
-        metricLogro, setMetricLogro,
-        metricBoxplot, setMetricBoxplot,
+        computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick,
+        metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
     };
 
     const tabStyle = (active) =>
-        `px-5 py-2.5 rounded-t-xl font-bold text-sm border-b-2 transition-all cursor-pointer ${active
+        'px-5 py-2.5 rounded-t-xl font-bold text-sm border-b-2 transition-all cursor-pointer ' + (active
             ? 'text-indigo-600 border-indigo-600 bg-white dark:bg-slate-900 dark:text-indigo-400 dark:border-indigo-400'
             : 'text-slate-400 border-transparent hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-300'
-        }`;
+        );
 
-    // Sincronizar tab activo cuando cambia el cursoActivo desde TablaResumenCursos
     const handleCursoClick = (curso) => {
         setCursoActivo(curso);
-        // Buscar el primer tab que contenga course_selector y saltar a él
         const courseTabIdx = resolvedLayout.tabs.findIndex(tab =>
             tab.rows.some(row => row.items.some(item => item.type === 'course_selector'))
         );
@@ -497,11 +636,10 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
 
     return (
         <div>
-            {/* Tab bar */}
             <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
                 {resolvedLayout.tabs.map((tab, idx) => (
                     <button key={tab.id || idx} className={tabStyle(activeTab === idx)} onClick={() => setActiveTab(idx)}>
-                        {tab.id === 'curso' && cursoActivo ? `Detalle Curso ${cursoActivo}` : tab.label}
+                        {tab.id === 'curso' && cursoActivo ? 'Detalle Curso ' + cursoActivo : tab.label}
                     </button>
                 ))}
             </div>
@@ -512,8 +650,6 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
                         {resolvedLayout.tabs[activeTab].rows.map((row, rowIdx) => (
                             <RowRenderer key={rowIdx} row={row} ctx={ctxWithCursoClick} />
                         ))}
-
-                        {/* Mensaje vacío para tabs de detalle curso sin curso seleccionado */}
                         {resolvedLayout.tabs[activeTab].rows.some(r => r.items.some(i => i.type === 'course_selector')) && !cursoActivo && (
                             <div className="text-center py-8 text-slate-400 text-sm">
                                 Selecciona un curso desde la tabla de resumen para ver el detalle.
