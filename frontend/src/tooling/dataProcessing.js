@@ -154,13 +154,13 @@ export function processDataForDashboard(result) {
             const logro = resolveRoleValue("nivel_de_logro", mid, roleMap, val, djson, dimsMap);
             if (logro !== undefined) entry._logro = logro;
 
-            // habilidad → _habilidad
+            // habilidad → _habilidad (normalizado a capitalize)
             const hab = resolveRoleValue("habilidad", mid, roleMap, val, djson, dimsMap);
-            if (hab !== undefined) entry._habilidad = hab;
+            if (hab !== undefined) entry._habilidad = String(hab).charAt(0).toUpperCase() + String(hab).slice(1).toLowerCase();
 
-            // habilidad_2 → _habilidad_2
+            // habilidad_2 → _habilidad_2 (normalizado a capitalize)
             const hab2 = resolveRoleValue("habilidad_2", mid, roleMap, val, djson, dimsMap);
-            if (hab2 !== undefined) entry._habilidad_2 = hab2;
+            if (hab2 !== undefined) entry._habilidad_2 = String(hab2).charAt(0).toUpperCase() + String(hab2).slice(1).toLowerCase();
 
             // evaluacion_num → _evaluacion_num
             const evalNum = resolveRoleValue("evaluacion_num", mid, roleMap, val, djson, dimsMap);

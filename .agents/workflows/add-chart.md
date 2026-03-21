@@ -3,231 +3,289 @@ description: Crear un nuevo gráfico o tabla para el sistema de dashboards
 ---
 # `/add-chart` — Agregar un nuevo gráfico o tabla al sistema de dashboards
 
-Guía paso a paso para crear un nuevo componente de visualización (gráfico o tabla) y dejarlo disponible en el Editor de Layout y en el Centro de Ayuda.
+Guía paso a paso para crear un nuevo componente de visualización (gráfico o tabla) y dejarlo disponible en el Editor de Layout.
 
 ## Contexto
 
-Los componentes de visualización viven en `frontend/src/tooling/charts/`. Son componentes React puros que reciben datos ya procesados por `processDataForDashboard()` vía el `DashboardRenderer`. Para agregar uno nuevo hay que tocas 4 puntos del sistema.
+Existen **dos sistemas de gráficos** en paralelo:
+
+| Sistema | Directorio | Librería | Cuándo usar |
+|---|---|---|---|
+| **Plotly (nuevo)** | `frontend/src/tooling/plotly-charts/` | `react-plotly.js` | Para gráficos nuevos — interactivos, dark mode, responsive |
+| **Recharts (legacy)** | `frontend/src/tooling/charts/` | `recharts` | Solo para mantener componentes existentes |
+
+**Usar siempre Plotly para componentes nuevos.** Los componentes Recharts se mantienen por compatibilidad con layouts guardados en la base de datos.
 
 ---
 
-## Checklist de implementación
+## Campos disponibles en los datos
 
-### 1. Crear el componente en `frontend/src/tooling/charts/`
+Los datos los produce `processDataForDashboard()` y los pasa el `DashboardRenderer`. Cada fila tiene estos campos internos:
 
-Naming: `GraficoNombreDescriptivo.jsx` para gráficos, `TablaNombreDescriptivo.jsx` para tablas.
-
-**Props estándar disponibles** (pasadas automáticamente por `DashboardRenderer` vía `buildComponentProps`):
-
-| Prop | Tipo | Descripción |
-|------|------|-------------|
-| `data` | `Array` | `estudiantes` o `preguntas` según el componente |
-| `cursos` | `string[]` | Lista de cursos únicos en el dataset |
-| `roleLabels` | `Object` | Etiquetas personalizadas: `{ logro_1: "Rendimiento %", ... }` |
-| `activeRoles` | `Object` | Roles activos: `{ logro_1: true, nivel_de_logro: false, ... }` |
-| `achievement_levels` | `string[]` | Niveles de logro configurados en el indicador |
-| `onCursoClick` | `Function` | Callback al hacer clic en un curso |
-| `cursoActivo` | `string` | Curso seleccionado actualmente |
-
-**Campos disponibles en cada fila de `data`:**
-
-| Campo | Descripción | Rol que lo produce |
+| Campo | Descripción | Rol que lo activa |
 |-------|-------------|-------------------|
-| `_rend` | Logro numérico 0-1 | `logro_1` |
-| `_simce` | Puntaje secundario | `logro_2` |
-| `_logro` | Nivel textual | `nivel_de_logro` |
-| `_habilidad` | Habilidad evaluada | `habilidad` |
-| `_habilidad_2` | Eje temático secundario | `habilidad_2` |
-| `_logro_pregunta` | Logro por ítem (0-1) | calculado desde `logro_1` |
-| `_correcta` | Respuesta correcta | campo literal del valor |
-| `_pregunta` | N° de pregunta | dimensión `pregunta` |
-| `_nombre` | Nombre del estudiante | dimensión `nombre/estudiante` |
-| `_curso` | Curso del estudiante | dimensión `curso` |
-| `_avance` | Δ respecto a evaluación anterior | calculado en ETL |
+| `_rend` | Valor numérico principal (0-1 si es porcentaje) | `logro_1` |
+| `_simce` | Valor numérico secundario | `logro_2` |
+| `_logro` | Nivel textual (ej. "Adecuado") | `nivel_de_logro` |
+| `_habilidad` | Dimensión analítica primaria | `habilidad` |
+| `_habilidad_2` | Dimensión analítica secundaria | `habilidad_2` |
+| `_logro_pregunta` | Valor numérico por ítem (0-1) | calculado desde `logro_1` |
+| `_correcta` | Respuesta correcta del ítem | campo literal |
+| `_pregunta` | Identificador del ítem | dimensión `pregunta` |
+| `_nombre` | Nombre del registro individual | dimensión `nombre/estudiante` |
+| `_curso` | Grupo principal | dimensión `curso` |
+| `_evaluacion_num` | Número ordinal de la evaluación temporal | `evaluacion_num` / calculado |
+| `_temporal_label` | Etiqueta legible del periodo (ej. "2024 / AGO") | temporal_config |
 
-**Paletas de color disponibles** (importar desde `./constants`):
+---
 
-```js
-import { LOGRO_COLORS, CURSO_COLORS, pct, avg } from './constants';
+## Opción A — Usar un componente Plotly existente en un layout
 
-// LOGRO_COLORS: { Adecuado: "#2a9d8f", Elemental: "#e9c46a", Insuficiente: "#e76f51" }
-// CURSO_COLORS: array de 8 colores para cursos
-// pct(v): formatea 0.75 → "75%"
-// avg(arr, key): promedio de arr[*][key]
+Si el gráfico que necesitas ya existe en `plotly-charts/`, solo agrégalo al JSON del layout del indicador. No hay que escribir código.
+
+### Componentes disponibles
+
+**Comparación** (módulo `comparison.jsx`):
+
+| Componente | Qué muestra |
+|---|---|
+| `BarByGroup` | Promedio de una métrica por grupo (eje X = grupos) |
+| `HorizontalBarByDimension` | Promedio por dimensión analítica (ej. habilidad) — barras horizontales |
+| `GroupedBarByPeriod` | Promedio por grupo × periodo — barras agrupadas |
+
+**Distribución** (módulo `distribution.jsx`):
+
+| Componente | Qué muestra |
+|---|---|
+| `BoxPlotByGroup` | Box-whisker por grupo — usa `type: "box"` nativo de Plotly |
+| `PieComposition` | Donut chart de composición de categorías |
+| `StackedCountByGroup` | Barras apiladas de conteo de categorías por grupo |
+| `StackedCountByGroupAndPeriod` | Barras apiladas con separadores por grupo × periodo |
+
+**Evolución** (módulo `evolution.jsx`):
+
+| Componente | Qué muestra |
+|---|---|
+| `TrendLine` | Líneas de tendencia temporal, una por grupo |
+
+**Radar** (módulo `radar.jsx`):
+
+| Componente | Qué muestra |
+|---|---|
+| `RadarProfile` | Perfil multi-eje (scatterpolar), uno por grupo o promedio global |
+
+**Tablas** (módulo `tables.jsx`):
+
+| Componente | Qué muestra |
+|---|---|
+| `SummaryTable` | Tabla de resumen con agrupaciones, conteos y niveles |
+| `DetailListTable` | Lista de items individuales con badge de categoría |
+| `DetailListWithProgress` | Lista de items con barra de progreso (ej. preguntas) |
+
+### Agregar al layout JSON del indicador
+
+En el campo `dashboard_layout` del indicador (editable desde el Editor de Layout o directo en la base de datos), agregar un item en la fila correspondiente:
+
+```json
+{
+  "type": "chart",
+  "component": "BarByGroup",
+  "requires": ["logro_1"]
+}
 ```
 
-**Plantilla de gráfico de barras:**
+**Props configurables desde el layout** (todos opcionales — si no se pasan, se usan defaults inteligentes):
+
+```json
+{
+  "type": "chart",
+  "component": "BarByGroup",
+  "requires": ["logro_1"],
+  "groupField": "_curso",
+  "valueField": "_rend",
+  "valueLabel": "Rendimiento"
+}
+```
+
+| Prop de layout | Efecto |
+|---|---|
+| `groupField` | Campo de agrupación (default `_curso`) |
+| `valueField` | Campo de valor (default `_rend` o `_simce` según toggle) |
+| `valueLabel` | Etiqueta del valor en tooltip |
+| `formatStr` | Override del formato (ej. `"%.1"` para porcentaje con 1 decimal) |
+| `categoryField` | Campo de categorías para componentes de distribución (default `_logro`) |
+| `periodField` | Campo de periodo temporal (default `_evaluacion_num`) |
+| `dimensionField` | Campo de dimensión para HorizontalBarByDimension o RadarProfile (default `_habilidad`) |
+| `axisField` | Alias de `dimensionField` para RadarProfile |
+| `labelField` | Campo de etiqueta para tablas de detalle (default `_nombre` o `_pregunta`) |
+| `progressField` | Campo de progreso para DetailListWithProgress (default `_logro_pregunta`) |
+| `extraField` / `extraLabel` | Columna extra en DetailListWithProgress (default `_correcta` / `"Correcta"`) |
+
+---
+
+## Opción B — Crear un componente Plotly nuevo
+
+Cuando ningún componente existente cubre el caso de uso, crear uno nuevo en `plotly-charts/`.
+
+### 1. Crear el componente
+
+Agregarlo al módulo temático que corresponda (`comparison.jsx`, `distribution.jsx`, etc.) o crear un archivo nuevo si es una función analítica diferente.
+
+**Props genéricos** (sin términos de dominio — el mapeo dominio→genérico ocurre solo en `buildComponentProps`):
 
 ```jsx
-// frontend/src/tooling/charts/GraficoNombreDescriptivo.jsx
+// frontend/src/tooling/plotly-charts/comparison.jsx (o el módulo que corresponda)
 import React from 'react';
-import {
-    BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-    ResponsiveContainer, Cell,
-} from 'recharts';
-import { CURSO_COLORS, pct, avg } from './constants';
+import PlotlyWrapper from './PlotlyWrapper';
+import { avg, formatValue, CATEGORY_COLORS } from './constants';
 
-export default function GraficoNombreDescriptivo({ data, cursos, roleLabels = {} }) {
-    // Transformar data al formato que necesita el gráfico
-    const chartData = cursos.map((c, i) => ({
-        curso: c,
-        valor: avg(data.filter(r => r._curso === c), '_rend'),
-        color: CURSO_COLORS[i % CURSO_COLORS.length],
-    }));
+/**
+ * MiNuevoGrafico — descripción de qué muestra
+ *
+ * Props:
+ *   records     Array<Object>   filas de datos
+ *   groups      string[]        valores únicos del grupo principal
+ *   groupField  string          campo de agrupación (ej. "_curso")
+ *   valueField  string          campo numérico a agregar
+ *   valueLabel  string          etiqueta del valor
+ *   formatValue (v) => string   formateador
+ *   colors      string[]        paleta de colores
+ *   height      number
+ */
+export function MiNuevoGrafico({
+    records = [],
+    groups = [],
+    groupField = '_curso',
+    valueField = '_rend',
+    valueLabel = 'Valor',
+    formatValue: fmt = (v) => String(v),
+    colors = CATEGORY_COLORS,
+    height,
+}) {
+    // Transformar datos
+    const groupList = groups.length
+        ? groups
+        : [...new Set(records.map(r => r[groupField]).filter(Boolean))].sort();
+
+    const trace = {
+        type: 'bar',
+        x: groupList,
+        y: groupList.map(g => avg(records.filter(r => r[groupField] === g), valueField)),
+        marker: { color: groupList.map((_, i) => colors[i % colors.length]) },
+        hovertemplate: `<b>%{x}</b><br>${valueLabel}: %{y}<extra></extra>`,
+    };
 
     return (
-        <ResponsiveContainer width="100%" height={240}>
-            <BarChart data={chartData} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
-                <XAxis dataKey="curso" tick={{ fontWeight: 700, fontSize: 13 }} />
-                <YAxis tickFormatter={v => pct(v)} domain={[0, 1]} tick={{ fontSize: 12 }} />
-                <Tooltip formatter={(v) => [pct(v), roleLabels.logro_1 || 'Logro']} />
-                <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
-                    {chartData.map(entry => (
-                        <Cell key={entry.curso} fill={entry.color} />
-                    ))}
-                </Bar>
-            </BarChart>
-        </ResponsiveContainer>
+        <PlotlyWrapper
+            data={[trace]}
+            layout={{ margin: { t: 24, r: 16, b: 40, l: 48 } }}
+            height={height || 260}
+        />
     );
 }
 ```
 
-**Plantilla de tabla:**
+**`PlotlyWrapper` aplica automáticamente**: sin modebar, sin drag, fondos transparentes, fuente Inter, responsive. Solo pasar `data` y `layout`.
 
-```jsx
-// frontend/src/tooling/charts/TablaNombreDescriptivo.jsx
-import React from 'react';
-import { pct } from './constants';
-
-export default function TablaNombreDescriptivo({ data, roleLabels = {} }) {
-    if (!data.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
-
-    return (
-        <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                    <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
-                        {['Columna A', 'Columna B'].map(h => (
-                            <th key={h} className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest">{h}</th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
-                    {data.map((row, i) => (
-                        <tr key={i} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors">
-                            <td className="p-3 font-semibold text-slate-700 dark:text-slate-200">{row._nombre}</td>
-                            <td className="p-3 font-bold text-slate-800 dark:text-white">{pct(row._rend)}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
-        </div>
-    );
-}
-```
-
----
-
-### 2. Exportar desde `frontend/src/tooling/charts/index.js`
+### 2. Exportar desde `plotly-charts/index.js`
 
 ```js
-export { default as GraficoNombreDescriptivo } from './GraficoNombreDescriptivo';
-// o para tabla:
-export { default as TablaNombreDescriptivo } from './TablaNombreDescriptivo';
+export * from './mi-modulo'; // si se agregó a un módulo existente
+// o si se creó un archivo nuevo:
+export * from './nuevo-modulo';
 ```
 
----
+### 3. Registrar en `dashboardRenderer.jsx`
 
-### 3. Registrar en el renderer y en el editor de layout
-
-**`frontend/src/tooling/dashboardRenderer.jsx`** — dos lugares:
+**Tres lugares**:
 
 ```js
-// 3a. En el COMPONENT_MAP (línea ~50):
-import GraficoNombreDescriptivo from './charts/GraficoNombreDescriptivo';
+// 3a. Import al inicio del archivo:
+import { /* ... existentes ..., */ MiNuevoGrafico } from './plotly-charts';
 
+// 3b. En COMPONENT_MAP:
 const COMPONENT_MAP = {
-    // ... componentes existentes ...
-    GraficoNombreDescriptivo,
+    // ... existentes ...
+    MiNuevoGrafico,
 };
 
-// 3b. En buildComponentProps(), agregar el caso si necesita props especiales:
-case 'GraficoNombreDescriptivo':
-    return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels };
-    // Si usa datosCurso (detalle por curso):
-    // return { data: datosCurso.estudiantes, roleLabels: computed.roleLabels };
+// 3c. En buildComponentProps() — mapear campos de dominio → genéricos:
+case 'MiNuevoGrafico':
+    return {
+        records: computed.estudiantes,   // o datosCurso.estudiantes / datosCurso.preguntas
+        groups: computed.cursos,
+        groupField: item.groupField ?? '_curso',
+        valueField: item.valueField ?? '_rend',
+        valueLabel: computed.roleLabels?.logro_1 || 'Promedio',
+        formatValue: (v) => formatValue(v, computed.roleFormats?.logro_1),
+        colors: CURSO_COLORS,
+    };
 
-// 3c. En AUTO_TITLES (línea ~100), agregar el título que aparece encima del gráfico:
+// 3d. En AUTO_TITLES:
 const AUTO_TITLES = {
-    // ... otros ...
-    GraficoNombreDescriptivo: 'Título Visible en el Dashboard',
+    // ...
+    MiNuevoGrafico: 'Título Visible en el Dashboard',
 };
 ```
 
-**`frontend/src/components/LayoutEditorModal.jsx`** — agregar al catálogo de componentes:
+> **Regla de oro**: `buildComponentProps` es el **único punto de traducción** dominio→genérico. El componente no debe saber qué es `_rend` o `_simce`; recibe `valueField` como string.
+
+---
+
+## Opción C — Crear un componente Recharts (solo para casos especiales)
+
+Solo si hay una razón técnica específica para no usar Plotly (no debería ocurrir para componentes nuevos). Seguir el mismo proceso que Opción B pero:
+
+1. Crear en `frontend/src/tooling/charts/NombreDescriptivo.jsx`
+2. Exportar desde `frontend/src/tooling/charts/index.js`
+3. Registrar en `dashboardRenderer.jsx` igual que en Opción B
+
+---
+
+## Registrar en el Editor de Layout
+
+**`frontend/src/components/LayoutEditorModal.jsx`** — agregar al catálogo para que el usuario lo vea al editar un layout:
 
 ```js
-// En CHART_COMPONENTS (para gráficos) o TABLE_COMPONENTS (para tablas):
 const CHART_COMPONENTS = [
     // ... existentes ...
     {
-        id: 'GraficoNombreDescriptivo',
-        label: 'Nombre legible para el editor',
+        id: 'MiNuevoGrafico',
+        label: 'Nombre legible para el editor de layout',
         type: 'chart',
-        requires: ['logro_1'],   // roles que debe tener el indicador para mostrarlo
+        requires: ['logro_1'],   // roles requeridos — controla visibilidad
     },
 ];
+// Para tablas usar TABLE_COMPONENTS
 ```
 
-Los valores posibles de `requires`: `logro_1`, `logro_2`, `nivel_de_logro`, `habilidad`, `habilidad_2`, `evaluacion_num`. Dejar `[]` si el componente no depende de ningún rol específico.
-
----
-
-### 4. Agregar ejemplo en el Centro de Ayuda
-
-**`frontend/src/pages/Help.jsx`**
-
-Agregar una `ComponentCard` dentro de la sección `<Section icon={BarChart3} title="Gráficos">` (o `title="Tablas"`):
-
-```jsx
-// Importar el componente al inicio del archivo:
-import { /* ... existentes ..., */ GraficoNombreDescriptivo } from '../tooling/charts';
-
-// Agregar datos de muestra representativos si los existentes no aplican:
-const MIS_DATOS_EJEMPLO = [ /* ... */ ];
-
-// Dentro de la sección correspondiente:
-<ComponentCard
-    title="GraficoNombreDescriptivo"
-    description="Una línea que explica qué muestra este gráfico y cuándo usarlo."
-    requires={['logro_1']}
->
-    <GraficoNombreDescriptivo
-        data={ESTUDIANTES}
-        cursos={CURSOS}
-        roleLabels={ROLE_LABELS}
-    />
-</ComponentCard>
-```
+Valores posibles de `requires`: `logro_1`, `logro_2`, `nivel_de_logro`, `habilidad`, `habilidad_2`, `evaluacion_num`. Dejar `[]` si no depende de ningún rol.
 
 ---
 
 ## Resumen de archivos a tocar
 
+### Para usar un componente existente en un layout
+
+| Acción | Dónde |
+|---|---|
+| Editar el `dashboard_layout` del indicador | Base de datos / Editor de Layout en UI |
+
+### Para crear un componente Plotly nuevo
+
 | # | Archivo | Qué agregar |
 |---|---------|-------------|
-| 1 | `frontend/src/tooling/charts/GraficoXxx.jsx` | Componente nuevo |
-| 2 | `frontend/src/tooling/charts/index.js` | Export del componente |
-| 3 | `frontend/src/tooling/dashboardRenderer.jsx` | `COMPONENT_MAP`, `buildComponentProps`, `AUTO_TITLES` |
+| 1 | `frontend/src/tooling/plotly-charts/<modulo>.jsx` | Componente nuevo con props genéricos |
+| 2 | `frontend/src/tooling/plotly-charts/index.js` | Export |
+| 3 | `frontend/src/tooling/dashboardRenderer.jsx` | Import, `COMPONENT_MAP`, `buildComponentProps`, `AUTO_TITLES` |
 | 4 | `frontend/src/components/LayoutEditorModal.jsx` | Entrada en `CHART_COMPONENTS` o `TABLE_COMPONENTS` |
-| 5 | `frontend/src/pages/Help.jsx` | `ComponentCard` con ejemplo visual |
 
 ---
 
 ## Notas importantes
 
-- **`requires` controla visibilidad automática**: si el rol no está activo en los datos del indicador, el componente se oculta sin errores. Usarlo correctamente evita renders vacíos.
-- **`buildComponentProps` determina qué datos recibe**: los componentes de vista general reciben `computed.estudiantes`; los de detalle por curso reciben `datosCurso.estudiantes` o `datosCurso.preguntas`. Elegir el correcto según el contexto del tab donde se usará.
-- **Recharts es la librería de gráficos**: usar `ResponsiveContainer` para que sea responsivo. El ancho siempre es `"100%"`, solo ajustar el `height`.
-- **Dark mode**: usar clases Tailwind `dark:` para colores de texto, fondo y bordes. Los gráficos de Recharts no heredan dark mode automáticamente — usar colores neutrales (`#f0f0f0` para grillas) que funcionen en ambos modos.
+- **`requires` controla visibilidad automática**: si el rol no está activo en el indicador, el componente se oculta sin errores.
+- **Vista general vs. detalle por curso**: `computed.estudiantes` tiene todos los registros; `datosCurso.estudiantes` / `datosCurso.preguntas` tienen solo los del curso activo. Elegir el correcto según en qué tab se usará el componente.
+- **Props de layout sobreescriben defaults**: el JSON del indicador puede pasar `valueField`, `groupField`, etc. para hacer el mismo componente configurable para distintos indicadores.
+- **Dark mode**: `PlotlyWrapper` detecta `.dark` en el `<html>` y ajusta colores automáticamente. Las tablas HTML usan clases `dark:` de Tailwind.
+- **Compatibilidad con layouts guardados**: los nombres Recharts (`GraficoLogroPorCurso`, etc.) siguen funcionando vía aliases en `COMPONENT_MAP`. No romper eso.

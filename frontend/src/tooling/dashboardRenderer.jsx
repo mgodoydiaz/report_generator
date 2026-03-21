@@ -38,6 +38,13 @@ import {
     GraficoTendenciaTemporal, GraficoRadarHabilidades,
     TablaAlumnos, TablaPreguntas, TablaResumenCursos,
 } from './charts';
+import {
+    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod,
+    BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
+    TrendLine,
+    RadarProfile,
+    SummaryTable, DetailListTable, DetailListWithProgress,
+} from './plotly-charts';
 
 // ── Layout por defecto (SIMCE) — usado como fallback ─────────────────────────
 
@@ -75,6 +82,7 @@ export const DEFAULT_LAYOUT = {
 // ── Mapa de nombre → componente React ────────────────────────────────────────
 
 const COMPONENT_MAP = {
+    // ── Recharts legacy (mantener para layouts guardados) ──
     GraficoLogroPorCurso,
     GraficoBoxplotPorCurso,
     GraficoNivelesPorCurso,
@@ -87,6 +95,20 @@ const COMPONENT_MAP = {
     TablaResumenCursos,
     TablaAlumnos,
     TablaPreguntas,
+
+    // ── Plotly — nuevos nombres genéricos ──
+    BarByGroup,
+    HorizontalBarByDimension,
+    GroupedBarByPeriod,
+    BoxPlotByGroup,
+    PieComposition,
+    StackedCountByGroup,
+    StackedCountByGroupAndPeriod,
+    TrendLine,
+    RadarProfile,
+    SummaryTable,
+    DetailListTable,
+    DetailListWithProgress,
 };
 
 // Props estándar que cada componente acepta (subset de dashboardComputed)
@@ -103,7 +125,30 @@ function buildComponentProps(componentId, ctx, item = {}) {
         cursoActivo,
     };
 
+    // ── Resolución de campos configurables desde el layout (item) ──
+    // Los campos valueField, groupField, etc. pueden venir del JSON del indicador
+    // para hacer los gráficos Plotly completamente configurables.
+    const isSimce = metricLogro === 'simce';
+    const resolvedValueField = item.valueField ?? (isSimce ? '_simce' : '_rend');
+    const resolvedGroupField = item.groupField ?? '_curso';
+    const resolvedValueLabel = item.valueLabel ?? (isSimce ? (computed.roleLabels?.logro_2 || 'Val. secundario') : (computed.roleLabels?.logro_1 || 'Promedio'));
+    const resolvedFormatStr = item.formatStr ?? (isSimce ? computed.roleFormats?.logro_2 : computed.roleFormats?.logro_1);
+    const fmtFn = (v) => formatValue(v, resolvedFormatStr);
+    const temporalLabels = (() => {
+        const map = {};
+        if (computed.temporalConfig) {
+            const allEntries = computed.estudiantes;
+            allEntries.forEach(e => {
+                if (e._evaluacion_num != null && e._temporal_label) {
+                    map[e._evaluacion_num] = e._temporal_label;
+                }
+            });
+        }
+        return map;
+    })();
+
     switch (componentId) {
+        // ── Recharts legacy ──
         case 'GraficoLogroPorCurso':
             return {
                 ...base,
@@ -143,6 +188,129 @@ function buildComponentProps(componentId, ctx, item = {}) {
             return { data: datosCurso.estudiantes, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, activeRoles: computed.activeRoles };
         case 'TablaPreguntas':
             return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
+
+        // ── Plotly — nuevos componentes genéricos ──
+        case 'BarByGroup':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                valueField: resolvedValueField,
+                valueLabel: resolvedValueLabel,
+                formatValue: fmtFn,
+                colors: CURSO_COLORS,
+            };
+        case 'BoxPlotByGroup':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                valueField: resolvedValueField,
+                formatValue: fmtFn,
+                colors: CURSO_COLORS,
+            };
+        case 'PieComposition':
+            return {
+                records: computed.estudiantes,
+                categoryField: item.categoryField ?? '_logro',
+                categoryLevels: computed.achievement_levels || [],
+            };
+        case 'StackedCountByGroup':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                categoryField: item.categoryField ?? '_logro',
+                categoryLevels: computed.achievement_levels || [],
+            };
+        case 'StackedCountByGroupAndPeriod':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                categoryField: item.categoryField ?? '_logro',
+                categoryLevels: computed.achievement_levels || [],
+                periodField: item.periodField ?? '_evaluacion_num',
+                periodLabels: temporalLabels,
+            };
+        case 'HorizontalBarByDimension':
+            return {
+                records: datosCurso.preguntas,
+                dimensionField: item.dimensionField ?? '_habilidad',
+                valueField: item.valueField ?? '_logro_pregunta',
+                valueLabel: resolvedValueLabel,
+                formatValue: fmtFn,
+            };
+        case 'GroupedBarByPeriod':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                valueField: resolvedValueField,
+                periodField: item.periodField ?? '_evaluacion_num',
+                periodLabels: temporalLabels,
+                valueLabel: resolvedValueLabel,
+                formatValue: fmtFn,
+                colors: CURSO_COLORS,
+            };
+        case 'TrendLine':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                valueField: resolvedValueField,
+                periodField: item.periodField ?? '_evaluacion_num',
+                periodLabels: temporalLabels,
+                valueLabel: resolvedValueLabel,
+                formatValue: fmtFn,
+                colors: CURSO_COLORS,
+            };
+        case 'RadarProfile':
+            return {
+                records: datosCurso.preguntas,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                axisField: item.axisField ?? '_habilidad',
+                valueField: item.valueField ?? '_logro_pregunta',
+                formatValue: fmtFn,
+                colors: CURSO_COLORS,
+            };
+        case 'SummaryTable':
+            return {
+                records: computed.estudiantes,
+                groups: computed.cursos,
+                groupField: item.groupField ?? '_curso',
+                groupColors: CURSO_COLORS,
+                valueField: item.valueField ?? '_rend',
+                valueLabel: computed.roleLabels?.logro_1 || 'Promedio',
+                formatValue: (v) => formatValue(v, computed.roleFormats?.logro_1),
+                valueField2: computed.activeRoles?.logro_2 ? '_simce' : null,
+                valueLabel2: computed.activeRoles?.logro_2 ? (computed.roleLabels?.logro_2 || 'Val. secundario') : null,
+                formatValue2: (v) => formatValue(v, computed.roleFormats?.logro_2),
+                categoryField: item.categoryField ?? '_logro',
+                categoryLevels: computed.achievement_levels || [],
+                onGroupClick: onCursoClick,
+                activeGroup: cursoActivo,
+            };
+        case 'DetailListTable':
+            return {
+                records: datosCurso.estudiantes,
+                labelField: item.labelField ?? '_nombre',
+                valueField: item.valueField ?? '_rend',
+                formatValue: (v) => formatValue(v, computed.roleFormats?.logro_1),
+                badgeField: item.badgeField ?? '_logro',
+            };
+        case 'DetailListWithProgress':
+            return {
+                records: datosCurso.preguntas,
+                labelField: item.labelField ?? '_pregunta',
+                dimensionField: item.dimensionField ?? '_habilidad',
+                progressField: item.progressField ?? '_logro_pregunta',
+                progressLabel: computed.roleLabels?.logro_1 || 'Logro',
+                extraField: item.extraField ?? '_correcta',
+                extraLabel: item.extraLabel ?? 'Correcta',
+            };
+
         default:
             return base;
     }
@@ -158,6 +326,7 @@ function itemIsVisible(item, activeRoles) {
 // ── Títulos automáticos por componente ───────────────────────────────────────
 
 const AUTO_TITLES = {
+    // Recharts legacy
     GraficoLogroPorCurso:                 'Logro Promedio por Curso',
     GraficoBoxplotPorCurso:               'Distribución por Curso',
     GraficoNivelesPorCurso:               'Alumnos por Nivel de Logro',
@@ -170,6 +339,19 @@ const AUTO_TITLES = {
     TablaResumenCursos:                   'Resumen por Curso',
     TablaAlumnos:                         'Logro por Estudiante',
     TablaPreguntas:                       'Logro por Pregunta',
+    // Plotly new
+    BarByGroup:                           'Promedio por Grupo',
+    BoxPlotByGroup:                       'Distribución por Grupo',
+    PieComposition:                       'Composición por Nivel',
+    StackedCountByGroup:                  'Conteo por Grupo y Nivel',
+    StackedCountByGroupAndPeriod:         'Niveles por Grupo y Evaluación',
+    HorizontalBarByDimension:             'Promedio por Dimensión',
+    GroupedBarByPeriod:                   'Promedio por Grupo y Evaluación',
+    TrendLine:                            'Tendencia Temporal',
+    RadarProfile:                         'Perfil de Dimensiones',
+    SummaryTable:                         'Resumen por Grupo',
+    DetailListTable:                      'Detalle de Items',
+    DetailListWithProgress:               'Detalle con Progreso',
 };
 
 // ── Renderer de un ítem individual ───────────────────────────────────────────
