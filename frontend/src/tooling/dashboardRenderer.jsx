@@ -23,7 +23,7 @@ import {
     TablaAlumnos, TablaPreguntas, TablaResumenCursos,
 } from './charts';
 import {
-    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod,
+    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod, DoubleGroupedBar,
     BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
     TrendLine,
     RadarProfile,
@@ -71,7 +71,7 @@ const COMPONENT_MAP = {
     GraficoHabilidades, GraficoDistribucionNiveles, GraficoNivelesPorCursoYMes,
     GraficoPromedioAgrupadoPorDimension, GraficoTendenciaTemporal, GraficoRadarHabilidades,
     TablaResumenCursos, TablaAlumnos, TablaPreguntas,
-    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod,
+    BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod, DoubleGroupedBar,
     BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
     TrendLine, RadarProfile, SummaryTable, DetailListTable, DetailListWithProgress,
 };
@@ -85,7 +85,8 @@ const PLOTLY_REQUIRED_FIELDS = {
     PieComposition:               ['categoryField'],
     StackedCountByGroup:          ['groupField', 'categoryField'],
     HorizontalBarByDimension:     ['dimensionField', 'valueField'],
-    GroupedBarByPeriod:           ['groupField', 'periodField', 'valueField'],
+    GroupedBarByPeriod:           ['groupField', 'subGroupField', 'valueField'],
+    DoubleGroupedBar:            ['groupField', 'subGroupField', 'valueField'],
     StackedCountByGroupAndPeriod: ['groupField', 'periodField', 'categoryField'],
     TrendLine:                    ['groupField', 'periodField', 'valueField'],
     RadarProfile:                 ['groupField', 'axisField', 'valueField'],
@@ -141,9 +142,9 @@ const FIELD_DEFAULT_LABEL = {
  * devuelve el formatStr que corresponde al valueField activo.
  * Prioridad: item.formatStr > roleFormats del rol > default por campo
  */
-function deriveFormatStr(activeValueField, itemFormatStr, roleFormats) {
+function deriveFormatStr(activeValueField, itemFormatStr, roleFormats, fieldToRole) {
     if (itemFormatStr) return itemFormatStr;
-    const role = FIELD_TO_ROLE[activeValueField];
+    const role = fieldToRole?.[activeValueField] || FIELD_TO_ROLE[activeValueField];
     if (role && roleFormats?.[role]) return roleFormats[role];
     return FIELD_DEFAULT_FORMAT[activeValueField] ?? '%.0';
 }
@@ -152,9 +153,9 @@ function deriveFormatStr(activeValueField, itemFormatStr, roleFormats) {
  * Devuelve la etiqueta del valueField activo.
  * Prioridad: item.valueLabel > roleLabels del rol > default por campo
  */
-function deriveValueLabel(activeValueField, itemValueLabel, roleLabels) {
+function deriveValueLabel(activeValueField, itemValueLabel, roleLabels, fieldToRole) {
     if (itemValueLabel) return itemValueLabel;
-    const role = FIELD_TO_ROLE[activeValueField];
+    const role = fieldToRole?.[activeValueField] || FIELD_TO_ROLE[activeValueField];
     if (role && roleLabels?.[role]) return roleLabels[role];
     return FIELD_DEFAULT_LABEL[activeValueField] ?? activeValueField;
 }
@@ -182,8 +183,8 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
     const activeValueField = resolveValueField(item, activeValueIdx);
 
     // Derivar formatStr y label desde roleFormats/roleLabels o defaults por campo
-    const resolvedFormatStr = deriveFormatStr(activeValueField, item.formatStr, computed.roleFormats);
-    const resolvedValueLabel = deriveValueLabel(activeValueField, item.valueLabel, computed.roleLabels);
+    const resolvedFormatStr = deriveFormatStr(activeValueField, item.formatStr, computed.roleFormats, computed.fieldToRole);
+    const resolvedValueLabel = deriveValueLabel(activeValueField, item.valueLabel, computed.roleLabels, computed.fieldToRole);
 
     const fmtFn = (v) => formatValue(v, resolvedFormatStr);
 
@@ -242,7 +243,10 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
 
         // ── Plotly — campos explícitos, sin fallbacks ──
-        case 'BarByGroup':
+        // Opciones visuales comunes (del item, configuradas en el modal)
+        // eslint-disable-next-line no-case-declarations
+        case 'BarByGroup': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
@@ -252,8 +256,11 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
+                ...vp,
             };
-        case 'BoxPlotByGroup':
+        }
+        case 'BoxPlotByGroup': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
@@ -262,22 +269,31 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
+                ...vp,
             };
-        case 'PieComposition':
+        }
+        case 'PieComposition': {
+            const vp = { showLegend: item.showLegend };
             return {
                 records: computed.estudiantes,
                 categoryField: item.categoryField,
                 categoryLevels: computed.achievement_levels || [],
+                ...vp,
             };
-        case 'StackedCountByGroup':
+        }
+        case 'StackedCountByGroup': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField,
                 categoryField: item.categoryField,
                 categoryLevels: computed.achievement_levels || [],
+                ...vp,
             };
-        case 'StackedCountByGroupAndPeriod':
+        }
+        case 'StackedCountByGroupAndPeriod': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
@@ -286,8 +302,11 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 categoryLevels: computed.achievement_levels || [],
                 periodField: item.periodField,
                 periodLabels: temporalLabels,
+                ...vp,
             };
-        case 'HorizontalBarByDimension':
+        }
+        case 'HorizontalBarByDimension': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
                 records: datosCurso.preguntas,
                 dimensionField: item.dimensionField,
@@ -295,8 +314,37 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
+                ...vp,
             };
-        case 'GroupedBarByPeriod':
+        }
+        case 'DoubleGroupedBar':
+        case 'GroupedBarByPeriod': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const rawSubGroup = item.subGroupField || item.periodField; // backward compat con layouts antiguos
+            // legendField permite elegir qué campo drive los colores/leyenda.
+            // Si legendField === groupField, se intercambian: groupField pasa al X axis y subGroupField a la leyenda se invierte.
+            let effGroup = item.groupField;
+            let effSubGroup = rawSubGroup;
+            if (item.legendField && item.legendField !== rawSubGroup) {
+                // El usuario eligió que el groupField sea la leyenda → swap
+                effGroup = rawSubGroup;
+                effSubGroup = item.groupField;
+            }
+            return {
+                records: computed.estudiantes,
+                groupField: effGroup,
+                subGroupField: effSubGroup,
+                valueField: activeValueField,
+                subGroupLabels: temporalLabels,
+                valueLabel: resolvedValueLabel,
+                formatValue: fmtFn,
+                formatStr: resolvedFormatStr,
+                colors: CURSO_COLORS,
+                ...vp,
+            };
+        }
+        case 'TrendLine': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
@@ -308,21 +356,11 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
+                ...vp,
             };
-        case 'TrendLine':
-            return {
-                records: computed.estudiantes,
-                groups: computed.cursos,
-                groupField: item.groupField,
-                valueField: activeValueField,
-                periodField: item.periodField,
-                periodLabels: temporalLabels,
-                valueLabel: resolvedValueLabel,
-                formatValue: fmtFn,
-                formatStr: resolvedFormatStr,
-                colors: CURSO_COLORS,
-            };
-        case 'RadarProfile':
+        }
+        case 'RadarProfile': {
+            const vp = { showLegend: item.showLegend };
             return {
                 records: datosCurso.preguntas,
                 groups: computed.cursos,
@@ -331,7 +369,9 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 valueField: activeValueField,
                 formatValue: fmtFn,
                 colors: CURSO_COLORS,
+                ...vp,
             };
+        }
         case 'SummaryTable':
             return {
                 records: computed.estudiantes,
@@ -398,7 +438,8 @@ const AUTO_TITLES = {
     StackedCountByGroup: 'Conteo por Grupo y Nivel',
     StackedCountByGroupAndPeriod: 'Niveles por Grupo y Evaluación',
     HorizontalBarByDimension: 'Promedio por Dimensión',
-    GroupedBarByPeriod: 'Promedio por Grupo y Evaluación',
+    GroupedBarByPeriod: 'Barras Doblemente Agrupadas',
+    DoubleGroupedBar: 'Barras Doblemente Agrupadas',
     TrendLine: 'Tendencia Temporal',
     RadarProfile: 'Perfil de Dimensiones',
     SummaryTable: 'Resumen por Grupo',
@@ -477,7 +518,7 @@ function ValueFieldToggle({ fields, activeIdx, onChange, computed }) {
     );
 }
 
-function ItemRenderer({ item, ctx }) {
+export function ItemRenderer({ item, ctx }) {
     const { computed, datosCurso, cursoActivo, setCursoActivo } = ctx;
     const { activeRoles } = computed;
     const [activeValueIdx, setActiveValueIdx] = useState(0);
@@ -531,7 +572,7 @@ function ItemRenderer({ item, ctx }) {
     }
 
     const props = buildComponentProps(item.component, ctx, item, activeValueIdx);
-    const title = AUTO_TITLES[item.component];
+    const title = item.title || AUTO_TITLES[item.component];
 
     if (item.component === 'TablaAlumnos' && datosCurso.estudiantes.length === 0) return null;
     if (item.component === 'TablaPreguntas' && datosCurso.preguntas.length === 0) return null;

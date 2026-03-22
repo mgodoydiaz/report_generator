@@ -32,6 +32,9 @@ export function BoxPlotByGroup({
     formatStr,
     colors = CATEGORY_COLORS,
     height,
+    labelX,
+    labelY,
+    showLegend,
 }) {
     const groupList = groups.length
         ? groups
@@ -55,9 +58,14 @@ export function BoxPlotByGroup({
         <PlotlyWrapper
             data={traces}
             layout={{
-                showlegend: false,
-                yaxis: { range: [yMin, yMax ?? null], tickformat: isPct ? '.0%' : undefined },
-                margin: { t: 16, r: 16, b: 40, l: 48 },
+                showlegend: showLegend ?? false,
+                yaxis: {
+                    range: [yMin, yMax ?? null],
+                    tickformat: isPct ? '.0%' : undefined,
+                    ...(labelY ? { title: { text: labelY, font: { size: 11 } } } : {}),
+                },
+                xaxis: labelX ? { title: { text: labelX, font: { size: 11 } } } : {},
+                margin: { t: 16, r: 16, b: labelX ? 56 : 40, l: 48 },
             }}
             height={height || 280}
         />
@@ -79,6 +87,7 @@ export function PieComposition({
     categoryLevels = [],
     categoryColors = null,
     height,
+    showLegend,
 }) {
     const levels = categoryLevels.length
         ? categoryLevels
@@ -110,7 +119,7 @@ export function PieComposition({
         <PlotlyWrapper
             data={[trace]}
             layout={{
-                showlegend: false,
+                showlegend: showLegend ?? false,
                 margin: { t: 16, r: 16, b: 16, l: 16 },
             }}
             height={height || 260}
@@ -137,6 +146,10 @@ export function StackedCountByGroup({
     categoryLevels = [],
     categoryColors = null,
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
     const groupList = groups.length
         ? groups
@@ -152,6 +165,7 @@ export function StackedCountByGroup({
         return autoColors[i] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     };
 
+    const displayValues = showValues !== false;
     const traces = levels.map((level, i) => ({
         type: 'bar',
         name: String(level),
@@ -163,7 +177,7 @@ export function StackedCountByGroup({
             const cnt = records.filter(r => r[groupField] === g && r[categoryField] === level).length;
             return cnt > 0 ? String(cnt) : '';
         }),
-        textposition: 'inside',
+        textposition: displayValues ? 'inside' : 'none',
         textfont: { color: '#fff', size: 11 },
     }));
 
@@ -172,9 +186,11 @@ export function StackedCountByGroup({
             data={traces}
             layout={{
                 barmode: 'stack',
+                showlegend: showLegend ?? true,
                 legend: { orientation: 'h', y: -0.2 },
-                margin: { t: 16, r: 16, b: 60, l: 40 },
-                yaxis: { title: null },
+                margin: { t: 16, r: 16, b: labelX ? 76 : 60, l: 40 },
+                yaxis: { title: labelY ? { text: labelY, font: { size: 11 } } : null },
+                xaxis: labelX ? { title: { text: labelX, font: { size: 11 } } } : {},
             }}
             height={height || 260}
         />
@@ -204,6 +220,10 @@ export function StackedCountByGroupAndPeriod({
     periodField = '_evaluacion_num',
     periodLabels = {},
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
     const groupList = groups.length
         ? groups
@@ -278,12 +298,19 @@ export function StackedCountByGroupAndPeriod({
     });
 
     const dynamicHeight = Math.max(280, 200 + pairs.length * 10);
+    const displayValues = showValues !== false;
+
+    // Aplicar showValues a las trazas
+    traces.forEach(t => {
+        t.textposition = displayValues ? 'inside' : 'none';
+    });
 
     return (
         <PlotlyWrapper
             data={traces}
             layout={{
                 barmode: 'stack',
+                showlegend: showLegend ?? true,
                 shapes,
                 annotations,
                 xaxis: {
@@ -292,9 +319,11 @@ export function StackedCountByGroupAndPeriod({
                     ticktext: pairs.map(p => p.xLabel),
                     tickangle: -35,
                     tickfont: { size: 11 },
+                    ...(labelX ? { title: { text: labelX, font: { size: 11 } } } : {}),
                 },
+                yaxis: labelY ? { title: { text: labelY, font: { size: 11 } } } : {},
                 legend: { orientation: 'h', y: -0.3 },
-                margin: { t: 16, r: 16, b: 80, l: 40 },
+                margin: { t: 16, r: 16, b: labelX ? 96 : 80, l: 40 },
             }}
             height={height || dynamicHeight}
         />

@@ -4,7 +4,7 @@
  * Componentes:
  *   BarByGroup              — Promedio de una métrica por grupo (ej. logro por curso)
  *   HorizontalBarByDimension — Promedio por dimensión secundaria (ej. habilidad)
- *   GroupedBarByPeriod      — Promedio por grupo × periodo temporal
+ *   DoubleGroupedBar        — Barras doblemente agrupadas (grupo × subgrupo)
  */
 
 import React from 'react';
@@ -44,6 +44,10 @@ export function BarByGroup({
     formatStr,
     colors = CATEGORY_COLORS,
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
     const groupList = groups.length
         ? groups
@@ -53,13 +57,14 @@ export function BarByGroup({
         avg(records.filter(r => r[groupField] === g), valueField)
     );
 
+    const displayValues = showValues !== false;
     const trace = {
         type: 'bar',
         x: groupList,
         y: values,
         marker: { color: groupList.map((_, i) => colors[i % colors.length]) },
         text: values.map(v => fmt(v)),
-        textposition: 'outside',
+        textposition: displayValues ? 'outside' : 'none',
         textfont: { size: 12, color: '#334155' },
         hovertemplate: `<b>%{x}</b><br>${valueLabel}: %{text}<extra></extra>`,
     };
@@ -67,13 +72,16 @@ export function BarByGroup({
     const maxVal = Math.max(...values.filter(v => !isNaN(v)), 0);
     const yax = yAxisProps(formatStr);
     if (!yax.range[1]) yax.range[1] = maxVal * 1.15 || 1;
+    if (labelY) yax.title = { text: labelY, font: { size: 11 } };
 
     return (
         <PlotlyWrapper
             data={[trace]}
             layout={{
+                showlegend: showLegend ?? false,
                 yaxis: yax,
-                margin: { t: 24, r: 16, b: 40, l: 48 },
+                xaxis: labelX ? { title: { text: labelX, font: { size: 11 } } } : {},
+                margin: { t: 24, r: 16, b: labelX ? 56 : 40, l: 48 },
             }}
             height={height || 260}
         />
@@ -100,6 +108,10 @@ export function HorizontalBarByDimension({
     formatStr,
     color = CATEGORY_COLORS[0],
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
     const dims = [...new Set(records.map(r => r[dimensionField]).filter(Boolean))];
     if (!dims.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
@@ -108,6 +120,7 @@ export function HorizontalBarByDimension({
         avg(records.filter(r => r[dimensionField] === d), valueField)
     );
 
+    const displayValues = showValues !== false;
     const trace = {
         type: 'bar',
         orientation: 'h',
@@ -115,7 +128,7 @@ export function HorizontalBarByDimension({
         x: values,
         marker: { color },
         text: values.map(v => fmt(v)),
-        textposition: 'outside',
+        textposition: displayValues ? 'outside' : 'none',
         textfont: { size: 12 },
         hovertemplate: `<b>%{y}</b><br>${valueLabel}: %{text}<extra></extra>`,
     };
@@ -127,73 +140,108 @@ export function HorizontalBarByDimension({
         <PlotlyWrapper
             data={[trace]}
             layout={{
-                margin: { t: 16, r: 60, b: 40, l: 100 },
-                xaxis: { range: [0, isPct ? 1.1 : null], tickformat: isPct ? '.0%' : undefined },
-                yaxis: { automargin: true },
+                showlegend: showLegend ?? false,
+                margin: { t: 16, r: 60, b: labelX ? 56 : 40, l: 100 },
+                xaxis: {
+                    range: [0, isPct ? 1.1 : null],
+                    tickformat: isPct ? '.0%' : undefined,
+                    ...(labelX ? { title: { text: labelX, font: { size: 11 } } } : {}),
+                },
+                yaxis: {
+                    automargin: true,
+                    ...(labelY ? { title: { text: labelY, font: { size: 11 } } } : {}),
+                },
             }}
             height={height || dynamicHeight}
         />
     );
 }
 
-// ── GroupedBarByPeriod ────────────────────────────────────────────────────────
+// ── DoubleGroupedBar ─────────────────────────────────────────────────────────
 /**
+ * Barras doblemente agrupadas.
+ *
+ * Eje X: valores únicos de `groupField` (ej. cursos: "II A", "II B", …)
+ * Barras dentro de cada grupo: valores únicos de `subGroupField` (ej. meses, evaluaciones)
+ * Eje Y: promedio de `valueField` para cada combinación grupo × subgrupo
+ * Leyenda: cada `subGroup` recibe un color.
+ *
  * Props:
- *   records       Array<Object>
- *   groups        string[]        grupos (ej. cursos) — cada grupo = una barra dentro del periodo
- *   groupField    string          campo de grupo (ej. "_curso")
- *   valueField    string          campo numérico a agregar
- *   periodField   string          campo de periodo (ej. "_evaluacion_num")
- *   periodLabels  Object          mapa periodo → etiqueta display (ej. {1: "Ev. 1"})
- *   valueLabel    string
- *   formatValue   (v) => string
- *   colors        string[]
- *   height        number
+ *   records         Array<Object>
+ *   groupField      string          campo de agrupación principal — eje X (ej. "_curso")
+ *   subGroupField   string          campo de sub-agrupación — barras dentro de cada grupo (ej. "_mes")
+ *   valueField      string          campo numérico a agregar (ej. "_rend")
+ *   subGroupLabels  Object          mapa subGroup → etiqueta display (ej. {1: "Ev. 1"})
+ *   valueLabel      string
+ *   formatValue     (v) => string
+ *   formatStr       string
+ *   colors          string[]
+ *   height          number
+ *   labelX          string
+ *   labelY          string
+ *   showLegend      boolean
+ *   showValues      boolean
  */
-export function GroupedBarByPeriod({
+export function DoubleGroupedBar({
     records = [],
-    groups = [],
     groupField = '_curso',
+    subGroupField = '_evaluacion_num',
     valueField = '_rend',
-    periodField = '_evaluacion_num',
-    periodLabels = {},
+    subGroupLabels = {},
     valueLabel = 'Valor',
     formatValue: fmt = (v) => String(v),
     formatStr,
     colors = CATEGORY_COLORS,
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
-    const groupList = groups.length
-        ? groups
-        : [...new Set(records.map(r => r[groupField]).filter(Boolean))].sort();
+    const groupList = [...new Set(records.map(r => r[groupField]).filter(Boolean))].sort();
+    const subGroups = [...new Set(records.map(r => r[subGroupField]).filter(v => v != null))].sort((a, b) => {
+        // Intentar orden numérico, fallback a string
+        const na = Number(a), nb = Number(b);
+        if (!isNaN(na) && !isNaN(nb)) return na - nb;
+        return String(a).localeCompare(String(b));
+    });
 
-    const periods = [...new Set(records.map(r => r[periodField]).filter(v => v != null))].sort((a, b) => a - b);
-    if (!periods.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
+    if (!groupList.length || !subGroups.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
 
-    const getLabel = (p) => periodLabels[p] ?? String(p);
+    const getSubLabel = (sg) => subGroupLabels[sg] ?? String(sg);
+    const displayValues = showValues !== false;
 
-    const traces = groupList.map((g, i) => ({
+    // Una trace por subGroup (cada subGroup = un color en la leyenda)
+    const traces = subGroups.map((sg, i) => ({
         type: 'bar',
-        name: String(g),
-        x: periods.map(getLabel),
-        y: periods.map(p => avg(records.filter(r => r[groupField] === g && r[periodField] === p), valueField)),
+        name: getSubLabel(sg),
+        x: groupList.map(String),
+        y: groupList.map(g => avg(records.filter(r => r[groupField] === g && r[subGroupField] === sg), valueField)),
         marker: { color: colors[i % colors.length] },
-        text: periods.map(p => fmt(avg(records.filter(r => r[groupField] === g && r[periodField] === p), valueField))),
-        textposition: 'outside',
+        text: groupList.map(g => fmt(avg(records.filter(r => r[groupField] === g && r[subGroupField] === sg), valueField))),
+        textposition: displayValues ? 'outside' : 'none',
         textfont: { size: 11 },
-        hovertemplate: `<b>${g}</b><br>%{x}<br>${valueLabel}: %{text}<extra></extra>`,
+        hovertemplate: `<b>%{x}</b><br>${getSubLabel(sg)}<br>${valueLabel}: %{text}<extra></extra>`,
     }));
+
+    const yax = yAxisProps(formatStr);
+    if (labelY) yax.title = { text: labelY, font: { size: 11 } };
 
     return (
         <PlotlyWrapper
             data={traces}
             layout={{
                 barmode: 'group',
-                yaxis: yAxisProps(formatStr),
+                showlegend: showLegend ?? true,
+                yaxis: yax,
+                xaxis: labelX ? { title: { text: labelX, font: { size: 11 } } } : {},
                 legend: { orientation: 'h', y: -0.2 },
-                margin: { t: 24, r: 16, b: 60, l: 48 },
+                margin: { t: 24, r: 16, b: labelX ? 76 : 60, l: 48 },
             }}
             height={height || 280}
         />
     );
 }
+
+// Backward compat alias
+export const GroupedBarByPeriod = DoubleGroupedBar;

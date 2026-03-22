@@ -32,6 +32,7 @@ export function RadarProfile({
     formatValue: fmt = (v) => String(v),
     colors = CATEGORY_COLORS,
     height,
+    showLegend,
 }) {
     if (!records.length) return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
 
@@ -83,7 +84,7 @@ export function RadarProfile({
                     },
                     bgcolor: 'transparent',
                 },
-                showlegend: traces.length > 1,
+                showlegend: showLegend ?? traces.length > 1,
                 legend: { orientation: 'h', y: -0.15 },
                 margin: { t: 16, r: 40, b: 40, l: 40 },
             }}

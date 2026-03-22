@@ -35,6 +35,10 @@ export function TrendLine({
     formatStr,
     colors = CATEGORY_COLORS,
     height,
+    labelX,
+    labelY,
+    showLegend,
+    showValues,
 }) {
     const groupList = groups.length
         ? groups
@@ -45,6 +49,7 @@ export function TrendLine({
 
     const getLabel = (p) => periodLabels[p] ?? String(p);
     const xLabels = periods.map(getLabel);
+    const displayValues = showValues !== false;
 
     const traces = groupList.map((g, i) => {
         const yValues = periods.map(p => {
@@ -54,7 +59,7 @@ export function TrendLine({
 
         return {
             type: 'scatter',
-            mode: 'lines+markers+text',
+            mode: displayValues ? 'lines+markers+text' : 'lines+markers',
             name: String(g),
             x: xLabels,
             y: yValues,
@@ -76,10 +81,18 @@ export function TrendLine({
         <PlotlyWrapper
             data={traces}
             layout={{
-                yaxis: { range: [yMin, yMax ?? null], tickformat: isPct ? '.0%' : undefined },
+                showlegend: showLegend ?? true,
+                yaxis: {
+                    range: [yMin, yMax ?? null],
+                    tickformat: isPct ? '.0%' : undefined,
+                    ...(labelY ? { title: { text: labelY, font: { size: 11 } } } : {}),
+                },
                 legend: { orientation: 'h', y: -0.25 },
                 margin: { t: 24, r: 16, b: hasLongLabels ? 70 : 50, l: 48 },
-                xaxis: { tickangle: hasLongLabels ? -30 : 0 },
+                xaxis: {
+                    tickangle: hasLongLabels ? -30 : 0,
+                    ...(labelX ? { title: { text: labelX, font: { size: 11 } } } : {}),
+                },
             }}
             height={height || 280}
         />
