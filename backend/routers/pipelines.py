@@ -6,7 +6,7 @@ from typing import List, Dict, Optional
 from io import BytesIO
 from pathlib import Path
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from config import BASE_DIR, PIPELINES_DB_PATH, UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner, run_pipeline
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json, get_json_safe_df
@@ -44,18 +44,21 @@ def _get_pipeline_config_from_excel(pipeline_id: int) -> Optional[dict]:
 async def get_pipelines():
     try:
         if not PIPELINES_DB_PATH.exists():
-            return {"error": f"Archivo no encontrado en {PIPELINES_DB_PATH}"}
-        
+            return JSONResponse({"error": f"Archivo no encontrado en {PIPELINES_DB_PATH}"})
+
         df = pd.read_excel(PIPELINES_DB_PATH)
         df = get_json_safe_df(df)
-        
+
         if 'last_run' in df.columns:
-            # Asegurar que last_run sea string, tratando None como ""
             df['last_run'] = df['last_run'].apply(lambda x: str(x) if x is not None else "")
-            
-        return df.to_dict(orient="records")
+
+        records = df.to_dict(orient="records")
+        # Serializar dentro del try para capturar cualquier valor no-JSON-safe
+        return JSONResponse(content=json.loads(json.dumps(records, default=lambda o: None)))
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.post("/{pipeline_id}/upload")
 async def upload_pipeline_files(pipeline_id: int, input_key: str = Form(...), files: List[UploadFile] = File(...)):
@@ -314,6 +317,10 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
         steps_text = " -> ".join([s.get("step", "Sin nombre") for s in steps_list])
         config_json_text = safe_json_to_text(config)
 
+        # Asegurar que la columna hidden exista
+        if 'hidden' not in df.columns:
+            df['hidden'] = 0
+
         if is_new:
             new_row = {
                 'pipeline_id': target_id,
@@ -323,7 +330,8 @@ async def save_pipeline_config_logic(pipeline_id: int, config: dict):
                 'config_json': config_json_text,
                 'input': str(metadata.get("input", "EXCEL")).upper(),
                 'output': str(metadata.get("output", "XLSX")).upper(),
-                'last_run': ''
+                'last_run': '',
+                'hidden': 0
             }
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
         else:

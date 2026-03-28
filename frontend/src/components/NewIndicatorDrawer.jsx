@@ -49,7 +49,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 role_formats: initialData.role_formats || {},
                 filter_dimensions: initialData.filter_dimensions || [],
                 temporal_config: initialData.temporal_config || { levels: [] },
-                achievement_levels: initialData.achievement_levels || []
+                achievement_levels: Array.isArray(initialData.achievement_levels) ? initialData.achievement_levels : []
             });
         } else {
             setFormData({
