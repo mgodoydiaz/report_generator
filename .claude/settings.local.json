@@ -18,7 +18,24 @@
       "Bash(npx vite:*)",
       "mcp__e77e5189-1d1a-44d8-987f-ee7226dc3235__gmail_create_draft",
       "Bash(psql --version)",
-      "Bash(psql -U postgres -c \"\\\\l\")"
+      "Bash(psql -U postgres -c \"\\\\l\")",
+      "Bash(gh pr:*)",
+      "Bash(winget install:*)",
+      "Bash(where gh:*)",
+      "Bash('/c/Program Files/GitHub CLI/gh.exe' --version)",
+      "Read(//c/Program Files//**)",
+      "Bash(\"/c/Program Files/GitHub CLI/gh.exe\" auth status)",
+      "Bash(psql -U postgres -c \"CREATE USER mgodoy WITH PASSWORD ''holapocompadre977'';\")",
+      "Bash(psql -U postgres -c \"CREATE DATABASE rgenerator_dev OWNER mgodoy;\")",
+      "Bash(psql -U postgres -c \"GRANT ALL PRIVILEGES ON DATABASE rgenerator_dev TO mgodoy;\")",
+      "Bash(\"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -U postgres -c \"SELECT usename FROM pg_user WHERE usename=''mgodoy'';\")",
+      "Bash(\"/c/Program Files/PostgreSQL/18/bin/psql.exe\" -U postgres -c \"SELECT datname FROM pg_database WHERE datname=''rgenerator_dev'';\")",
+      "Bash(PYTHONIOENCODING=utf-8 \"C:\\\\Users\\\\magod\\\\.conda\\\\envs\\\\rgenerator\\\\python.exe\" scripts/migrate_excel_to_pg.py)",
+      "Bash(PYTHONIOENCODING=utf-8 \"C:\\\\Users\\\\magod\\\\.conda\\\\envs\\\\rgenerator\\\\python.exe\" -c \":*)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwib3JnX2lkIjoxLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3NzUzNzQyODJ9.tbesC2EGdMHx3wPEPXbgnfoQ_o2-Yq_d6_yuGT9xzLc\")",
+      "Bash(curl -s http://localhost:8000/api/users/ -H \"Authorization: Bearer $TOKEN\")",
+      "Bash(curl -s http://localhost:8000/api/users/)",
+      "Bash(pkill -f \"uvicorn api:app\")"
     ]
   }
 }

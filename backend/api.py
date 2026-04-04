@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import pipelines, specs, dimensions, metrics, indicators, results, resultspy
+from routers import auth, users
 
 app = FastAPI()
 
@@ -21,6 +22,8 @@ app.include_router(metrics.router)
 app.include_router(indicators.router)
 app.include_router(results.router)
 app.include_router(resultspy.router)
+app.include_router(auth.router)
+app.include_router(users.router)
 
 if __name__ == "__main__":
     import uvicorn
