@@ -15,7 +15,10 @@
       "Bash(conda run -n rgenerator python -c \":*)",
       "Bash(conda run:*)",
       "Bash(npm install:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "mcp__e77e5189-1d1a-44d8-987f-ee7226dc3235__gmail_create_draft",
+      "Bash(psql --version)",
+      "Bash(psql -U postgres -c \"\\\\l\")"
     ]
   }
 }
