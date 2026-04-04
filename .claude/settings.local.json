@@ -35,7 +35,11 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwib3JnX2lkIjoxLCJyb2xlIjoiYWRtaW4iLCJleHAiOjE3NzUzNzQyODJ9.tbesC2EGdMHx3wPEPXbgnfoQ_o2-Yq_d6_yuGT9xzLc\")",
       "Bash(curl -s http://localhost:8000/api/users/ -H \"Authorization: Bearer $TOKEN\")",
       "Bash(curl -s http://localhost:8000/api/users/)",
-      "Bash(pkill -f \"uvicorn api:app\")"
+      "Bash(pkill -f \"uvicorn api:app\")",
+      "Bash(curl -s http://localhost:8000/api/auth/me)",
+      "Bash(curl -s http://localhost:5173)",
+      "Bash(netstat -ano)",
+      "Bash(curl -s http://localhost:5174)"
     ]
   }
 }
