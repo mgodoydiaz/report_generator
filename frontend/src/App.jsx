@@ -1,7 +1,10 @@
 import { Routes, Route } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext.jsx';
+import { AuthProvider } from './context/AuthContext.jsx';
+import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from "./layouts/Layout.jsx";
+import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Pipelines from "./pages/Pipelines.jsx";
 import Specs from "./pages/Specs.jsx";
@@ -15,28 +18,44 @@ import Metrics from "./pages/Metrics.jsx";
 import Indicators from "./pages/Indicators.jsx";
 import Functions from "./pages/Functions.jsx";
 import Help from "./pages/Help.jsx";
+import Users from "./pages/Users.jsx";
+import SuperAdmin from "./pages/SuperAdmin.jsx";
 
 export default function App() {
   return (
     <ThemeProvider>
-      <Layout>
+      <AuthProvider>
         <Toaster position="top-right" reverseOrder={true} />
         <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/pipelines" element={<Pipelines />} />
-          <Route path="/specs" element={<Specs />} />
-          <Route path="/results" element={<Results />} />
-          <Route path="/results-py" element={<Resultspy />} />
-          <Route path="/results-recharts" element={<ResultsRecharts />} />
-          <Route path="/execution" element={<Execution />} />
-          <Route path="/values" element={<Values />} />
-          <Route path="/dimensions" element={<Dimensions />} />
-          <Route path="/metrics" element={<Metrics />} />
-          <Route path="/indicators" element={<Indicators />} />
-          <Route path="/functions" element={<Functions />} />
-          <Route path="/help" element={<Help />} />
+          {/* Ruta pública */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Rutas protegidas */}
+          <Route path="/*" element={
+            <ProtectedRoute>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/pipelines" element={<Pipelines />} />
+                  <Route path="/specs" element={<Specs />} />
+                  <Route path="/results" element={<Results />} />
+                  <Route path="/results-py" element={<Resultspy />} />
+                  <Route path="/results-recharts" element={<ResultsRecharts />} />
+                  <Route path="/execution" element={<Execution />} />
+                  <Route path="/values" element={<Values />} />
+                  <Route path="/dimensions" element={<Dimensions />} />
+                  <Route path="/metrics" element={<Metrics />} />
+                  <Route path="/indicators" element={<Indicators />} />
+                  <Route path="/functions" element={<Functions />} />
+                  <Route path="/users" element={<Users />} />
+                  <Route path="/superadmin" element={<SuperAdmin />} />
+                  <Route path="/help" element={<Help />} />
+                </Routes>
+              </Layout>
+            </ProtectedRoute>
+          } />
         </Routes>
-      </Layout>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
