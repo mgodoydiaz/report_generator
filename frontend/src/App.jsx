@@ -19,6 +19,7 @@ import Indicators from "./pages/Indicators.jsx";
 import Functions from "./pages/Functions.jsx";
 import Help from "./pages/Help.jsx";
 import Users from "./pages/Users.jsx";
+import SuperAdmin from "./pages/SuperAdmin.jsx";
 
 export default function App() {
   return (
@@ -47,6 +48,7 @@ export default function App() {
                   <Route path="/indicators" element={<Indicators />} />
                   <Route path="/functions" element={<Functions />} />
                   <Route path="/users" element={<Users />} />
+                  <Route path="/superadmin" element={<SuperAdmin />} />
                   <Route path="/help" element={<Help />} />
                 </Routes>
               </Layout>

@@ -24,8 +24,10 @@ class Organization(Base):
     id          = Column(Integer, primary_key=True, index=True)
     name        = Column(String(200), nullable=False)
     slug        = Column(String(100), unique=True, nullable=False, index=True)
+    description = Column(Text, default="")
     is_active   = Column(Boolean, default=True)
     created_at  = Column(DateTime, default=datetime.utcnow)
+    updated_at  = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relaciones
     users       = relationship("User", back_populates="organization")
@@ -39,14 +41,15 @@ class Organization(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id            = Column(Integer, primary_key=True, index=True)
-    name          = Column(String(200), default="")
-    email         = Column(String(200), unique=True, nullable=False, index=True)
-    password_hash = Column(String(200), nullable=False)
-    org_id        = Column(Integer, ForeignKey("organizations.id"), nullable=False)
-    role          = Column(String(20), default="editor")   # admin | editor | viewer
-    is_active     = Column(Boolean, default=True)
-    created_at    = Column(DateTime, default=datetime.utcnow)
+    id             = Column(Integer, primary_key=True, index=True)
+    name           = Column(String(200), default="")
+    email          = Column(String(200), unique=True, nullable=False, index=True)
+    password_hash  = Column(String(200), nullable=False)
+    org_id         = Column(Integer, ForeignKey("organizations.id"), nullable=False)
+    role           = Column(String(20), default="editor")   # admin | editor | viewer
+    is_active      = Column(Boolean, default=True)
+    is_superadmin  = Column(Boolean, default=False)          # acceso a panel superadmin
+    created_at     = Column(DateTime, default=datetime.utcnow)
 
     organization  = relationship("Organization", back_populates="users")
 

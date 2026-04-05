@@ -28,6 +28,7 @@ class UserOut(BaseModel):
     role: str
     org_id: int
     org_name: str
+    is_superadmin: bool = False
 
 
 class LoginResponse(BaseModel):
@@ -63,6 +64,7 @@ async def login(body: LoginRequest, db: Session = Depends(get_db)):
             role=user.role,
             org_id=user.org_id,
             org_name=org.name if org else "",
+            is_superadmin=bool(user.is_superadmin),
         ),
     )
 
@@ -80,4 +82,5 @@ async def me(
         role=user.role,
         org_id=user.org_id,
         org_name=org.name if org else "",
+        is_superadmin=bool(user.is_superadmin),
     )

@@ -18,6 +18,7 @@ import {
   Sun,          // Light mode
   Moon,         // Dark mode
   Users,        // Users
+  ShieldCheck,  // SuperAdmin
   LogOut        // Logout
 } from "lucide-react";
 
@@ -92,6 +93,20 @@ export default function Sidebar() {
           <Users size={18} />
           Usuarios
         </NavLink>
+
+        {/* SECCIÓN SUPERADMIN — solo visible si is_superadmin */}
+        {user?.is_superadmin && (
+          <>
+            <div className={sectionHeaderClass}>
+              <ShieldCheck size={12} className="text-violet-500" />
+              Sistema
+            </div>
+            <NavLink to="/superadmin" className={linkClass}>
+              <ShieldCheck size={18} />
+              Superadmin
+            </NavLink>
+          </>
+        )}
       </nav>
 
       <div className="p-4 mt-auto border-t border-slate-100 dark:border-slate-800 space-y-2 overflow-hidden">

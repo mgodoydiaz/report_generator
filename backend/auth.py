@@ -90,3 +90,13 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
             detail="Se requiere rol de administrador",
         )
     return user
+
+
+def require_superadmin(user: User = Depends(get_current_user)) -> User:
+    """Dependency: solo permite acceso a usuarios con is_superadmin=True."""
+    if not getattr(user, "is_superadmin", False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Se requiere acceso de superadministrador",
+        )
+    return user
