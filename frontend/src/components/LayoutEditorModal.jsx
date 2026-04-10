@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import { SIMCE_PRESET_LAYOUT } from '../tooling/dashboardRenderer';
 import AddComponentModal from './add-component/AddComponentModal';
 import { ALL_COMPONENTS, getFieldOptions } from './add-component/componentDefs';
@@ -360,6 +361,7 @@ function TabEditor({ tab, tabIndex, onUpdate, onDelete, isOnly, indicator }) {
 // ── Modal principal ───────────────────────────────────────────────────────────
 
 export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }) {
+    const { fetchAuth } = useAuth();
     const [layout, setLayout] = useState(SIMCE_PRESET_LAYOUT);
     const [activeTab, setActiveTab] = useState(0);
     const [saving, setSaving] = useState(false);
@@ -403,7 +405,7 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
     const handleSave = async () => {
         setSaving(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/indicators/${indicator.id_indicator}`, {
+            const res = await fetchAuth(`${API_BASE_URL}/indicators/${indicator.id_indicator}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

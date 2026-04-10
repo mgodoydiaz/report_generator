@@ -3,6 +3,7 @@ import { ChartColumn, RefreshCcw, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 import Plot from 'react-plotly.js';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 const KPI_COLORS = {
     indigo: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 border-indigo-100 dark:border-indigo-900',
@@ -12,6 +13,7 @@ const KPI_COLORS = {
 };
 
 export default function Results() {
+    const { fetchAuth } = useAuth();
     const [indicators, setIndicators] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingDashboard, setLoadingDashboard] = useState(false);
@@ -26,7 +28,7 @@ export default function Results() {
     const fetchIndicators = async () => {
         setLoading(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/resultspy/indicators`);
+            const res = await fetchAuth(`${API_BASE_URL}/resultspy/indicators`);
             const data = res.ok ? await res.json() : [];
             setIndicators(Array.isArray(data) ? data : []);
         } catch (err) {
@@ -46,7 +48,7 @@ export default function Results() {
         }
         const load = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/resultspy/indicator/${selectedIndicator}/filters`);
+                const res = await fetchAuth(`${API_BASE_URL}/resultspy/indicator/${selectedIndicator}/filters`);
                 const data = res.ok ? await res.json() : { filters: [] };
                 setFilterDefs(data.filters || []);
                 setSelectedFilters({});
@@ -67,7 +69,7 @@ export default function Results() {
             const filtersParam = Object.keys(selectedFilters).length > 0
                 ? `?filters=${encodeURIComponent(JSON.stringify(selectedFilters))}`
                 : '';
-            const res = await fetch(`${API_BASE_URL}/resultspy/indicator/${selectedIndicator}/dashboard${filtersParam}`);
+            const res = await fetchAuth(`${API_BASE_URL}/resultspy/indicator/${selectedIndicator}/dashboard${filtersParam}`);
             if (!res.ok) throw new Error('Error al generar dashboard');
             const data = await res.json();
             setDashboard(data);

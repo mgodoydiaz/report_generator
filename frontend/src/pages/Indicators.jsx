@@ -2,10 +2,12 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ClipboardCheck, BookOpen, AlertTriangle, LayoutGrid } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import NewIndicatorDrawer from '../components/NewIndicatorDrawer';
 import LayoutEditorModal from '../components/LayoutEditorModal';
 
 export default function Indicators() {
+    const { fetchAuth } = useAuth();
     const [indicators, setIndicators] = useState([]);
     const [metricsMap, setMetricsMap] = useState({});
     const [loading, setLoading] = useState(true);
@@ -24,8 +26,8 @@ export default function Indicators() {
         setLoading(true);
         try {
             const [indicatorsRes, metricsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/indicators`).catch(() => ({ ok: false, status: 404 })),
-                fetch(`${API_BASE_URL}/metrics`).catch(() => ({ ok: false, status: 404 }))
+                fetchAuth(`${API_BASE_URL}/indicators`).catch(() => ({ ok: false, status: 404 })),
+                fetchAuth(`${API_BASE_URL}/metrics`).catch(() => ({ ok: false, status: 404 }))
             ]);
 
             // Handling the case where indicators endpoint is not ready
@@ -82,7 +84,7 @@ export default function Indicators() {
         if (!confirm(`¿Estás seguro de eliminar el indicador "${name}"?`)) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/indicators/${id}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/indicators/${id}`, { method: 'DELETE' });
             if (!res.ok) {
                 // If endpoint doesn't exist yet, we mock deletion
                 setIndicators(prev => prev.filter(i => i.id_indicator !== id));

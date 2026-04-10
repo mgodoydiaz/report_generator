@@ -2,10 +2,12 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { ChartColumn, RefreshCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 
 export default function Results() {
+    const { fetchAuth } = useAuth();
     // ── Estado: datos del backend ──
     const [indicators, setIndicators] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -34,7 +36,7 @@ export default function Results() {
     const fetchInitialData = async () => {
         setLoading(true);
         try {
-            const indRes = await fetch(`${API_BASE_URL}/indicators`);
+            const indRes = await fetchAuth(`${API_BASE_URL}/indicators`);
             const indData = indRes.ok ? await indRes.json() : [];
             const arr = Array.isArray(indData) ? indData : [];
             setIndicators(arr);
@@ -62,8 +64,8 @@ export default function Results() {
             try {
                 // Fetch en paralelo: datos del indicador + indicador fresco (layout actualizado del servidor)
                 const [dataRes, indRes] = await Promise.all([
-                    fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`),
-                    fetch(`${API_BASE_URL}/indicators`),
+                    fetchAuth(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`),
+                    fetchAuth(`${API_BASE_URL}/indicators`),
                 ]);
                 if (!dataRes.ok) throw new Error("Error al cargar dimensiones del indicador");
                 const result = await dataRes.json();
@@ -119,7 +121,7 @@ export default function Results() {
             const filtersParam = Object.keys(filters).length > 0
                 ? `?filters=${encodeURIComponent(JSON.stringify(filters))}`
                 : "";
-            const res = await fetch(`${API_BASE_URL}/results/indicator/${indicatorId}/data${filtersParam}`);
+            const res = await fetchAuth(`${API_BASE_URL}/results/indicator/${indicatorId}/data${filtersParam}`);
             if (!res.ok) throw new Error("Error al generar dashboard");
 
             // Descartar respuesta si el indicador cambió mientras esperábamos

@@ -48,6 +48,9 @@ __pycache__/
 # Agregados por Miguel
 modulo.zip
 
+# Claude Code worktrees
+.claude/worktrees/
+
 # Carpetas de trabajo
 #data/input/*
 data/output/*

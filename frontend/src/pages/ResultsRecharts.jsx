@@ -2,10 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import { ChartColumn, RefreshCcw, Play } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 
 export default function Results() {
+    const { fetchAuth } = useAuth();
     // ── Estado: datos del backend ──
     const [indicators, setIndicators] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -30,7 +32,7 @@ export default function Results() {
     const fetchInitialData = async () => {
         setLoading(true);
         try {
-            const indRes = await fetch(`${API_BASE_URL}/indicators`);
+            const indRes = await fetchAuth(`${API_BASE_URL}/indicators`);
             const indData = indRes.ok ? await indRes.json() : [];
             setIndicators(Array.isArray(indData) ? indData : []);
         } catch (err) {
@@ -51,7 +53,7 @@ export default function Results() {
         }
         const loadIndicatorDims = async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`);
+                const res = await fetchAuth(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data`);
                 if (!res.ok) throw new Error("Error al cargar dimensiones del indicador");
                 const result = await res.json();
                 setIndicatorDims(result.dimensions || {});
@@ -84,7 +86,7 @@ export default function Results() {
             const filtersParam = Object.keys(selectedFilters).length > 0
                 ? `?filters=${encodeURIComponent(JSON.stringify(selectedFilters))}`
                 : "";
-            const res = await fetch(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data${filtersParam}`);
+            const res = await fetchAuth(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data${filtersParam}`);
             if (!res.ok) throw new Error("Error al generar dashboard");
             const result = await res.json();
             const processed = processDataForDashboard(result);

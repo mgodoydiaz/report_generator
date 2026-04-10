@@ -56,7 +56,8 @@ export default function SuperAdmin() {
     try {
       const res = await fetchAuth(`${API_BASE_URL}/superadmin/organizations/${orgId}/users`);
       if (!res.ok) throw new Error("Error al cargar usuarios");
-      setOrgUsers(prev => ({ ...prev, [orgId]: await res.json() }));
+      const users = await res.json();
+      setOrgUsers(prev => ({ ...prev, [orgId]: users }));
     } catch (err) {
       toast.error(err.message);
     } finally {

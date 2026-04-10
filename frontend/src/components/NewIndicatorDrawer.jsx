@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen, ClipboardCheck, Settings2, Plus, Trash2, Filter, TrendingUp, ChevronUp, ChevronDown, Search, Palette } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 const COLUMN_ROLES = [
     { key: "logro_1", label: "Logro 1 (numérico)", description: "Porcentaje de logro / rendimiento (0-1)", multi: true },
@@ -13,6 +14,7 @@ const COLUMN_ROLES = [
 ];
 
 export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData, onSave }) {
+    const { fetchAuth } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -69,7 +71,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
 
     const fetchMetrics = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics`);
+            const res = await fetchAuth(`${API_BASE_URL}/metrics`);
             const data = await res.json();
             if (!data.error) setAvailableMetrics(data);
         } catch (error) {
@@ -79,7 +81,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
 
     const fetchDimensions = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/dimensions`);
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions`);
             const data = await res.json();
             if (Array.isArray(data)) setAllDimensions(data);
         } catch (error) {
@@ -221,7 +223,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         }
 
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${selectedCol.metric_id}/distinct/${selectedCol.value}`);
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${selectedCol.metric_id}/distinct/${selectedCol.value}`);
             if (!res.ok) throw new Error("Error en la solicitud");
             const data = await res.json();
             
@@ -367,7 +369,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         }
 
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${entry.metric_id}/distinct/${entry.column}`);
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${entry.metric_id}/distinct/${entry.column}`);
             if (!res.ok) throw new Error("Error en la solicitud");
             const data = await res.json();
             
@@ -404,7 +406,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
             // since the user is in the process of building it.
             let result;
             try {
-                const response = await fetch(url, {
+                const response = await fetchAuth(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

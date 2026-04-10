@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '../../constants';
+import { useAuth } from '../../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../../tooling/dataProcessing';
 import { ItemRenderer } from '../../tooling/dashboardRenderer';
 
@@ -110,6 +111,7 @@ const SCHEMA_SVGS = {
 // ── Componente principal ──────────────────────────────────────────────────────
 
 export default function StepPreview({ comp, axisSelections, indicator }) {
+    const { fetchAuth } = useAuth();
     const [previewState, setPreviewState] = useState('idle'); // idle | loading | ready | error
     const [rawData, setRawData] = useState(null);
     const [errorMsg, setErrorMsg] = useState('');
@@ -164,7 +166,7 @@ export default function StepPreview({ comp, axisSelections, indicator }) {
         setPreviewState('loading');
         setErrorMsg('');
         try {
-            const res = await fetch(`${API_BASE_URL}/results/indicator/${indicator.id_indicator}/data`);
+            const res = await fetchAuth(`${API_BASE_URL}/results/indicator/${indicator.id_indicator}/data`);
             if (!res.ok) throw new Error(`Error ${res.status}`);
             setRawData(await res.json());
             setPreviewState('ready');

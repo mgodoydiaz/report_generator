@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import pipelines, specs, dimensions, metrics, indicators, results, resultspy
-from routers import auth, users, superadmin
+from backend.routers import pipelines, specs, dimensions, metrics, indicators, results, resultspy
+from backend.routers import auth, users, superadmin
+from backend.database import init_db
 
 app = FastAPI()
 
@@ -26,6 +27,10 @@ app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(superadmin.router)
 
+@app.on_event("startup")
+def on_startup():
+    init_db()
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("backend.api:app", host="127.0.0.1", port=8000, reload=True)

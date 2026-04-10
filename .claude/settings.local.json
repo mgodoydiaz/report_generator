@@ -39,7 +39,12 @@
       "Bash(curl -s http://localhost:8000/api/auth/me)",
       "Bash(curl -s http://localhost:5173)",
       "Bash(netstat -ano)",
-      "Bash(curl -s http://localhost:5174)"
+      "Bash(curl -s http://localhost:5174)",
+      "Bash(wsl -l -q)",
+      "Bash(wsl -d Ubuntu -- bash -c \"psql -h localhost -U mgodoy -d rgenerator_dev -c '\\\\dt' 2>/dev/null | head -5\")",
+      "Bash(sc query:*)",
+      "Bash(curl -s http://127.0.0.1:8000/api/pipelines)",
+      "Bash(kill %1)"
     ]
   }
 }
