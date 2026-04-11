@@ -39,19 +39,84 @@ cd frontend
 npm install
 ```
 
-### 3. Ejecutar la Aplicación Completa
+### 3. Configurar PostgreSQL
 
-Para iniciar simultáneamente el Backend (puerto 8000) y el Frontend (puerto 5173), puedes usar los scripts provistos en la raíz del proyecto:
+La base de datos es PostgreSQL. Ver instrucciones de instalación más abajo según tu sistema operativo.
 
-**En Windows:**
+Una vez instalado y creada la base de datos, configura las variables de entorno:
+
+```bash
+cp .env.example .env
+# Editar .env con tus credenciales de PostgreSQL y un JWT_SECRET
+```
+
+Luego ejecuta la migración inicial (crea tablas y migra datos desde los Excel):
+
+```bash
+conda activate rgenerator
+python scripts/migrate_excel_to_pg.py
+```
+
+Esto crea el usuario admin por defecto: `admin@fundacionphp.cl` / `admin1234`
+
+### 4. Ejecutar la Aplicación
+
+**Windows (recomendado):**
 ```cmd
 run_software.bat
 ```
 
-**En Linux / Mac:**
+Inicia automáticamente PostgreSQL (servicio Windows), el backend en `http://127.0.0.1:8000` y el frontend en `http://localhost:5173`.
+
+**Manual:**
 ```bash
-bash run_software.sh
+# Backend
+conda activate rgenerator
+python -m backend.api
+
+# Frontend (otra terminal)
+cd frontend
+npm run dev
 ```
+
+---
+
+## 🐘 Instalación de PostgreSQL
+
+### Windows
+
+Descargar el instalador desde [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) y seguir el asistente. Al finalizar, abrir pgAdmin o `psql` y ejecutar:
+
+```sql
+CREATE USER mgodoy WITH PASSWORD 'tu_password';
+CREATE DATABASE rgenerator_dev OWNER mgodoy;
+GRANT ALL PRIVILEGES ON DATABASE rgenerator_dev TO mgodoy;
+```
+
+### Ubuntu / Debian (Linux o WSL)
+
+```bash
+sudo apt update
+sudo apt install -y postgresql postgresql-contrib
+
+# Iniciar el servicio
+sudo service postgresql start
+
+# Crear usuario y base de datos
+sudo -u postgres psql <<EOF
+CREATE USER mgodoy WITH PASSWORD 'tu_password';
+CREATE DATABASE rgenerator_dev OWNER mgodoy;
+GRANT ALL PRIVILEGES ON DATABASE rgenerator_dev TO mgodoy;
+EOF
+```
+
+Verificar que la conexión funciona:
+
+```bash
+psql -h localhost -U mgodoy -d rgenerator_dev -c "\dt"
+```
+
+**Para WSL:** PostgreSQL corre en Linux pero es accesible desde Windows en `localhost:5432`. El backend de Windows se conecta normalmente.
 
 ## 📂 Estructura del Proyecto
 
