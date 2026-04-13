@@ -48,6 +48,9 @@ __pycache__/
 # Agregados por Miguel
 modulo.zip
 
+# Backups de base de datos
+backups/
+
 # Claude Code worktrees
 .claude/worktrees/
 
