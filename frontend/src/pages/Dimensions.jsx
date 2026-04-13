@@ -2,9 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Layers, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ShieldCheck, List, Type, Hash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import NewDimensionDrawer from '../components/NewDimensionDrawer';
 
 export default function Dimensions() {
+    const { fetchAuth } = useAuth();
     const [dimensions, setDimensions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
@@ -20,7 +22,7 @@ export default function Dimensions() {
     const fetchDimensions = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/dimensions`);
+            const response = await fetchAuth(`${API_BASE_URL}/dimensions`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
             setDimensions(data);
@@ -55,7 +57,7 @@ export default function Dimensions() {
         if (!confirm(`¿Estás seguro de eliminar la dimensión "${name}"? Se borrarán todos sus valores asociados.`)) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/dimensions/${id}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions/${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             toast.success("Dimensión eliminada");

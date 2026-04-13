@@ -1,10 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ClipboardCheck, BookOpen, AlertTriangle } from 'lucide-react';
+import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ClipboardCheck, BookOpen, AlertTriangle, LayoutGrid } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import NewIndicatorDrawer from '../components/NewIndicatorDrawer';
+import LayoutEditorModal from '../components/LayoutEditorModal';
 
 export default function Indicators() {
+    const { fetchAuth } = useAuth();
     const [indicators, setIndicators] = useState([]);
     const [metricsMap, setMetricsMap] = useState({});
     const [loading, setLoading] = useState(true);
@@ -13,6 +16,7 @@ export default function Indicators() {
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
     const [editingIndicator, setEditingIndicator] = useState(null);
     const [drawerTitle, setDrawerTitle] = useState("Nuevo Indicador");
+    const [layoutIndicator, setLayoutIndicator] = useState(null);
 
     useEffect(() => {
         fetchData();
@@ -22,8 +26,8 @@ export default function Indicators() {
         setLoading(true);
         try {
             const [indicatorsRes, metricsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/indicators`).catch(() => ({ ok: false, status: 404 })),
-                fetch(`${API_BASE_URL}/metrics`).catch(() => ({ ok: false, status: 404 }))
+                fetchAuth(`${API_BASE_URL}/indicators`).catch(() => ({ ok: false, status: 404 })),
+                fetchAuth(`${API_BASE_URL}/metrics`).catch(() => ({ ok: false, status: 404 }))
             ]);
 
             // Handling the case where indicators endpoint is not ready
@@ -72,11 +76,15 @@ export default function Indicators() {
         setIsDrawerOpen(true);
     };
 
+    const handleOpenLayoutEditor = (indicator) => {
+        setLayoutIndicator(indicator);
+    };
+
     const handleDeleteIndicator = async (id, name) => {
         if (!confirm(`¿Estás seguro de eliminar el indicador "${name}"?`)) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/indicators/${id}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/indicators/${id}`, { method: 'DELETE' });
             if (!res.ok) {
                 // If endpoint doesn't exist yet, we mock deletion
                 setIndicators(prev => prev.filter(i => i.id_indicator !== id));
@@ -234,6 +242,9 @@ export default function Indicators() {
                                             </div>
                                         </td>
                                         <td className="p-5 text-right flex justify-end gap-1">
+                                            <button onClick={() => handleOpenLayoutEditor(indicator)} className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-slate-800 rounded-xl transition-all" title="Configurar Layout">
+                                                <LayoutGrid size={18} />
+                                            </button>
                                             <button onClick={() => handleEditIndicator(indicator)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-800 rounded-xl transition-all" title="Editar">
                                                 <Settings size={18} />
                                             </button>
@@ -256,6 +267,13 @@ export default function Indicators() {
                 onClose={() => setIsDrawerOpen(false)}
                 title={drawerTitle}
                 initialData={editingIndicator}
+                onSave={handleSaveCallback}
+            />
+
+            <LayoutEditorModal
+                isOpen={!!layoutIndicator}
+                onClose={() => setLayoutIndicator(null)}
+                indicator={layoutIndicator}
                 onSave={handleSaveCallback}
             />
         </div>

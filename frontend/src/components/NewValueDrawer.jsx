@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Layers, Hash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap, onSave, initialData = null }) {
+    const { fetchAuth } = useAuth();
     // dimensionsValues: { [dimId]: value } -> Value can be ID (for List validation) or Text (for Free validation)
     const [dimensionInputs, setDimensionInputs] = useState({});
 
@@ -49,7 +51,7 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
             const promises = dimIds.map(async (dimId) => {
                 const dimDef = dimensionsMap[dimId];
                 if (dimDef && dimDef.validation_mode === 'list') {
-                    const res = await fetch(`${API_BASE_URL}/dimensions/${dimId}/values`);
+                    const res = await fetchAuth(`${API_BASE_URL}/dimensions/${dimId}/values`);
                     const data = await res.json();
                     if (!data.error) {
                         optionsMap[dimId] = data;
@@ -118,7 +120,7 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
 
             const method = initialData ? 'PUT' : 'POST';
 
-            const res = await fetch(url, {
+            const res = await fetchAuth(url, {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)

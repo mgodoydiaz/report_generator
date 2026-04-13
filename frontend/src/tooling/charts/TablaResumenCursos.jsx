@@ -1,10 +1,12 @@
 import React from 'react';
-import { CURSO_COLORS, pct, avg } from './constants';
+import { CURSO_COLORS, avg, formatValue } from './constants';
 
-export default function TablaResumenCursos({ data, cursos, onCursoClick, cursoActivo, roleLabels={}, activeRoles={}, achievement_levels=[] }) {
+export default function TablaResumenCursos({ data, cursos, onCursoClick, cursoActivo, roleLabels={}, roleFormats={}, activeRoles={}, achievement_levels=[] }) {
     const l1 = roleLabels.logro_1 || "Promedio";
     const l2 = roleLabels.logro_2 || "Val. secundario";
     const hasLogro2 = !!activeRoles.logro_2;
+    const fmt1 = (v) => formatValue(v, roleFormats.logro_1);
+    const fmt2 = (v) => formatValue(v, roleFormats.logro_2);
 
     const levelsToUse = achievement_levels && achievement_levels.length > 0 
         ? achievement_levels 
@@ -40,15 +42,15 @@ export default function TablaResumenCursos({ data, cursos, onCursoClick, cursoAc
                                 onClick={() => onCursoClick(c)}>
                                 <td className="p-3 font-extrabold" style={{ color: CURSO_COLORS[i % CURSO_COLORS.length] }}>{c}</td>
                                 <td className="p-3 text-slate-600 dark:text-slate-300">{d.length}</td>
-                                <td className="p-3 font-bold text-slate-800 dark:text-white">{rends.length ? pct(avg(d, "_rend")) : "—"}</td>
+                                <td className="p-3 font-bold text-slate-800 dark:text-white">{rends.length ? fmt1(avg(d, "_rend")) : "—"}</td>
                                 {hasLogro2 && (
-                                    <td className="p-3 text-slate-600 dark:text-slate-300">{simces.length ? Math.round(avg(d, "_simce")) : "—"}</td>
+                                    <td className="p-3 text-slate-600 dark:text-slate-300">{simces.length ? fmt2(avg(d, "_simce")) : "—"}</td>
                                 )}
                                 <td className="p-3 text-rose-600">
-                                    {rends.length ? (hasLogro2 ? `${pct(Math.min(...rends))} / ${simces.length ? Math.round(Math.min(...simces)) : "—"}` : pct(Math.min(...rends))) : "—"}
+                                    {rends.length ? (hasLogro2 ? `${fmt1(Math.min(...rends))} / ${simces.length ? fmt2(Math.min(...simces)) : "—"}` : fmt1(Math.min(...rends))) : "—"}
                                 </td>
                                 <td className="p-3 text-emerald-600">
-                                    {rends.length ? (hasLogro2 ? `${pct(Math.max(...rends))} / ${simces.length ? Math.round(Math.max(...simces)) : "—"}` : pct(Math.max(...rends))) : "—"}
+                                    {rends.length ? (hasLogro2 ? `${fmt1(Math.max(...rends))} / ${simces.length ? fmt2(Math.max(...simces)) : "—"}` : fmt1(Math.max(...rends))) : "—"}
                                 </td>
                                 {levelsToUse.map((level, li) => {
                                     const count = d.filter(r => r._logro === level).length;

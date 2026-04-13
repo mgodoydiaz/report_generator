@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.vite/
 package-lock.json
 
 # Editor directories and files
@@ -24,8 +25,14 @@ package-lock.json
 *.sln
 *.sw?
 
-# Credenciales 
+# Credenciales
 aux_files/credentials.json
+
+# Variables de entorno (nunca subir al repo)
+.env
+.env.local
+.env.prod
+.env.production
 
 # egg
 *.egg
@@ -40,6 +47,9 @@ __pycache__/
 
 # Agregados por Miguel
 modulo.zip
+
+# Claude Code worktrees
+.claude/worktrees/
 
 # Carpetas de trabajo
 #data/input/*

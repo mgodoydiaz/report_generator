@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
+import { useAuth } from "../context/AuthContext";
 import {
   House,        // Home
   Activity,     // Activity
@@ -15,11 +16,15 @@ import {
   SquareFunction, // Functions
   CircleHelp,   // Help
   Sun,          // Light mode
-  Moon          // Dark mode
+  Moon,         // Dark mode
+  Users,        // Users
+  ShieldCheck,  // SuperAdmin
+  LogOut        // Logout
 } from "lucide-react";
 
 export default function Sidebar() {
   const { isDarkMode, toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
 
   const linkClass = ({ isActive }) =>
     `flex items-center gap-3 px-4 py-2.5 rounded-lg font-medium transition-all ${isActive
@@ -84,24 +89,60 @@ export default function Sidebar() {
           <Workflow size={18} />
           Procesos
         </NavLink>
-      </nav>
-
-      <div className="p-4 mt-auto border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 overflow-hidden">
-        <NavLink to="/help" className={`${linkClass({ isActive: false })} flex-1`}>
-          <CircleHelp size={18} />
-          Ayuda
+        <NavLink to="/users" className={linkClass}>
+          <Users size={18} />
+          Usuarios
         </NavLink>
 
-        {/* Dark Mode Switch */}
-        <button
-          onClick={toggleTheme}
-          className="relative w-11 h-6 shrink-0 rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-300 focus:outline-none group/switch"
-          title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
-        >
-          <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm flex items-center justify-center transition-transform duration-300 ${isDarkMode ? 'translate-x-5' : 'translate-x-0'}`}>
-            {isDarkMode ? <Moon size={10} className="text-indigo-600" /> : <Sun size={10} className="text-amber-500" />}
+        {/* SECCIÓN SUPERADMIN — solo visible si is_superadmin */}
+        {user?.is_superadmin && (
+          <>
+            <div className={sectionHeaderClass}>
+              <ShieldCheck size={12} className="text-violet-500" />
+              Sistema
+            </div>
+            <NavLink to="/superadmin" className={linkClass}>
+              <ShieldCheck size={18} />
+              Superadmin
+            </NavLink>
+          </>
+        )}
+      </nav>
+
+      <div className="p-4 mt-auto border-t border-slate-100 dark:border-slate-800 space-y-2 overflow-hidden">
+        {/* User info */}
+        {user && (
+          <div className="px-4 py-2 text-xs text-slate-400 dark:text-slate-500 truncate">
+            {user.email}
           </div>
-        </button>
+        )}
+
+        <div className="flex items-center justify-between gap-2">
+          <NavLink to="/help" className={`${linkClass({ isActive: false })} flex-1`}>
+            <CircleHelp size={18} />
+            Ayuda
+          </NavLink>
+
+          {/* Logout */}
+          <button
+            onClick={logout}
+            className="p-2.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20 transition"
+            title="Cerrar sesión"
+          >
+            <LogOut size={18} />
+          </button>
+
+          {/* Dark Mode Switch */}
+          <button
+            onClick={toggleTheme}
+            className="relative w-11 h-6 shrink-0 rounded-full bg-slate-200 dark:bg-slate-700 transition-colors duration-300 focus:outline-none group/switch"
+            title={isDarkMode ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
+          >
+            <div className={`absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-sm flex items-center justify-center transition-transform duration-300 ${isDarkMode ? 'translate-x-5' : 'translate-x-0'}`}>
+              {isDarkMode ? <Moon size={10} className="text-indigo-600" /> : <Sun size={10} className="text-amber-500" />}
+            </div>
+          </button>
+        </div>
       </div>
     </aside>
   );

@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { X, Save, Box, Type, Hash, Variable, Plus, Trash2, CheckSquare, Square, Calendar, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function NewMetricDrawer({ isOpen, onClose, title, initialData, onSave }) {
+    const { fetchAuth } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -45,7 +47,7 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
 
     const fetchDimensions = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/dimensions`);
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions`);
             const data = await res.json();
             if (!data.error) setAvailableDimensions(data);
         } catch (error) {
@@ -109,7 +111,7 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
 
             const method = isEditing ? 'PUT' : 'POST';
 
-            const response = await fetch(url, {
+            const response = await fetchAuth(url, {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)

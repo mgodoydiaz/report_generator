@@ -283,6 +283,7 @@ Tareas recurrentes de desarrollo y administración del proyecto están documenta
 - `/add-step` — Crear o modificar un paso de pipeline (guía de referencia)
 - `/add-metric` — Crear una nueva métrica interactivamente
 - `/new-pipeline` — Construir un nuevo pipeline JSON desde cero
+- `/add-chart` — Agregar un nuevo gráfico o tabla al sistema de dashboards
 
 ## Roadmap y Pendientes
 

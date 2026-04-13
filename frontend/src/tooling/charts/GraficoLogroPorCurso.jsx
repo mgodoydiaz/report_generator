@@ -3,10 +3,12 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Cell,
 } from 'recharts';
-import { CURSO_COLORS, pct, avg } from './constants';
+import { CURSO_COLORS, avg, formatValue, formatDomain } from './constants';
 
-export default function GraficoLogroPorCurso({ data, cursos, metric, roleLabels={} }) {
+export default function GraficoLogroPorCurso({ data, cursos, metric, roleLabels={}, roleFormats={} }) {
     const isSimce = metric === "simce";
+    const fmtStr = isSimce ? roleFormats.logro_2 : roleFormats.logro_1;
+    const fmt = (v) => formatValue(v, fmtStr);
     const resumen = cursos.map((c, i) => ({
         curso: c,
         valor: isSimce
@@ -18,7 +20,7 @@ export default function GraficoLogroPorCurso({ data, cursos, metric, roleLabels=
     const vals = resumen.map(r => r.valor).filter(v => v != null && !isNaN(v));
     const yDomain = isSimce
         ? [0, vals.length ? Math.ceil(Math.max(...vals) * 1.1 / 10) * 10 : 350]
-        : [0, 1];
+        : formatDomain(fmtStr);
 
     return (
         <ResponsiveContainer width="100%" height={240}>
@@ -26,13 +28,13 @@ export default function GraficoLogroPorCurso({ data, cursos, metric, roleLabels=
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="curso" tick={{ fontWeight: 700, fontSize: 13 }} />
                 <YAxis
-                    tickFormatter={isSimce ? (v => Math.round(v)) : (v => `${Math.round(v * 100)}%`)}
+                    tickFormatter={fmt}
                     domain={yDomain}
                     tick={{ fontSize: 12 }}
                 />
-                <Tooltip formatter={(v) => [isSimce ? Math.round(v) : pct(v), isSimce ? (roleLabels.logro_2 || "Val. secundario") : (roleLabels.logro_1 || "Logro")]} />
+                <Tooltip formatter={(v) => [fmt(v), isSimce ? (roleLabels.logro_2 || "Val. secundario") : (roleLabels.logro_1 || "Logro")]} />
                 <Bar dataKey="valor" radius={[6, 6, 0, 0]}
-                    label={{ position: "top", formatter: isSimce ? (v => Math.round(v)) : pct, fontSize: 12, fontWeight: 700 }}>
+                    label={{ position: "top", formatter: fmt, fontSize: 12, fontWeight: 700 }}>
                     {resumen.map((entry) => (
                         <Cell key={entry.curso} fill={entry.color} />
                     ))}

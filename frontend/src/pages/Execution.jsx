@@ -2,8 +2,10 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock, ArrowRight } from 'lucide-react';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function Execution() {
+    const { fetchAuth } = useAuth();
     const [pipelines, setPipelines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
@@ -18,10 +20,10 @@ export default function Execution() {
     const fetchPipelines = async () => {
         setLoading(true);
         try {
-            const response = await fetch(`${API_BASE_URL}/pipelines`);
+            const response = await fetchAuth(`${API_BASE_URL}/pipelines`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
-            setPipelines(data);
+            setPipelines(Array.isArray(data) ? data : data.items ?? []);
         } catch (err) {
             console.error("Error loading pipelines:", err);
         } finally {

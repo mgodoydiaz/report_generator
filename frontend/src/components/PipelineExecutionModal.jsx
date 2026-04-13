@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, FastForward, Square, StepForward, FileText, Download, Copy } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import StepRenderer from './pipeline-steps/StepRenderer';
 import '../assets/pipeline-execution.css';
 
@@ -9,6 +10,7 @@ import '../assets/pipeline-execution.css';
  * Modal para la ejecución paso a paso de un pipeline con visualización avanzada.
  */
 const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) => {
+    const { fetchAuth } = useAuth();
     const [status, setStatus] = useState('idle'); // idle, loading, executing, waiting_input, success, error
     const [steps, setSteps] = useState([]);
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
@@ -46,14 +48,14 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         setExecutionResult(null);
         setInputDetails(null);
         if (pipelineId) {
-            fetch(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+            fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
         }
     };
 
     const fetchSteps = async () => {
         setStatus('loading');
         try {
-            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/config`);
+            const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -77,7 +79,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const handleClose = () => {
         // Enviar señal de reset al backend para liberar memoria
         if (pipelineId) {
-            fetch(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+            fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
         }
         onClose();
     };
@@ -88,7 +90,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
 
     const copyArtifact = async (artifactName) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}/preview`);
+            const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}/preview`);
             if (!response.ok) throw new Error("Error obteniendo vista previa");
             const text = await response.text();
             await navigator.clipboard.writeText(text);
@@ -103,7 +105,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const handleSubmitInput = async (userData) => {
         setStatus('executing');
         try {
-            const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/input`, {
+            const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/input`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -163,7 +165,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                         const formData = new FormData();
                         formData.append('input_key', id);
                         files.forEach(file => formData.append('files', file));
-                        return fetch(`${API_BASE_URL}/pipelines/${pipelineId}/upload`, {
+                        return fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/upload`, {
                             method: 'POST',
                             body: formData
                         }).then(res => res.json());
@@ -197,7 +199,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     setCurrentStepIndex(prev => (prev < steps.length - 1 ? prev + 1 : prev));
                 }, 400);
 
-                const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
+                const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
                 result = await response.json();
                 clearInterval(progressInterval);
 
@@ -215,7 +217,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                 finalState = true;
             } else {
                 // Modo paso a paso
-                const response = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
+                const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
                 result = await response.json();
 
                 // Caso especial: Backend pide input
@@ -236,7 +238,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     if (result.next_index !== undefined) {
                         setCurrentStepIndex(result.next_index);
                     }
-                    const nextResponse = await fetch(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
+                    const nextResponse = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
                     result = await nextResponse.json();
                 }
 

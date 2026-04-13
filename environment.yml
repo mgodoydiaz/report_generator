@@ -18,7 +18,9 @@ dependencies:
   - pip
   - pytest
   - pytest-cov
-  - miktex
+  # miktex: instalar manualmente según SO
+  # Windows: https://miktex.org/download
+  # Linux: sudo apt install texlive-full
   - git
   - streamlit
   - ipykernel
@@ -27,4 +29,11 @@ dependencies:
       - pymupdf
       - docxtpl
       - docx2pdf
+      - python-dotenv
+      - sqlalchemy
+      - psycopg2-binary
+      - bcrypt
+      - python-jose[cryptography]
+      - passlib[bcrypt]
+      - python-multipart
       - "-e ."

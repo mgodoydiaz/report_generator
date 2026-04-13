@@ -2,8 +2,10 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, FileText, Layout, Copy } from 'lucide-react';
 import toast from 'react-hot-toast';
 import NewSpecDrawer from '../components/NewSpecDrawer';
+import { useAuth } from '../context/AuthContext';
 
 export default function Specs() {
+    const { fetchAuth } = useAuth();
     const [specs, setSpecs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [busqueda, setBusqueda] = useState("");
@@ -22,7 +24,7 @@ export default function Specs() {
     const fetchSpecs = async () => {
         setLoading(true);
         try {
-            const response = await fetch('http://localhost:8000/api/specs');
+            const response = await fetchAuth('http://localhost:8000/api/specs');
             if (!response.ok) throw new Error('Error al conectar con el servidor');
             const data = await response.json();
             if (data.error) throw new Error(data.error);
@@ -41,7 +43,7 @@ export default function Specs() {
         setDrawerTitle(`Editar Especificación #${specId}`);
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:8000/api/specs/${specId}/config`);
+            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -60,7 +62,7 @@ export default function Specs() {
 
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:8000/api/specs/${specId}`, {
+            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}`, {
                 method: 'DELETE'
             });
             const data = await response.json();
@@ -83,7 +85,7 @@ export default function Specs() {
 
         setLoading(true);
         try {
-            const response = await fetch(`http://localhost:8000/api/specs/${specId}/duplicate`, {
+            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}/duplicate`, {
                 method: 'POST'
             });
             const data = await response.json();
@@ -115,7 +117,7 @@ export default function Specs() {
             : `http://localhost:8000/api/specs/${editingSpecId}/config`;
 
         try {
-            const response = await fetch(url, {
+            const response = await fetchAuth(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)

@@ -3,10 +3,11 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, Cell,
 } from 'recharts';
-import { CURSO_COLORS } from './constants';
+import { CURSO_COLORS, formatValue, formatDomain } from './constants';
 
-export default function GraficoBoxplotPorCurso({ data, cursos, metric }) {
+export default function GraficoBoxplotPorCurso({ data, cursos, metric, roleFormats={} }) {
     const isSimce = metric === "simce";
+    const fmtStr = isSimce ? roleFormats.logro_2 : roleFormats.logro_1;
     const key = isSimce ? "_simce" : "_rend";
 
     const boxData = cursos.map((c, i) => {
@@ -26,7 +27,7 @@ export default function GraficoBoxplotPorCurso({ data, cursos, metric }) {
         };
     });
 
-    const fmt = isSimce ? (v => Math.round(v)) : (v => `${Math.round(v * 100)}%`);
+    const fmt = (v) => formatValue(v, fmtStr);
 
     const TopBarWithWhiskers = (props) => {
         const { x, y, width, height, payload } = props;
@@ -64,7 +65,7 @@ export default function GraficoBoxplotPorCurso({ data, cursos, metric }) {
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                 <XAxis dataKey="curso" tick={{ fontWeight: 700, fontSize: 13 }} />
                 <YAxis tickFormatter={fmt} allowDataOverflow={true} domain={(() => {
-                    if (!isSimce) return [0, 1];
+                    if (!isSimce) return formatDomain(fmtStr);
                     const valid = boxData.filter(d => d.max > 0);
                     if (!valid.length) return [0, 350];
                     const allMin = Math.min(...valid.map(d => d.min));

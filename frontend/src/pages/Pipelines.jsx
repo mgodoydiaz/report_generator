@@ -4,8 +4,10 @@ import toast from 'react-hot-toast';
 import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function Pipelines() {
+  const { fetchAuth } = useAuth();
   const [pipelines, setPipelines] = useState([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState("");
@@ -27,7 +29,7 @@ export default function Pipelines() {
   const fetchPipelines = async () => {
     setLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/pipelines`);
+      const response = await fetchAuth(`${API_BASE_URL}/pipelines`);
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       setPipelines(data);
@@ -55,7 +57,7 @@ export default function Pipelines() {
     setEditingPipelineId(id);
     setDrawerTitle("Editar Proceso");
     try {
-      const response = await fetch(`${API_BASE_URL}/pipelines/${id}/config`);
+      const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}/config`);
       const configData = await response.json();
       if (configData.error) throw new Error(configData.error);
       setEditingData(configData);
@@ -67,7 +69,7 @@ export default function Pipelines() {
 
   const handleDuplicatePipeline = async (id) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/pipelines/${id}/config`);
+      const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}/config`);
       const configData = await response.json();
       if (configData.error) throw new Error(configData.error);
 
@@ -79,7 +81,7 @@ export default function Pipelines() {
         }
       };
 
-      const saveResponse = await fetch(`${API_BASE_URL}/pipelines/config`, {
+      const saveResponse = await fetchAuth(`${API_BASE_URL}/pipelines/config`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
@@ -107,7 +109,7 @@ export default function Pipelines() {
         ? `${API_BASE_URL}/pipelines/${editingPipelineId}/config`
         : `${API_BASE_URL}/pipelines/config`;
 
-      const response = await fetch(url, {
+      const response = await fetchAuth(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(config)
@@ -130,7 +132,7 @@ export default function Pipelines() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/pipelines/${id}`, {
+      const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}`, {
         method: 'DELETE'
       });
       const result = await response.json();
@@ -146,7 +148,7 @@ export default function Pipelines() {
   const handleToggleHidden = async (p) => {
     const newHidden = !p.hidden;
     try {
-      const response = await fetch(`${API_BASE_URL}/pipelines/${p.pipeline_id}/hidden`, {
+      const response = await fetchAuth(`${API_BASE_URL}/pipelines/${p.pipeline_id}/hidden`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hidden: newHidden })

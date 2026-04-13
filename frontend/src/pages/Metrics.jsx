@@ -2,9 +2,11 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Box, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, Hash, Type, Layers } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import NewMetricDrawer from '../components/NewMetricDrawer';
 
 export default function Metrics() {
+    const { fetchAuth } = useAuth();
     const [metrics, setMetrics] = useState([]);
     const [dimensionsMap, setDimensionsMap] = useState({});
     const [loading, setLoading] = useState(true);
@@ -23,8 +25,8 @@ export default function Metrics() {
         try {
             // Cargar Métricas y Dimensiones en paralelo para mapear nombres
             const [metricsRes, dimsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/metrics`),
-                fetch(`${API_BASE_URL}/dimensions`)
+                fetchAuth(`${API_BASE_URL}/metrics`),
+                fetchAuth(`${API_BASE_URL}/dimensions`)
             ]);
 
             const metricsData = await metricsRes.json();
@@ -71,7 +73,7 @@ export default function Metrics() {
         if (!confirm(`¿Estás seguro de eliminar la métrica "${name}"? Se borrarán todos los datos históricos asociados.`)) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${id}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${id}`, { method: 'DELETE' });
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             toast.success("Métrica eliminada");

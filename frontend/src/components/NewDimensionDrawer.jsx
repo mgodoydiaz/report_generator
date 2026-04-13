@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { X, Plus, Trash2, Save, Check, ShieldCheck, List, Type, Hash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 
 export default function NewDimensionDrawer({ isOpen, onClose, title, initialData, onSave }) {
+    const { fetchAuth } = useAuth();
     const [formData, setFormData] = useState({
         name: '',
         description: '',
@@ -36,7 +38,7 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
     const fetchValues = async (dimId) => {
         if (!dimId) return;
         try {
-            const res = await fetch(`${API_BASE_URL}/dimensions/${dimId}/values`);
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions/${dimId}/values`);
             const data = await res.json();
             if (!data.error) setValues(data);
         } catch (error) {
@@ -59,7 +61,7 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
 
             const method = isEditing ? 'PUT' : 'POST';
 
-            const response = await fetch(url, {
+            const response = await fetchAuth(url, {
                 method: method,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
@@ -83,7 +85,7 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
         if (!newValue.trim() || !initialData?.id_dimension) return;
 
         try {
-            const res = await fetch(`${API_BASE_URL}/dimensions/${initialData.id_dimension}/values`, {
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions/${initialData.id_dimension}/values`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ value: newValue, is_active: true })
@@ -101,7 +103,7 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
 
     const handleDeleteValue = async (valId) => {
         try {
-            await fetch(`${API_BASE_URL}/dimensions/values/${valId}`, { method: 'DELETE' });
+            await fetchAuth(`${API_BASE_URL}/dimensions/values/${valId}`, { method: 'DELETE' });
             setValues(values.filter(v => v.id_value !== valId));
             toast.success("Valor eliminado");
         } catch (error) {

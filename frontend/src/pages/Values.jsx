@@ -2,12 +2,14 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
+import { useAuth } from '../context/AuthContext';
 import NewValueDrawer from '../components/NewValueDrawer';
 import ExportModal from '../components/ExportModal';
 import ImportModal from '../components/ImportModal';
 import ConfirmModal from '../components/ConfirmModal';
 
 export default function Values() {
+    const { fetchAuth } = useAuth();
     const [metrics, setMetrics] = useState([]);
     const [selectedMetric, setSelectedMetric] = useState(null);
     const [metricData, setMetricData] = useState([]);
@@ -61,8 +63,8 @@ export default function Values() {
             // Estrategia: Cargar Métricas y Dimensiones base. Los valores específicos los resolveremos al cargar la data o bajo demanda.
 
             const [metricsRes, dimsRes] = await Promise.all([
-                fetch(`${API_BASE_URL}/metrics`),
-                fetch(`${API_BASE_URL}/dimensions`)
+                fetchAuth(`${API_BASE_URL}/metrics`),
+                fetchAuth(`${API_BASE_URL}/dimensions`)
             ]);
 
             const metricsList = await metricsRes.json();
@@ -99,7 +101,7 @@ export default function Values() {
     const loadMetricData = async (metricId, page = 1) => {
         setLoadingData(true);
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}`);
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}`);
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             setMetricData(data.items);
@@ -114,7 +116,7 @@ export default function Values() {
     const handleDeleteValue = async (dataId) => {
         if (!confirm("¿Eliminar este registro?")) return;
         try {
-            await fetch(`${API_BASE_URL}/metrics/data/${dataId}`, { method: 'DELETE' });
+            await fetchAuth(`${API_BASE_URL}/metrics/data/${dataId}`, { method: 'DELETE' });
             setMetricData(prev => prev.filter(d => d.id_data !== dataId));
             toast.success("Eliminado");
         } catch (error) {
@@ -167,7 +169,7 @@ export default function Values() {
 
     const confirmBatchDelete = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/data/batch-delete`, {
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/data/batch-delete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
@@ -190,7 +192,7 @@ export default function Values() {
 
     const confirmClearMetric = async () => {
         try {
-            const res = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/clear`, {
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/clear`, {
                 method: 'POST'
             });
             const data = await res.json();
@@ -213,7 +215,7 @@ export default function Values() {
 
     const handleExportConfirm = async (format, fileName) => {
         try {
-            const response = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}`);
+            const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}`);
             if (!response.ok) throw new Error("Error en la exportación");
 
             // Convertir respuesta a Blob y descargar
@@ -248,7 +250,7 @@ export default function Values() {
                 formData.append('files', file);
             });
 
-            const res = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/import`, {
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/import`, {
                 method: 'POST',
                 body: formData
             });
@@ -267,7 +269,7 @@ export default function Values() {
 
     const handleDownloadTemplate = async () => {
         try {
-            const response = await fetch(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/template`);
+            const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/template`);
             if (!response.ok) throw new Error("Error generando plantilla");
 
             const blob = await response.blob();
