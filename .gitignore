@@ -13,6 +13,7 @@ dist-ssr
 *.local
 .vite/
 package-lock.json
+frontend/package-lock.json
 
 # Editor directories and files
 .vscode/*
