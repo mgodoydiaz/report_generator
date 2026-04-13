@@ -11,11 +11,11 @@ import json
 import plotly.express as px
 import plotly.graph_objects as go
 
-from config import (
+from backend.config import (
     METRICS_DB_PATH, METRIC_DATA_DB_PATH, METRIC_DIMENSIONS_DB_PATH,
     DIMENSIONS_DB_PATH, INDICATORS_DB_PATH, INDICATOR_METRICS_DB_PATH,
 )
-from routers._db import get_df
+from backend.routers._db import get_df
 
 router = APIRouter(prefix="/api/resultspy", tags=["resultspy"])
 

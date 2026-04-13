@@ -8,7 +8,7 @@ from typing import Optional, List, Dict
 
 # Importaciones internas de RGenerator
 from .step import Step, WaitingForInputException
-from config import UPLOADS_DIR
+from backend.config import UPLOADS_DIR
 
 
 class DiscoverInputs(Step):

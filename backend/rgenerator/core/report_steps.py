@@ -12,7 +12,7 @@ from typing import Optional, Dict, List
 from .step import Step
 from rgenerator.tooling import plot_tools, report_tools
 from rgenerator.tooling.report_docx_tools import render_docx_report
-from config import REPORTS_TEMPLATES_DIR
+from backend.config import REPORTS_TEMPLATES_DIR
 from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
 
 

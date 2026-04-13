@@ -6,7 +6,7 @@ import pandas as pd
 
 # Importaciones internas de RGenerator
 from .step import Step
-from config import PIPELINE_RUNS_DIR, SPECS_DB_PATH
+from backend.config import PIPELINE_RUNS_DIR, SPECS_DB_PATH
 from rgenerator.tooling.data_tools import safe_text_to_json
 
 
