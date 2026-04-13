@@ -1,0 +1,68 @@
+# ==============================================================
+# .dockerignore — archivos excluidos del contexto de build Docker
+# ==============================================================
+
+# Control de versiones
+.git/
+.gitignore
+.gitattributes
+
+# Entornos Python / Conda
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+.eggs/
+.conda/
+envs/
+
+# Entorno virtual local
+venv/
+.venv/
+env/
+
+# Node (frontend tiene su propio .dockerignore)
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Datos de entrada/salida (se montan como volumen)
+data/input/
+data/output/
+data/pipeline_runs/
+data/tmp/
+
+# Variables de entorno (nunca incluir en la imagen)
+.env
+.env.*
+!.env.example
+
+# Herramientas de desarrollo
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Tests
+tests/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentación y mockups
+docs/
+examples_and_mockups/
+
+# Scripts de Windows (no necesarios en Linux)
+*.bat
+
+# Archivos temporales
+*.tmp
+*.log
+tmp/
