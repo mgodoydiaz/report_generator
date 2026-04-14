@@ -42,10 +42,10 @@ def create_superadmin(_args):
         user = User(
             name=name,
             email=email,
-            password=hash_password(password),
+            password_hash=hash_password(password),
             is_superadmin=True,
             role="admin",
-            organization_id=org.id,
+            org_id=org.id,
         )
         db.add(user)
         db.commit()
