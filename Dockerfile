@@ -40,7 +40,8 @@ FROM base AS dev
 
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# pip install . toma el código del volumen montado en /app
+CMD ["/bin/sh", "-c", "pip install -q . && uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload"]
 
 # --------------------------------------------------------------
 # Stage prod: imagen autocontenida lista para producción
