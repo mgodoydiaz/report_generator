@@ -2,7 +2,7 @@
 # BACKEND — Dockerfile multi-stage
 #
 # Stages:
-#   base  → instala el entorno conda + dependencias del sistema
+#   base  → python:3.11-slim + deps de sistema + dependencias pip
 #   dev   → hot-reload; el código se monta como volumen
 #   prod  → código copiado dentro de la imagen, sin reload
 #
@@ -12,52 +12,44 @@
 # ==============================================================
 
 # --------------------------------------------------------------
-# Stage base: imagen conda + deps de sistema + entorno Python
+# Stage base: imagen Python slim + deps de sistema + pip
 # --------------------------------------------------------------
-FROM continuumio/miniconda3:latest AS base
+FROM python:3.11-slim AS base
 
 # Dependencias del sistema:
 #   ghostscript  → requerido por camelot-py para extraer tablas de PDF
-#   libpq-dev    → headers para compilar psycopg2
 #   gcc          → compilador C para paquetes con extensiones nativas
+#   libglib2.0-0 → requerido por camelot-py / OpenCV
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ghostscript \
-    libpq-dev \
     gcc \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Crear el entorno conda primero (capa cacheada si environment.yml no cambia)
-COPY environment.yml .
-RUN conda env create -f environment.yml && conda clean -afy
+# Instalar dependencias Python (capa cacheada si requirements.txt no cambia)
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
 # --------------------------------------------------------------
 # Stage dev: desarrollo con hot-reload
-# El código fuente se monta como volumen en docker-compose.yml,
-# por eso no se copia aquí.
+# El código fuente se monta como volumen en docker-compose.yml
 # --------------------------------------------------------------
 FROM base AS dev
 
 EXPOSE 8000
 
-# pip install -e . toma el código del volumen montado en /app
-CMD ["/bin/bash", "-c", \
-    "conda run -n rgenerator pip install -e . -q && \
-     conda run --no-capture-output -n rgenerator \
-     uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload"]
+CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
 # --------------------------------------------------------------
 # Stage prod: imagen autocontenida lista para producción
 # --------------------------------------------------------------
 FROM base AS prod
 
-# Copiar el proyecto e instalar el paquete rgenerator
 COPY . .
-RUN conda run -n rgenerator pip install . -q
+RUN pip install --no-cache-dir .
 
 EXPOSE 8000
 
-CMD ["conda", "run", "--no-capture-output", "-n", "rgenerator", \
-     "uvicorn", "backend.api:app", \
-     "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]

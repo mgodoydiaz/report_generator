@@ -1,0 +1,35 @@
+# ==============================================================
+# Dependencias de PRODUCCIÓN — usadas en Docker y en el servidor
+# ==============================================================
+
+# API
+fastapi
+uvicorn[standard]
+python-multipart
+python-dotenv
+
+# Base de datos
+sqlalchemy
+psycopg2-binary
+
+# Autenticación
+bcrypt
+python-jose[cryptography]
+passlib[bcrypt]
+
+# Datos
+pandas
+numpy
+matplotlib
+plotly
+pillow
+tqdm
+xlrd
+openpyxl
+requests
+
+# PDF / documentos
+camelot-py
+pymupdf
+docxtpl
+docx2pdf

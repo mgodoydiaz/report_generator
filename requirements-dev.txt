@@ -1,0 +1,10 @@
+# ==============================================================
+# Dependencias de DESARROLLO — solo para entorno local/conda
+# No se instalan en Docker
+# ==============================================================
+-r requirements.txt
+
+pytest
+pytest-cov
+streamlit
+ipykernel
