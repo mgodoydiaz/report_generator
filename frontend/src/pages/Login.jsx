@@ -5,7 +5,7 @@ import { LogIn, Eye, EyeOff } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function Login() {
-  const { login, isAuthenticated, loading } = useAuth();
+  const { login, isAuthenticated, loading, user } = useAuth();
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -13,9 +13,9 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
-  // Si ya está autenticado, ir a Home
+  // Si ya está autenticado, ir a Home (o SuperAdmin)
   if (!loading && isAuthenticated) {
-    return <Navigate to="/" replace />;
+    return <Navigate to={user?.is_superadmin ? "/superadmin" : "/"} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -26,9 +26,9 @@ export default function Login() {
     }
     setSubmitting(true);
     try {
-      await login(email, password);
+      const loggedUser = await login(email, password);
       toast.success("Bienvenido!");
-      navigate("/", { replace: true });
+      navigate(loggedUser?.is_superadmin ? "/superadmin" : "/", { replace: true });
     } catch (err) {
       toast.error(err.message || "Error al iniciar sesión");
     } finally {

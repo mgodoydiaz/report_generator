@@ -62,7 +62,7 @@ python -c "import secrets; print(secrets.token_hex(32))"
 
 ### Diferencia de variables entre dev y prod
 
-En **desarrollo**, las variables tienen valores por defecto en el `docker-compose.yml` y son opcionales. En **producción**, todas son obligatorias y deben estar en `.env` sin excepción.
+En **desarrollo**, las variables tienen valores por defecto en el `docker-compose.dev.yml` y son opcionales. En **producción**, todas son obligatorias y deben estar en `.env` sin excepción.
 
 Para producción agregar también:
 
@@ -235,7 +235,7 @@ docker compose -f docker-compose.prod.yml logs -f
 ```
 report_generator/
 ├── Dockerfile                  # Backend (multi-stage: base / dev / prod)
-├── docker-compose.yml          # Entorno de desarrollo
+├── docker-compose.dev.yml      # Entorno de desarrollo
 ├── docker-compose.prod.yml     # Entorno de producción
 ├── .dockerignore               # Archivos excluidos del contexto de build
 ├── .env.example                # Plantilla de variables de entorno
@@ -268,7 +268,7 @@ docker compose up --build frontend
 
 ### Puerto ya en uso
 
-Si el puerto 8000 o 5173 está ocupado, detener el proceso que lo usa o cambiar el mapeo en `docker-compose.yml`:
+Si el puerto 8000 o 5173 está ocupado, detener el proceso que lo usa o cambiar el mapeo en `docker-compose.dev.yml`:
 
 ```yaml
 ports:

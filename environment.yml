@@ -18,6 +18,7 @@ dependencies:
   - pip
   - pytest
   - pytest-cov
+  - plotly
   # miktex: instalar manualmente según SO
   # Windows: https://miktex.org/download
   # Linux: sudo apt install texlive-full

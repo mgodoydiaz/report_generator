@@ -25,7 +25,7 @@ RUN npm ci
 
 # --------------------------------------------------------------
 # Stage dev: Vite dev server con hot-module replacement
-# El código fuente se monta como volumen en docker-compose.yml.
+# El código fuente se monta como volumen en docker-compose.dev.yml.
 # node_modules se mantiene en el contenedor (no se sobreescribe
 # por el volumen anónimo declarado en compose).
 # --------------------------------------------------------------

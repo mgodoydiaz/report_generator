@@ -13,10 +13,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://mgodoy:holapocompadre977@localhost:5432/rgenerator_dev"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL no configurada. "
+        "Copia .env.example a .env y completa las variables, "
+        "o ejecuta con Docker (docker compose up)."
+    )
 
 engine = create_engine(
     DATABASE_URL,
