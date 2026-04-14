@@ -46,7 +46,11 @@
       "Bash(curl -s http://127.0.0.1:8000/api/pipelines)",
       "Bash(kill %1)",
       "Bash(alembic init:*)",
-      "Bash(pip install:*)"
+      "Bash(pip install:*)",
+      "Bash(grep -l \"recharts\" frontend/src/tooling/charts/*.jsx)",
+      "Bash(grep -E \"\\\\.jsx$\")",
+      "Bash(grep -l \"react-plotly\\\\|Plot from\" frontend/src/tooling/plotly-charts/*.jsx)",
+      "Bash(grep -h \"from 'recharts'\" frontend/src/tooling/charts/*.jsx)"
     ]
   }
 }

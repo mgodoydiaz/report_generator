@@ -56,8 +56,11 @@ export function AuthProvider({ children }) {
   /** fetch autenticado — drop-in replacement de fetch() */
   const fetchAuth = useCallback(
     async (url, options = {}) => {
+      const isFormData = options.body instanceof FormData;
       const headers = {
-        "Content-Type": "application/json",
+        // No poner Content-Type en FormData: el browser agrega
+        // multipart/form-data con boundary automáticamente
+        ...(isFormData ? {} : { "Content-Type": "application/json" }),
         ...options.headers,
       };
       if (token) {
