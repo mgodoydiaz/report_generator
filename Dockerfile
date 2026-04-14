@@ -34,7 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # --------------------------------------------------------------
 # Stage dev: desarrollo con hot-reload
-# El código fuente se monta como volumen en docker-compose.yml
+# El código fuente se monta como volumen en docker-compose.dev.yml
 # --------------------------------------------------------------
 FROM base AS dev
 

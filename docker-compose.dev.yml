@@ -1,5 +1,5 @@
 # ==============================================================
-# docker-compose.yml — Entorno de DESARROLLO
+# docker-compose.dev.yml — Entorno de DESARROLLO
 #
 # Servicios:
 #   db        → PostgreSQL 16

@@ -1,7 +1,7 @@
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext.jsx';
-import { AuthProvider } from './context/AuthContext.jsx';
+import { AuthProvider, useAuth } from './context/AuthContext.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Layout from "./layouts/Layout.jsx";
 import Login from "./pages/Login.jsx";
@@ -20,6 +20,12 @@ import Functions from "./pages/Functions.jsx";
 import Help from "./pages/Help.jsx";
 import Users from "./pages/Users.jsx";
 import SuperAdmin from "./pages/SuperAdmin.jsx";
+
+function SuperAdminGuard({ children }) {
+  const { user } = useAuth();
+  if (!user?.is_superadmin) return <Navigate to="/" replace />;
+  return children;
+}
 
 export default function App() {
   return (
@@ -48,7 +54,7 @@ export default function App() {
                   <Route path="/indicators" element={<Indicators />} />
                   <Route path="/functions" element={<Functions />} />
                   <Route path="/users" element={<Users />} />
-                  <Route path="/superadmin" element={<SuperAdmin />} />
+                  <Route path="/superadmin" element={<SuperAdminGuard><SuperAdmin /></SuperAdminGuard>} />
                   <Route path="/help" element={<Help />} />
                 </Routes>
               </Layout>
