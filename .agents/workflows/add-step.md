@@ -7,7 +7,9 @@ Guía paso a paso para agregar un nuevo `Step` al sistema ETL.
 
 ## Contexto
 
-Los pasos están organizados en módulos especializados bajo `backend/rgenerator/etl/core/`. Cada paso hereda de `Step` y se registra en varios puntos del sistema para que sea reconocible tanto en el backend como en el frontend.
+Los pasos están organizados en módulos especializados bajo `backend/rgenerator/core/`. Cada paso hereda de `Step` y se registra en varios puntos del sistema para que sea reconocible tanto en el backend como en el frontend.
+
+Los steps tienen acceso a **PostgreSQL** vía `ctx.db` (sesión SQLAlchemy) y a `ctx.org_id` (organización del usuario que ejecuta el pipeline) para queries multi-tenant. Usar esto cuando el step necesite leer o escribir datos de negocio (ver `LoadConfigFromSpec` en `init_steps.py` y `SaveToMetric`/`LoadMetricToDF` en `metric_steps.py` como referencia).
 
 ---
 
@@ -28,7 +30,7 @@ Agregar la clase en el archivo que corresponda según la categoría del paso:
 ### 2. Implementar la clase del paso
 
 ```python
-# En backend/rgenerator/etl/core/<categoria>_steps.py
+# En backend/rgenerator/core/<categoria>_steps.py
 
 class NombreDelPaso(Step):
     """
@@ -58,6 +60,13 @@ class NombreDelPaso(Step):
         # Leer entradas desde ctx.artifacts o ctx.inputs
         df = ctx.artifacts["artifact_requerido"]
 
+        # Si el paso lee o escribe datos de negocio, usar ctx.db + ctx.org_id:
+        # from backend.models import Metric
+        # metric = ctx.db.query(Metric).filter(
+        #     Metric.id_metric == self.metric_id,
+        #     Metric.org_id == ctx.org_id,
+        # ).first()
+
         # Lógica del paso
         resultado = df  # ... transformación
 
@@ -67,10 +76,12 @@ class NombreDelPaso(Step):
 ```
 
 > Si el paso debe pausar la ejecución para pedir archivos o datos al usuario, lanzar `WaitingForInputException` en lugar de continuar.
+>
+> Si el paso escribe en la DB, hacer `ctx.db.commit()` al final del `run()`. En caso de error, el `PipelineRunner` hará rollback automático.
 
 ### 3. Re-exportar desde `pipeline_steps.py`
 
-**Archivo:** `backend/rgenerator/etl/core/pipeline_steps.py`
+**Archivo:** `backend/rgenerator/core/pipeline_steps.py`
 
 Agregar el import y el nombre en `__all__`:
 
@@ -150,8 +161,8 @@ Crear el componente en `frontend/src/components/pipeline-steps/NombreDelPaso.jsx
 
 | # | Archivo | Qué agregar |
 |---|---------|------------|
-| 1 | `etl/core/<categoria>_steps.py` | Clase del paso |
-| 2 | `etl/core/pipeline_steps.py` | Import + nombre en `__all__` |
+| 1 | `backend/rgenerator/core/<categoria>_steps.py` | Clase del paso |
+| 2 | `backend/rgenerator/core/pipeline_steps.py` | Import + nombre en `__all__` |
 | 3 | `tooling/pipeline_tools.py` | Entrada en `STEP_MAPPING` |
 | 4 | `frontend/src/constants.js` | `STEP_OPTIONS`, `STEP_TRANSLATIONS`, `STEP_DEFAULT_PARAMS` |
 | 5 | `frontend/src/components/pipeline-steps/StepRenderer.jsx` | Solo si necesita UI especial |
