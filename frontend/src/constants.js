@@ -3,8 +3,8 @@
  * Permite gestionar URLs, opciones de selectores y estilos globales en un solo lugar.
  */
 
-// URL base de la API
-export const API_BASE_URL = "http://localhost:8000/api";
+// URL base de la API — configurable por ambiente via VITE_API_BASE_URL
+export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 // Opciones de formatos de entrada y salida permitidos
 export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
