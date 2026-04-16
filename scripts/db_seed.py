@@ -93,21 +93,39 @@ def run_export(output_path: Path):
     print(f"\nExportados {total} registros totales → {output_path} ({size_kb} KB)")
 
 
-def _parse_datetimes(rows, model):
-    """Convierte strings ISO a datetime en las columnas DateTime."""
+def _get_attr_to_col_map(model):
+    """Retorna mapa {attr_python: nombre_columna_db} para columnas con nombre distinto."""
+    mapping = {}
+    for attr in sa_inspect(model).column_attrs:
+        col = attr.columns[0]
+        if attr.key != col.name:
+            mapping[attr.key] = col.name
+    return mapping
+
+
+def _prepare_rows(rows, model):
+    """Parsea datetimes y renombra claves Python a nombres de columna DB."""
     datetime_cols = {
-        col.key for col in model.__table__.columns
-        if hasattr(col.type, "python_type") and col.type.python_type == datetime
+        attr.key for attr in sa_inspect(model).column_attrs
+        if hasattr(attr.columns[0].type, "python_type")
+        and attr.columns[0].type.python_type == datetime
     }
+    attr_to_col = _get_attr_to_col_map(model)
+
+    result = []
     for row in rows:
-        for col_key in datetime_cols:
-            val = row.get(col_key)
-            if val and isinstance(val, str):
+        new_row = {}
+        for k, v in row.items():
+            # Renombrar clave si el atributo Python difiere del nombre de columna
+            col_name = attr_to_col.get(k, k)
+            if k in datetime_cols and v and isinstance(v, str):
                 try:
-                    row[col_key] = datetime.fromisoformat(val)
+                    v = datetime.fromisoformat(v)
                 except (ValueError, TypeError):
                     pass
-    return rows
+            new_row[col_name] = v
+        result.append(new_row)
+    return result
 
 
 def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
@@ -135,7 +153,7 @@ def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
         if not rows:
             continue
 
-        rows = _parse_datetimes(rows, model)
+        rows = _prepare_rows(rows, model)
 
         count = len(rows)
         n_batches = (count + batch_size - 1) // batch_size
