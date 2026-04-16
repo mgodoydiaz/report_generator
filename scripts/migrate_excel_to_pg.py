@@ -290,7 +290,7 @@ def main():
                 id_spec=old_id,
                 name=str(row["name"]),
                 type=str(row.get("type") or "Evaluación"),
-                metadata_=safe_json(row.get("metadata"), "{}"),
+                metadata_=safe_json(row.get("config_json"), "{}"),
                 charts_list=safe_json(row.get("charts_list"), "[]"),
                 tables_list=safe_json(row.get("tables_list"), "[]"),
                 org_id=org_id,
