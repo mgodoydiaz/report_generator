@@ -144,12 +144,12 @@ def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
         with engine.begin() as conn:
             for batch_num, i in enumerate(range(0, count, batch_size), 1):
                 batch = rows[i:i + batch_size]
-                conn.execute(
-                    table.insert().prefix_with("ON CONFLICT DO NOTHING")
-                    if hasattr(table.insert(), "prefix_with")
-                    else table.insert(),
-                    batch
+                stmt = text(
+                    f"INSERT INTO {table_name} ({', '.join(batch[0].keys())}) "
+                    f"VALUES ({', '.join(':' + k for k in batch[0].keys())}) "
+                    f"ON CONFLICT DO NOTHING"
                 )
+                conn.execute(stmt, batch)
                 done = min(i + batch_size, count)
                 pct = int(done / count * 20)
                 bar = "█" * pct + "░" * (20 - pct)
