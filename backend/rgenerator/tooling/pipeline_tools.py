@@ -79,8 +79,10 @@ def load_pipeline_config(config_source: str | Path | dict, pipeline_id: Optional
     return ctx, pipeline
 
 class PipelineRunner:
-    def __init__(self, config_source: str | Path | dict, pipeline_id: Optional[int] = None):
+    def __init__(self, config_source: str | Path | dict, pipeline_id: Optional[int] = None, db=None, org_id: Optional[int] = None):
         self.ctx, self.pipeline = load_pipeline_config(config_source, pipeline_id)
+        self.ctx.db = db
+        self.ctx.org_id = org_id
         self.current_step_index = 0
         self.total_steps = len(self.pipeline)
         self.status = "IDLE" # IDLE, RUNNING, COMPLETED, FAILED

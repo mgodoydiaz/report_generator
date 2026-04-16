@@ -126,7 +126,7 @@ async def execute_pipeline(
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline para el ID {pipeline_id}"}
-            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id)
+            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id)
 
         runner = ACTIVE_RUNNERS[pipeline_id]
         results = runner.run_all()
@@ -197,7 +197,7 @@ async def execute_pipeline_step(
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
                 return {"error": "No se encontró la configuración del pipeline"}
-            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id)
+            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id)
 
         runner = ACTIVE_RUNNERS[pipeline_id]
         result = runner.step()

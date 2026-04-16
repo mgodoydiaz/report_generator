@@ -2,11 +2,11 @@
 
 # Librerias estandar
 from datetime import datetime
-import pandas as pd
 
 # Importaciones internas de RGenerator
 from .step import Step
-from backend.config import PIPELINE_RUNS_DIR, SPECS_DB_PATH
+from backend.config import PIPELINE_RUNS_DIR
+from backend.models import Spec
 from rgenerator.tooling.data_tools import safe_text_to_json
 
 
@@ -188,26 +188,21 @@ class LoadConfigFromSpec(Step):
         return result
 
     def run(self, ctx):
-        """Lee el spec desde Excel y carga todas las secciones al contexto."""
+        """Lee el spec desde PostgreSQL y carga todas las secciones al contexto."""
         before = self._snapshot_artifacts(ctx)
 
-        if not SPECS_DB_PATH.exists():
-            raise FileNotFoundError(f"No se encontró la base de datos de specs: {SPECS_DB_PATH}")
+        if not ctx.db:
+            raise RuntimeError("No hay sesión de base de datos disponible en el contexto (ctx.db)")
 
-        df = pd.read_excel(SPECS_DB_PATH)
-        # Buscar por id_spec
-        if 'id_spec' not in df.columns:
-            # Fallback si por alguna razón no se renombró
-            col_id = 'id_template'
-        else:
-            col_id = 'id_spec'
+        spec = ctx.db.query(Spec).filter(
+            Spec.id_spec == self.spec_id,
+            Spec.org_id == ctx.org_id,
+        ).first()
 
-        row = df[df[col_id] == self.spec_id]
+        if not spec:
+            raise ValueError(f"No se encontró spec con id_spec={self.spec_id}")
 
-        if row.empty:
-            raise ValueError(f"No se encontró spec con {col_id}={self.spec_id}")
-
-        config_raw = row.iloc[0].get('config_json', '')
+        config_raw = spec.metadata_ or '{}'
         # Intentar cargar JSON seguro
         config = safe_text_to_json(config_raw)
 

@@ -8,10 +8,14 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class RunContext:
     """Contexto compartido entre steps."""
-    
+
     evaluation: str = ""
     run_id: str = ""
     pipeline_id: Optional[int] = None
+
+    # Sesión SQLAlchemy y contexto de organización (inyectados desde el router)
+    db: Any = None          # sqlalchemy.orm.Session
+    org_id: Optional[int] = None
     base_dir: Path = field(default_factory=lambda: Path("."))
     params: Dict[str, Any] = field(default_factory=dict)
 
