@@ -137,10 +137,12 @@ def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
 
         rows = _parse_datetimes(rows, model)
 
-        # Insert en lotes usando INSERT ... ON CONFLICT DO NOTHING
+        count = len(rows)
+        n_batches = (count + batch_size - 1) // batch_size
         table = model.__table__
+
         with engine.begin() as conn:
-            for i in range(0, len(rows), batch_size):
+            for batch_num, i in enumerate(range(0, count, batch_size), 1):
                 batch = rows[i:i + batch_size]
                 conn.execute(
                     table.insert().prefix_with("ON CONFLICT DO NOTHING")
@@ -148,10 +150,13 @@ def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
                     else table.insert(),
                     batch
                 )
+                done = min(i + batch_size, count)
+                pct = int(done / count * 20)
+                bar = "█" * pct + "░" * (20 - pct)
+                print(f"  {table_name}: [{bar}] {done}/{count}", end="\r", flush=True)
 
-        count = len(rows)
+        print(f"  {table_name}: [{('█' * 20)}] {count}/{count} ✓")
         total += count
-        print(f"  {table_name}: {count} importados")
 
     # Resetear secuencias de auto-increment para PostgreSQL
     with engine.begin() as conn:
