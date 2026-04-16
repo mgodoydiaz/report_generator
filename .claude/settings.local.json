@@ -50,7 +50,12 @@
       "Bash(grep -l \"recharts\" frontend/src/tooling/charts/*.jsx)",
       "Bash(grep -E \"\\\\.jsx$\")",
       "Bash(grep -l \"react-plotly\\\\|Plot from\" frontend/src/tooling/plotly-charts/*.jsx)",
-      "Bash(grep -h \"from 'recharts'\" frontend/src/tooling/charts/*.jsx)"
+      "Bash(grep -h \"from 'recharts'\" frontend/src/tooling/charts/*.jsx)",
+      "Bash(git rev-list:*)",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git push:*)",
+      "Bash(wc -l backend/routers/*.py)"
     ]
   }
 }
