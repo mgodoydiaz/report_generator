@@ -25,7 +25,7 @@ sys.path.insert(0, str(ROOT))
 from dotenv import load_dotenv
 load_dotenv(ROOT / ".env")
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, text, inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker
 
 from backend.models import (
@@ -58,13 +58,13 @@ TABLE_ORDER = [
 
 
 def _serialize(obj):
-    """Convierte un objeto ORM a dict serializable."""
+    """Convierte un objeto ORM a dict serializable usando el mapper de SQLAlchemy."""
     d = {}
-    for col in obj.__table__.columns:
-        val = getattr(obj, col.key)
+    for attr in sa_inspect(obj.__class__).column_attrs:
+        val = getattr(obj, attr.key)
         if isinstance(val, datetime):
             val = val.isoformat()
-        d[col.key] = val
+        d[attr.key] = val
     return d
 
 
