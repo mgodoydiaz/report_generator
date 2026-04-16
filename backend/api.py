@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.routers import pipelines, specs, dimensions, metrics, indicators, results, resultspy
+from backend.routers import pipelines, specs, dimensions, metrics, indicators, results
 from backend.routers import auth, users, superadmin
 from backend.database import init_db
 
@@ -22,7 +22,6 @@ app.include_router(dimensions.router)
 app.include_router(metrics.router)
 app.include_router(indicators.router)
 app.include_router(results.router)
-app.include_router(resultspy.router)
 app.include_router(auth.router)
 app.include_router(users.router)
 app.include_router(superadmin.router)

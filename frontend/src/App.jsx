@@ -9,7 +9,6 @@ import Home from "./pages/Home.jsx";
 import Pipelines from "./pages/Pipelines.jsx";
 import Specs from "./pages/Specs.jsx";
 import Results from "./pages/Results.jsx";
-import Resultspy from "./pages/Resultspy.jsx";
 import ResultsRecharts from "./pages/ResultsRecharts.jsx";
 import Execution from "./pages/Execution.jsx";
 import Values from "./pages/Values.jsx";
@@ -45,7 +44,6 @@ export default function App() {
                   <Route path="/pipelines" element={<Pipelines />} />
                   <Route path="/specs" element={<Specs />} />
                   <Route path="/results" element={<Results />} />
-                  <Route path="/results-py" element={<Resultspy />} />
                   <Route path="/results-recharts" element={<ResultsRecharts />} />
                   <Route path="/execution" element={<Execution />} />
                   <Route path="/values" element={<Values />} />
