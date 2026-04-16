@@ -51,6 +51,7 @@ modulo.zip
 
 # Backups de base de datos
 backups/
+db_seed.json
 
 # Claude Code worktrees
 .claude/worktrees/
