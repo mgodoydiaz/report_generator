@@ -93,7 +93,24 @@ def run_export(output_path: Path):
     print(f"\nExportados {total} registros totales → {output_path} ({size_kb} KB)")
 
 
-def run_import(input_path: Path, clear: bool = False):
+def _parse_datetimes(rows, model):
+    """Convierte strings ISO a datetime en las columnas DateTime."""
+    datetime_cols = {
+        col.key for col in model.__table__.columns
+        if hasattr(col.type, "python_type") and col.type.python_type == datetime
+    }
+    for row in rows:
+        for col_key in datetime_cols:
+            val = row.get(col_key)
+            if val and isinstance(val, str):
+                try:
+                    row[col_key] = datetime.fromisoformat(val)
+                except (ValueError, TypeError):
+                    pass
+    return rows
+
+
+def run_import(input_path: Path, clear: bool = False, batch_size: int = 500):
     if not input_path.exists():
         print(f"ERROR: Archivo no encontrado: {input_path}")
         sys.exit(1)
@@ -103,16 +120,14 @@ def run_import(input_path: Path, clear: bool = False):
 
     engine = create_engine(DATABASE_URL)
     Base.metadata.create_all(bind=engine)
-    Session = sessionmaker(bind=engine)
-    db = Session()
 
     if clear:
         print("Limpiando tablas existentes...")
-        for table_name, model in reversed(TABLE_ORDER):
-            deleted = db.query(model).delete(synchronize_session=False)
-            if deleted:
-                print(f"  {table_name}: {deleted} eliminados")
-        db.commit()
+        with engine.begin() as conn:
+            for table_name, model in reversed(TABLE_ORDER):
+                result = conn.execute(text(f"DELETE FROM {table_name}"))
+                if result.rowcount:
+                    print(f"  {table_name}: {result.rowcount} eliminados")
 
     total = 0
     for table_name, model in TABLE_ORDER:
@@ -120,36 +135,35 @@ def run_import(input_path: Path, clear: bool = False):
         if not rows:
             continue
 
-        for row_data in rows:
-            # Parsear datetimes
-            for col in model.__table__.columns:
-                if col.key in row_data and row_data[col.key] is not None:
-                    if hasattr(col.type, "python_type") and col.type.python_type == datetime:
-                        try:
-                            row_data[col.key] = datetime.fromisoformat(row_data[col.key])
-                        except (ValueError, TypeError):
-                            pass
+        rows = _parse_datetimes(rows, model)
 
-            obj = model(**row_data)
-            db.merge(obj)  # merge respeta PKs existentes
+        # Insert en lotes usando INSERT ... ON CONFLICT DO NOTHING
+        table = model.__table__
+        with engine.begin() as conn:
+            for i in range(0, len(rows), batch_size):
+                batch = rows[i:i + batch_size]
+                conn.execute(
+                    table.insert().prefix_with("ON CONFLICT DO NOTHING")
+                    if hasattr(table.insert(), "prefix_with")
+                    else table.insert(),
+                    batch
+                )
 
-        db.commit()
         count = len(rows)
         total += count
         print(f"  {table_name}: {count} importados")
 
     # Resetear secuencias de auto-increment para PostgreSQL
-    for table_name, model in TABLE_ORDER:
-        pk_col = list(model.__table__.primary_key.columns)[0]
-        seq_name = f"{table_name}_{pk_col.name}_seq"
-        try:
-            db.execute(text(
-                f"SELECT setval('{seq_name}', COALESCE((SELECT MAX({pk_col.name}) FROM {table_name}), 0) + 1, false)"
-            ))
-        except Exception:
-            pass  # La secuencia puede no existir si el PK no es serial
-    db.commit()
-    db.close()
+    with engine.begin() as conn:
+        for table_name, model in TABLE_ORDER:
+            pk_col = list(model.__table__.primary_key.columns)[0]
+            seq_name = f"{table_name}_{pk_col.name}_seq"
+            try:
+                conn.execute(text(
+                    f"SELECT setval('{seq_name}', COALESCE((SELECT MAX({pk_col.name}) FROM {table_name}), 0) + 1, false)"
+                ))
+            except Exception:
+                pass
 
     print(f"\nImportados {total} registros totales desde {input_path}")
 
