@@ -124,6 +124,33 @@ En el campo `dashboard_layout` del indicador (editable desde el Editor de Layout
 | `labelField` | Campo de etiqueta para tablas de detalle (default `_nombre` o `_pregunta`) |
 | `progressField` | Campo de progreso para DetailListWithProgress (default `_logro_pregunta`) |
 | `extraField` / `extraLabel` | Columna extra en DetailListWithProgress (default `_correcta` / `"Correcta"`) |
+| `filter` | Filtro item-level sobre los records antes de renderizar (ver abajo) |
+
+### Filtro item-level (`filter`)
+
+Cualquier item del layout puede filtrar los records que recibe el componente sin afectar otras tabs ni otros items de la misma tab. Útil para, por ejemplo, mostrar la *última evaluación* en la pestaña de resumen, o restringir a un curso específico.
+
+```jsx
+// Igualdad literal
+{ "component": "BarByGroup", "filter": { "_curso": "3° BÁSICO" } }
+
+// "In" — cualquiera de la lista
+{ "component": "BarByGroup", "filter": { "_curso": ["3° BÁSICO", "4° BÁSICO"] } }
+
+// Tokens especiales para campos numéricos: "max" | "min" | "latest"
+// (latest es alias de max)
+{ "component": "StackedCountByGroup", "filter": { "_evaluacion_num": "max" } }
+
+// Combinable: último evaluación Y un curso específico
+{ "component": "BarByGroup", "filter": { "_evaluacion_num": "max", "_curso": "3° BÁSICO" } }
+```
+
+Reglas:
+
+- El filtro afecta los tres arrays de records: `computed.estudiantes`, `datosCurso.estudiantes` y `datosCurso.preguntas`.
+- Los agregados pre-computados (total alumnos, logroPromedio, cursos) **no** se recalculan — los KPIs siguen mostrando el dataset completo.
+- `max`/`min` se calculan sobre el dataset completo del item antes de filtrar, no por grupo.
+- La comparación es por coerción (`==`), así que `"2"` y `2` se consideran iguales.
 
 ---
 

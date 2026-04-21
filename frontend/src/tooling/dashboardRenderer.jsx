@@ -128,6 +128,59 @@ function resolveValueField(item, activeIdx) {
     return item.valueField;
 }
 
+// ── Filtro item-level ─────────────────────────────────────────────────────────
+// Permite que un item del layout filtre sus records antes de renderizar.
+// Sintaxis de `filter` (objeto campo → target):
+//   { _curso: "3° BÁSICO" }             — igualdad literal
+//   { _curso: ["3° BÁSICO", "4°"] }     — "in" (cualquiera de la lista)
+//   { _evaluacion_num: "max" | "min" }  — max/min del campo en el dataset
+//   { _evaluacion_num: "latest" }       — alias de "max"
+// Los records NO filtrados (null/undefined en el campo) quedan fuera.
+// Nota: sólo afecta los records pasados al componente; no recalcula agregados
+// pre-computados como `cursos`, `logroPromedio`, etc.
+export function applyItemFilter(records, filter) {
+    if (!filter || typeof filter !== 'object') return records;
+    if (!Array.isArray(records) || records.length === 0) return records;
+
+    // Resolver tokens especiales (max/min/latest) una sola vez
+    const resolved = {};
+    for (const [field, target] of Object.entries(filter)) {
+        if (target === null || target === undefined) continue;
+        if (target === 'max' || target === 'min' || target === 'latest') {
+            const op = target === 'min' ? 'min' : 'max';
+            let best = null;
+            for (const r of records) {
+                const v = r[field];
+                if (v == null) continue;
+                const n = Number(v);
+                if (Number.isNaN(n)) continue;
+                if (best === null) best = n;
+                else if (op === 'max' && n > best) best = n;
+                else if (op === 'min' && n < best) best = n;
+            }
+            if (best === null) return [];
+            resolved[field] = best;
+        } else {
+            resolved[field] = target;
+        }
+    }
+
+    return records.filter(r => {
+        for (const [field, target] of Object.entries(resolved)) {
+            const actual = r[field];
+            if (Array.isArray(target)) {
+                // Comparación por coerción (tolera string vs number)
+                // eslint-disable-next-line eqeqeq
+                if (!target.some(t => t == actual)) return false;
+            } else {
+                // eslint-disable-next-line eqeqeq
+                if (actual != target) return false;
+            }
+        }
+        return true;
+    });
+}
+
 // ── Mapa campo interno → rol (para derivar formatStr/label desde roleFormats/roleLabels) ──
 
 const FIELD_TO_ROLE = {
@@ -184,8 +237,13 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
     } = ctx;
 
+    // Filtro item-level (no afecta agregados pre-computados)
+    const filteredEstudiantes      = applyItemFilter(computed.estudiantes, item.filter);
+    const filteredCursoEstudiantes = applyItemFilter(datosCurso.estudiantes, item.filter);
+    const filteredCursoPreguntas   = applyItemFilter(datosCurso.preguntas, item.filter);
+
     const base = {
-        data: computed.estudiantes,
+        data: filteredEstudiantes,
         cursos: computed.cursos,
         roleLabels: computed.roleLabels,
         roleFormats: computed.roleFormats,
@@ -246,21 +304,21 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'GraficoDistribucionNiveles':
             return base;
         case 'GraficoHabilidades':
-            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
+            return { data: filteredCursoPreguntas, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
         case 'GraficoNivelesPorCursoYMes':
-            return { data: computed.estudiantes, cursos: computed.cursos, achievement_levels: computed.achievement_levels, temporalConfig: computed.temporalConfig };
+            return { data: filteredEstudiantes, cursos: computed.cursos, achievement_levels: computed.achievement_levels, temporalConfig: computed.temporalConfig };
         case 'GraficoPromedioAgrupadoPorDimension':
-            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
+            return { data: filteredEstudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
         case 'GraficoTendenciaTemporal':
-            return { data: computed.estudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
+            return { data: filteredEstudiantes, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, temporalConfig: computed.temporalConfig };
         case 'GraficoRadarHabilidades':
-            return { data: datosCurso.preguntas, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
+            return { data: filteredCursoPreguntas, cursos: computed.cursos, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, dimension: item.dimension || 'habilidad' };
         case 'TablaResumenCursos':
             return base;
         case 'TablaAlumnos':
-            return { data: datosCurso.estudiantes, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, activeRoles: computed.activeRoles };
+            return { data: filteredCursoEstudiantes, roleLabels: computed.roleLabels, roleFormats: computed.roleFormats, activeRoles: computed.activeRoles };
         case 'TablaPreguntas':
-            return { data: datosCurso.preguntas, roleLabels: computed.roleLabels };
+            return { data: filteredCursoPreguntas, roleLabels: computed.roleLabels };
 
         // ── Plotly — campos explícitos, sin fallbacks ──
         // Opciones visuales comunes (del item, configuradas en el modal)
@@ -268,7 +326,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'BarByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 valueField: activeValueField ?? '_rend',
@@ -282,7 +340,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'BoxPlotByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 valueField: activeValueField ?? '_rend',
@@ -295,7 +353,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'PieComposition': {
             const vp = { showLegend: item.showLegend };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
                 ...vp,
@@ -305,7 +363,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             // Si groupField apunta a _habilidad, usar todos los registros (no solo por curso)
             const gf = item.groupField ?? '_curso';
-            const recs = gf === '_habilidad' ? computed.estudiantes : computed.estudiantes;
+            const recs = filteredEstudiantes;
             const grps = gf === '_habilidad' ? computed.habilidades : computed.cursos;
             return {
                 records: recs,
@@ -319,7 +377,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'StackedCountByGroupAndPeriod': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 categoryField: item.categoryField ?? '_logro',
@@ -334,7 +392,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             // En tab general usar todos los registros; en tab curso usar solo ese curso
             const useAll = !datosCurso?.preguntas?.length;
             return {
-                records: useAll ? computed.estudiantes : datosCurso.preguntas,
+                records: useAll ? filteredEstudiantes : filteredCursoPreguntas,
                 dimensionField: item.dimensionField ?? '_habilidad',
                 valueField: activeValueField ?? '_rend',
                 valueLabel: resolvedValueLabel,
@@ -354,7 +412,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 effSubGroup = item.groupField ?? '_curso';
             }
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groupField: effGroup,
                 subGroupField: effSubGroup,
                 valueField: activeValueField ?? '_rend',
@@ -369,7 +427,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'TrendLine': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 valueField: activeValueField ?? '_rend',
@@ -385,7 +443,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'RadarProfile': {
             const vp = { showLegend: item.showLegend };
             return {
-                records: datosCurso.preguntas,
+                records: filteredCursoPreguntas,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 axisField: item.axisField ?? '_habilidad',
@@ -398,7 +456,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'Histogram': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 valueField: activeValueField,
                 groupField: item.groupField,
                 groups: item.groupField ? computed.cursos : [],
@@ -411,7 +469,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'HeatmapMatrix': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 xField: item.xField,
                 yField: item.yField,
                 valueField: activeValueField,
@@ -424,7 +482,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'GaugeIndicator': {
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 valueField: activeValueField,
                 aggregation: item.aggregation || 'avg',
                 min: item.min,
@@ -437,19 +495,19 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'PivotTable':
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 pivotConfig: item.pivotConfig,
                 formatStr: resolvedFormatStr,
             };
         case 'FilterableTable':
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 flatTableConfig: item.flatTableConfig || {},
                 formatValue: fmtFn,
             };
         case 'SummaryTable':
             return {
-                records: computed.estudiantes,
+                records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 groupColors: CURSO_COLORS,
@@ -463,7 +521,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             };
         case 'DetailListTable':
             return {
-                records: datosCurso.estudiantes,
+                records: filteredCursoEstudiantes,
                 labelField: item.labelField || '_nombre',
                 valueField: item.valueField || null,
                 formatValue: fmtFn,
@@ -471,7 +529,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             };
         case 'DetailListWithProgress':
             return {
-                records: datosCurso.preguntas,
+                records: filteredCursoPreguntas,
                 labelField: item.labelField || '_pregunta',
                 dimensionField: item.dimensionField,
                 progressField: item.progressField,
