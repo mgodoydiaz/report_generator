@@ -198,9 +198,13 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
     // Resolver valueField activo (puede ser array con toggle)
     const activeValueField = resolveValueField(item, activeValueIdx);
 
+    // Para derivar formato y label usamos un fallback a '_rend' cuando el item
+    // no tiene valueField configurado (el ?? real en cada case sigue siendo '_rend').
+    const effectiveValueField = activeValueField ?? '_rend';
+
     // Derivar formatStr y label desde roleFormats/roleLabels o defaults por campo
-    const resolvedFormatStr = deriveFormatStr(activeValueField, item.formatStr, computed.roleFormats, computed.fieldToRole);
-    const resolvedValueLabel = deriveValueLabel(activeValueField, item.valueLabel, computed.roleLabels, computed.fieldToRole);
+    const resolvedFormatStr = deriveFormatStr(effectiveValueField, item.formatStr, computed.roleFormats, computed.fieldToRole);
+    const resolvedValueLabel = deriveValueLabel(effectiveValueField, item.valueLabel, computed.roleLabels, computed.fieldToRole);
 
     const fmtFn = (v) => formatValue(v, resolvedFormatStr);
 
@@ -447,10 +451,10 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField || '_curso',
+                groupField: item.groupField ?? '_curso',
                 groupColors: CURSO_COLORS,
-                valueField: item.valueField || null,
-                valueLabel: item.valueLabel || null,
+                valueField: item.valueField ?? '_rend',
+                valueLabel: item.valueLabel ?? resolvedValueLabel,
                 formatValue: fmtFn,
                 categoryField: item.categoryField || null,
                 categoryLevels: computed.achievement_levels || [],
