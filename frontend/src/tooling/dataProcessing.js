@@ -1,9 +1,56 @@
 import { avg } from './charts/constants';
 
 /**
- * Convierte un nombre de columna al nombre de campo normalizado con prefijo _.
- * Ej: "Porcentaje_Logro" → "_porcentaje_logro"
+ * Normaliza valores placeholder ("nan", "NaT", "None", literal NaN) a cadena vacía
+ * para que la UI no muestre texto residual proveniente de imports con huecos.
  */
+export function sanitizeDisplayValue(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'number') return Number.isNaN(v) ? '' : v;
+    const s = String(v).trim();
+    if (!s) return '';
+    const low = s.toLowerCase();
+    if (low === 'nan' || low === 'nat' || low === 'none' || low === 'null' || low === 'undefined') return '';
+    return v;
+}
+
+function sanitizeObj(o) {
+    if (!o || typeof o !== 'object') return o;
+    const out = {};
+    for (const k of Object.keys(o)) out[k] = sanitizeDisplayValue(o[k]);
+    return out;
+}
+
+const DEFAULT_LEVEL_ORD = {
+    'Crítico': 1, 'Critico': 1,
+    'Alto Riesgo': 2,
+    'Cierto Riesgo': 3,
+    'Bajo Riesgo': 4,
+};
+
+function buildLevelOrdMap(achievementLevels) {
+    if (!achievementLevels?.length) return DEFAULT_LEVEL_ORD;
+    if (typeof achievementLevels[0] === 'object' && achievementLevels[0]?.name) {
+        const map = {};
+        for (const l of achievementLevels) {
+            if (l.name && l.order != null) map[l.name] = l.order;
+        }
+        return Object.keys(map).length ? map : DEFAULT_LEVEL_ORD;
+    }
+    if (typeof achievementLevels[0] === 'string') {
+        const map = {};
+        achievementLevels.forEach((name, i) => { map[name] = i + 1; });
+        return map;
+    }
+    return DEFAULT_LEVEL_ORD;
+}
+
+function normalizeRut(raw) {
+    if (raw === null || raw === undefined) return null;
+    const s = String(raw).replace(/[.\-\s]/g, '').toUpperCase();
+    return s || null;
+}
+
 function toFieldName(col) {
     return '_' + col.trim().toLowerCase()
         .replace(/\s+/g, '_')
@@ -151,6 +198,12 @@ export function processDataForDashboard(result) {
         if (alias && alias !== fieldName) fieldToRole[alias] = role;
     }
 
+    // Buscar dimensión de RUT/RUN/Documento (case-insensitive, match de palabra completa)
+    const rutDimId = Object.keys(dimsMap).find(k => {
+        const name = dimsMap[k].name.toLowerCase();
+        return /\brut\b/.test(name) || /\brun\b/.test(name) || /\bdocumento\b/.test(name);
+    });
+
     // Buscar dimensión de curso por nombre (siempre por convención, no es un role)
     const cursoDimId = Object.keys(dimsMap).find(k => dimsMap[k].name.toLowerCase().includes("curso"));
     const nombreDimId = Object.keys(dimsMap).find(k =>
@@ -170,8 +223,13 @@ export function processDataForDashboard(result) {
         const hasHabilidadRole = roleMap.habilidad?.[mid] || roleMap.habilidad_2?.[mid];
 
         for (const row of metricData) {
-            const djson = row.dimensions_json || {};
-            const val = row.value;
+            const djson = sanitizeObj(row.dimensions_json || {});
+            let val = row.value;
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                val = sanitizeObj(val);
+            } else {
+                val = sanitizeDisplayValue(val);
+            }
             const entry = {
                 _curso: cursoDimId ? (djson[cursoDimId] || "") : "",
                 _raw_dims: djson,
@@ -180,6 +238,14 @@ export function processDataForDashboard(result) {
             // Extraer nombre y pregunta de dimensiones
             if (nombreDimId) entry._nombre = djson[nombreDimId] || "";
             if (preguntaDimId) entry._pregunta = djson[preguntaDimId] || "";
+
+            // Extraer RUT canónico (sin puntos ni guiones, uppercase)
+            if (rutDimId) {
+                const rawRut = djson[rutDimId];
+                entry._rut = (rawRut != null && String(rawRut).trim() !== '')
+                    ? normalizeRut(rawRut)
+                    : null;
+            }
 
             // ── Mapeo explícito por column_roles ──
 
@@ -252,6 +318,45 @@ export function processDataForDashboard(result) {
         }
     }
 
+    // Filtrar records sin RUT cuando la dimensión está configurada
+    if (rutDimId) {
+        const beforeCount = estudiantes.length;
+        const validEstudiantes = estudiantes.filter(e => e._rut);
+        const discarded = beforeCount - validEstudiantes.length;
+        estudiantes.splice(0, estudiantes.length, ...validEstudiantes);
+
+        const validPreguntas = preguntas.filter(e => e._rut);
+        preguntas.splice(0, preguntas.length, ...validPreguntas);
+
+        if (discarded > 0) {
+            console.log(`[processDataForDashboard] Descartados ${discarded} records sin RUT`);
+        }
+    }
+
+    // S1.2: Deduplicación por (_rut, _habilidad, _evaluacion_num) — solo cuando hay RUT como clave
+    if (rutDimId) {
+        const habField = roleFieldMap.habilidad || '_habilidad';
+        const bestByKey = new Map();
+        for (const e of estudiantes) {
+            const key = `${e._rut}||${e[habField] ?? ''}||${e._evaluacion_num ?? ''}`;
+            const existing = bestByKey.get(key);
+            if (!existing) {
+                bestByKey.set(key, e);
+            } else {
+                // Tie-breaking: conservar el record con mayor temporal_label
+                if ((e._temporal_label ?? '') > (existing._temporal_label ?? '')) {
+                    bestByKey.set(key, e);
+                }
+            }
+        }
+        const deduped = [...bestByKey.values()];
+        const collapsed = estudiantes.length - deduped.length;
+        estudiantes.splice(0, estudiantes.length, ...deduped);
+        if (collapsed > 0) {
+            console.log(`[processDataForDashboard] Colapsados ${collapsed} duplicados`);
+        }
+    }
+
     // Si hay temporal_config, reemplazar _evaluacion_num (y el campo canónico) por el índice ordinal
     // del _temporal_label ordenado según la config.
     if (temporalConfig?.levels?.length > 0) {
@@ -264,6 +369,70 @@ export function processDataForDashboard(result) {
             if (e._temporal_label) {
                 e._evaluacion_num = labelToNum[e._temporal_label];
                 if (evalFn !== '_evaluacion_num') e[evalFn] = e._evaluacion_num;
+            }
+        }
+    }
+
+    // S1.3: Derivar columnas de análisis (_worst_level_*, _is_urgent, _trajectory, _n_evaluations)
+    // Se ejecuta DESPUÉS del procesamiento temporal para que _evaluacion_num sea ordinal.
+    if (rutDimId && estudiantes.length > 0) {
+        const levelOrdMap = buildLevelOrdMap(result.achievement_levels);
+        const logroField = roleFieldMap.nivel_de_logro || '_logro';
+        const habField   = roleFieldMap.habilidad      || '_habilidad';
+
+        // Paso 1: peor nivel por (_rut, _evaluacion_num)
+        const worstByRutEval = new Map();
+        for (const e of estudiantes) {
+            if (!e._rut) continue;
+            const key = `${e._rut}||${e._evaluacion_num ?? ''}`;
+            const lvl = e[logroField];
+            const ord = levelOrdMap[lvl];
+            if (lvl == null || ord == null) continue;
+            const cur = worstByRutEval.get(key);
+            if (!cur || ord < cur.ord) {
+                worstByRutEval.set(key, { ord, label: lvl, subprueba: e[habField] ?? null });
+            }
+        }
+
+        // Paso 2: n_evaluations y trajectory por _rut (basado en worst level)
+        const evalsByRut = new Map();
+        for (const e of estudiantes) {
+            if (!e._rut || e._evaluacion_num == null) continue;
+            if (!evalsByRut.has(e._rut)) evalsByRut.set(e._rut, new Set());
+            evalsByRut.get(e._rut).add(e._evaluacion_num);
+        }
+        const rutMeta = new Map();
+        for (const [rut, evalsSet] of evalsByRut) {
+            const nEvals = evalsSet.size;
+            let trajectory = 'incomplete';
+            if (nEvals >= 2) {
+                const sorted = [...evalsSet].sort((a, b) => a - b);
+                const first = worstByRutEval.get(`${rut}||${sorted[0]}`);
+                const last  = worstByRutEval.get(`${rut}||${sorted[sorted.length - 1]}`);
+                if (first && last) {
+                    if (last.ord > first.ord)      trajectory = 'improving';
+                    else if (last.ord < first.ord) trajectory = 'declining';
+                    else                           trajectory = 'stable';
+                }
+            }
+            rutMeta.set(rut, { n: nEvals, trajectory });
+        }
+
+        // Paso 3: adjuntar campos a cada record
+        for (const e of estudiantes) {
+            if (!e._rut) continue;
+            const worst = worstByRutEval.get(`${e._rut}||${e._evaluacion_num ?? ''}`);
+            if (worst) {
+                e._worst_level_ord   = worst.ord;
+                e._worst_level_label = worst.label;
+                e._worst_subprueba   = worst.subprueba;
+                e._is_urgent     = worst.label === 'Crítico' || worst.label === 'Critico';
+                e._is_concerning = e._is_urgent || worst.label === 'Alto Riesgo';
+            }
+            const meta = rutMeta.get(e._rut);
+            if (meta) {
+                e._n_evaluations = meta.n;
+                e._trajectory    = meta.trajectory;
             }
         }
     }

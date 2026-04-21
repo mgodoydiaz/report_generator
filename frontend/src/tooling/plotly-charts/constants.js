@@ -1,3 +1,50 @@
+// ── Paleta de niveles de logro ──
+
+const DEFAULT_LEVEL_PALETTE_DATA = [
+    { name: 'Crítico',       order: 1, color: '#dc2626' },
+    { name: 'Critico',       order: 1, color: '#dc2626' },
+    { name: 'Alto Riesgo',   order: 2, color: '#ea580c' },
+    { name: 'Cierto Riesgo', order: 3, color: '#eab308' },
+    { name: 'Bajo Riesgo',   order: 4, color: '#16a34a' },
+];
+
+/**
+ * Construye una paleta a partir de achievement_levels del indicador.
+ * Soporta: [{name, color, order}], string[], undefined/[].
+ * Retorna: { orderedNames, colorByName, ordByName }
+ */
+export function getLevelPalette(achievementLevels) {
+    const defaults = {
+        orderedNames: ['Crítico', 'Alto Riesgo', 'Cierto Riesgo', 'Bajo Riesgo'],
+        colorByName: Object.fromEntries(DEFAULT_LEVEL_PALETTE_DATA.map(l => [l.name, l.color])),
+        ordByName:   Object.fromEntries(DEFAULT_LEVEL_PALETTE_DATA.map(l => [l.name, l.order])),
+    };
+    if (!achievementLevels?.length) return defaults;
+
+    if (typeof achievementLevels[0] === 'object' && achievementLevels[0]?.name) {
+        const sorted = [...achievementLevels].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        const colorByName = {};
+        const ordByName   = {};
+        for (const l of sorted) {
+            colorByName[l.name] = l.color ?? defaults.colorByName[l.name] ?? '#94a3b8';
+            ordByName[l.name]   = l.order;
+        }
+        return { orderedNames: sorted.map(l => l.name), colorByName, ordByName };
+    }
+
+    if (typeof achievementLevels[0] === 'string') {
+        const colorByName = {};
+        const ordByName   = {};
+        achievementLevels.forEach((name, i) => {
+            colorByName[name] = defaults.colorByName[name] ?? '#94a3b8';
+            ordByName[name]   = i + 1;
+        });
+        return { orderedNames: achievementLevels, colorByName, ordByName };
+    }
+
+    return defaults;
+}
+
 // ── Paletas de colores ──
 
 export const CATEGORY_COLORS = [

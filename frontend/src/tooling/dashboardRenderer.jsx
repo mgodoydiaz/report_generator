@@ -32,6 +32,7 @@ import {
     PivotTable,
     FilterableTable,
     SummaryTable, DetailListTable, DetailListWithProgress,
+    ImprovementRateByGroup,
 } from './plotly-charts';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
@@ -82,6 +83,7 @@ const COMPONENT_MAP = {
     PivotTable,
     FilterableTable,
     SummaryTable, DetailListTable, DetailListWithProgress,
+    ImprovementRateByGroup,
 };
 
 // ── Campos requeridos por componente Plotly ───────────────────────────────────
@@ -109,6 +111,7 @@ const PLOTLY_REQUIRED_FIELDS = {
     DetailListWithProgress:       ['progressField'],
     SummaryTable:                 [],
     DetailListTable:              [],
+    ImprovementRateByGroup:       [],
 };
 
 function getMissingFields(componentId, item) {
@@ -233,14 +236,20 @@ function deriveValueLabel(activeValueField, itemValueLabel, roleLabels, fieldToR
 
 function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
     const {
-        computed, datosCurso, onCursoClick, cursoActivo,
+        computed, datosCurso, onCursoClick, cursoActivo, subpruebaActiva,
         metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
     } = ctx;
 
     // Filtro item-level (no afecta agregados pre-computados)
-    const filteredEstudiantes      = applyItemFilter(computed.estudiantes, item.filter);
-    const filteredCursoEstudiantes = applyItemFilter(datosCurso.estudiantes, item.filter);
-    const filteredCursoPreguntas   = applyItemFilter(datosCurso.preguntas, item.filter);
+    let filteredEstudiantes      = applyItemFilter(computed.estudiantes, item.filter);
+    let filteredCursoEstudiantes = applyItemFilter(datosCurso.estudiantes, item.filter);
+    const filteredCursoPreguntas = applyItemFilter(datosCurso.preguntas, item.filter);
+
+    // Auto-filter por subprueba activa (si el selector está activo y el item no la sobrescribe)
+    if (subpruebaActiva && !(item.filter && '_habilidad' in item.filter)) {
+        filteredEstudiantes      = filteredEstudiantes.filter(r => r._habilidad === subpruebaActiva);
+        filteredCursoEstudiantes = filteredCursoEstudiantes.filter(r => r._habilidad === subpruebaActiva);
+    }
 
     const base = {
         data: filteredEstudiantes,
@@ -325,10 +334,14 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         // eslint-disable-next-line no-case-declarations
         case 'BarByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const bgf = item.groupField ?? '_curso';
+            const bgroups = bgf === '_curso'
+                ? computed.cursos
+                : [...new Set(filteredEstudiantes.map(r => r[bgf]).filter(Boolean))].sort();
             return {
                 records: filteredEstudiantes,
-                groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
+                groups: bgroups,
+                groupField: bgf,
                 valueField: activeValueField ?? '_rend',
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
@@ -339,10 +352,14 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'BoxPlotByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
+            const bpgf = item.groupField ?? '_curso';
+            const bpgroups = bpgf === '_curso'
+                ? computed.cursos
+                : [...new Set(filteredEstudiantes.map(r => r[bpgf]).filter(Boolean))].sort();
             return {
                 records: filteredEstudiantes,
-                groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
+                groups: bpgroups,
+                groupField: bpgf,
                 valueField: activeValueField ?? '_rend',
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
@@ -356,21 +373,24 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 records: filteredEstudiantes,
                 categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
+                achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
         }
         case 'StackedCountByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
-            // Si groupField apunta a _habilidad, usar todos los registros (no solo por curso)
             const gf = item.groupField ?? '_curso';
             const recs = filteredEstudiantes;
-            const grps = gf === '_habilidad' ? computed.habilidades : computed.cursos;
+            const grps = gf === '_curso'
+                ? computed.cursos
+                : [...new Set(recs.map(r => r[gf]).filter(Boolean))].sort();
             return {
                 records: recs,
                 groups: grps,
                 groupField: gf,
                 categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
+                achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
         }
@@ -382,6 +402,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 groupField: item.groupField ?? '_curso',
                 categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
+                achievement_levels: computed.achievement_levels || [],
                 periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
                 ...vp,
@@ -426,10 +447,14 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'TrendLine': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const tgf = item.groupField ?? '_curso';
+            const tgroups = tgf === '_curso'
+                ? computed.cursos
+                : [...new Set(filteredEstudiantes.map(r => r[tgf]).filter(Boolean))].sort();
             return {
                 records: filteredEstudiantes,
-                groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
+                groups: tgroups,
+                groupField: tgf,
                 valueField: activeValueField ?? '_rend',
                 periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
@@ -442,10 +467,14 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'RadarProfile': {
             const vp = { showLegend: item.showLegend };
+            const rgf = item.groupField ?? '_curso';
+            const rgroups = rgf === '_curso'
+                ? computed.cursos
+                : [...new Set(filteredCursoPreguntas.map(r => r[rgf]).filter(Boolean))].sort();
             return {
                 records: filteredCursoPreguntas,
-                groups: computed.cursos,
-                groupField: item.groupField ?? '_curso',
+                groups: rgroups,
+                groupField: rgf,
                 axisField: item.axisField ?? '_habilidad',
                 valueField: activeValueField ?? '_rend',
                 formatValue: fmtFn,
@@ -474,7 +503,13 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 yField: item.yField,
                 valueField: activeValueField,
                 aggregation: item.aggregation || 'avg',
-                colorscale: item.colorscale || 'Viridis',
+                achievement_levels: computed.achievement_levels || [],
+                colorscale: item.colorscale || 'YlOrRd',
+                reverseColorscale: !!item.reverseColorscale,
+                xTickCase: item.xTickCase || 'none',
+                yTickCase: item.yTickCase || 'none',
+                xTickMap: item.xTickMap || '',
+                yTickMap: item.yTickMap || '',
                 formatStr: resolvedFormatStr,
                 formatValue: fmtFn,
                 ...vp,
@@ -493,12 +528,16 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 labelX: item.labelX || resolvedValueLabel,
             };
         }
-        case 'PivotTable':
+        case 'PivotTable': {
+            const pivotRecs = item.dataSource === 'cursoEstudiantes'
+                ? filteredCursoEstudiantes
+                : filteredEstudiantes;
             return {
-                records: filteredEstudiantes,
+                records: pivotRecs,
                 pivotConfig: item.pivotConfig,
                 formatStr: resolvedFormatStr,
             };
+        }
         case 'FilterableTable':
             return {
                 records: filteredEstudiantes,
@@ -537,6 +576,23 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 extraField: item.extraField || null,
                 extraLabel: item.extraLabel || null,
             };
+        case 'ImprovementRateByGroup': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const groupField = item.groupField ?? '_curso';
+            const groups = groupField === '_curso'
+                ? computed.cursos
+                : [...new Set(filteredEstudiantes.map(r => r[groupField]).filter(Boolean))].sort();
+            return {
+                records: filteredEstudiantes,
+                groups,
+                groupField,
+                timeField: item.timeField ?? '_evaluacion_num',
+                entityField: item.entityField ?? '_nombre',
+                levelField: item.levelField ?? '_logro',
+                achievement_levels: computed.achievement_levels || [],
+                ...vp,
+            };
+        }
 
         default:
             return base;
@@ -657,7 +713,7 @@ function ValueFieldToggle({ fields, activeIdx, onChange, computed }) {
 }
 
 export function ItemRenderer({ item, ctx }) {
-    const { computed, datosCurso, cursoActivo, setCursoActivo } = ctx;
+    const { computed, datosCurso, cursoActivo, setCursoActivo, subpruebaActiva, setSubpruebaActiva } = ctx;
     const { activeRoles } = computed;
     const [activeValueIdx, setActiveValueIdx] = useState(0);
 
@@ -695,6 +751,38 @@ export function ItemRenderer({ item, ctx }) {
                         style={cursoActivo === c ? { background: CURSO_COLORS[i % CURSO_COLORS.length] } : {}}
                     >
                         {c}
+                    </button>
+                ))}
+            </div>
+        );
+    }
+
+    if (item.type === 'subprueba_selector') {
+        const field = item.field || '_habilidad';
+        const subpruebas = [...new Set(computed.estudiantes.map(e => e[field]).filter(Boolean))].sort();
+        if (!subpruebas.length) return null;
+        return (
+            <div className="flex gap-2 flex-wrap items-center">
+                <button
+                    onClick={() => setSubpruebaActiva(null)}
+                    className={'px-4 py-2 rounded-xl font-bold text-sm transition-all ' + (subpruebaActiva === null
+                        ? 'bg-indigo-600 text-white shadow-lg'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                    )}
+                >
+                    Todas
+                </button>
+                {subpruebas.map((s, i) => (
+                    <button
+                        key={s}
+                        onClick={() => setSubpruebaActiva(s)}
+                        className={'px-4 py-2 rounded-xl font-bold text-sm transition-all ' + (subpruebaActiva === s
+                            ? 'text-white shadow-lg'
+                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+                        )}
+                        style={subpruebaActiva === s ? { background: CURSO_COLORS[i % CURSO_COLORS.length] } : {}}
+                    >
+                        {s}
                     </button>
                 ))}
             </div>
@@ -781,7 +869,7 @@ function EmptyLayoutPlaceholder() {
     );
 }
 
-export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick, derivedColumns }) {
+export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, subpruebaActiva, setSubpruebaActiva, onCursoClick, derivedColumns }) {
     const [activeTab, setActiveTab] = useState(0);
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
@@ -802,7 +890,8 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
     const resolvedLayout = layout;
 
     const ctx = {
-        computed: enrichedComputed, datosCurso, cursoActivo, setCursoActivo, onCursoClick,
+        computed: enrichedComputed, datosCurso, cursoActivo, setCursoActivo,
+        subpruebaActiva, setSubpruebaActiva, onCursoClick,
         metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
     };
 

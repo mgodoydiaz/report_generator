@@ -10,7 +10,7 @@
 
 import React from 'react';
 import PlotlyWrapper from './PlotlyWrapper';
-import { CATEGORY_COLORS, LOGRO_COLORS, levelColors, formatRange } from './constants';
+import { CATEGORY_COLORS, LOGRO_COLORS, levelColors, formatRange, getLevelPalette } from './constants';
 
 // ── BoxPlotByGroup ────────────────────────────────────────────────────────────
 /**
@@ -167,6 +167,7 @@ export function PieComposition({
     categoryField = '_logro',
     categoryLevels = [],
     categoryColors = null,
+    achievement_levels = [],
     height,
     showLegend,
 }) {
@@ -174,10 +175,10 @@ export function PieComposition({
         ? categoryLevels
         : [...new Set(records.map(r => r[categoryField]).filter(Boolean))];
 
-    const autoColors = levelColors(levels);
+    const palette = getLevelPalette(achievement_levels);
     const getColor = (level, i) => {
         if (categoryColors?.[level]) return categoryColors[level];
-        return autoColors[i] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+        return palette.colorByName[level] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     };
 
     const values = levels.map(l => records.filter(r => r[categoryField] === l).length);
@@ -226,6 +227,7 @@ export function StackedCountByGroup({
     categoryField = '_logro',
     categoryLevels = [],
     categoryColors = null,
+    achievement_levels = [],
     height,
     labelX,
     labelY,
@@ -240,10 +242,10 @@ export function StackedCountByGroup({
         ? categoryLevels
         : [...new Set(records.map(r => r[categoryField]).filter(Boolean))];
 
-    const autoColors = levelColors(levels);
+    const palette = getLevelPalette(achievement_levels);
     const getColor = (level, i) => {
         if (categoryColors?.[level]) return categoryColors[level];
-        return autoColors[i] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+        return palette.colorByName[level] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     };
 
     const displayValues = showValues !== false;
@@ -298,6 +300,7 @@ export function StackedCountByGroupAndPeriod({
     categoryField = '_logro',
     categoryLevels = [],
     categoryColors = null,
+    achievement_levels = [],
     periodField = '_evaluacion_num',
     periodLabels = {},
     height,
@@ -316,10 +319,10 @@ export function StackedCountByGroupAndPeriod({
         ? categoryLevels
         : [...new Set(records.map(r => r[categoryField]).filter(Boolean))];
 
-    const autoColors = levelColors(levels);
+    const palette = getLevelPalette(achievement_levels);
     const getColor = (level, i) => {
         if (categoryColors?.[level]) return categoryColors[level];
-        return autoColors[i] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+        return palette.colorByName[level] ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length];
     };
 
     const getLabel = (p) => periodLabels[p] ?? String(p);

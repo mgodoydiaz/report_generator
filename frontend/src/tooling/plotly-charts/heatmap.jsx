@@ -23,13 +23,39 @@ import { formatRange } from './constants';
  *   labelX, labelY, showLegend
  *   showValues  bool (default true)
  */
+function parseTickMap(raw) {
+    if (!raw || typeof raw !== 'string') return {};
+    const out = {};
+    raw.split(/\r?\n/).forEach(line => {
+        const m = line.match(/^\s*([^=]+?)\s*=\s*(.+?)\s*$/);
+        if (m) out[m[1].toLowerCase()] = m[2];
+    });
+    return out;
+}
+
+function applyTickTransform(label, transform, tickMap) {
+    const key = String(label).toLowerCase();
+    if (tickMap[key] != null) return tickMap[key];
+    const s = String(label);
+    if (transform === 'upper') return s.toUpperCase();
+    if (transform === 'lower') return s.toLowerCase();
+    if (transform === 'title') return s.replace(/\w\S*/g, w => w[0].toUpperCase() + w.slice(1).toLowerCase());
+    return s;
+}
+
 export function HeatmapMatrix({
     records = [],
     xField,
     yField,
     valueField,
     aggregation = 'avg',
-    colorscale = 'Viridis',
+    achievement_levels = [],
+    colorscale = 'YlOrRd',
+    reverseColorscale = false,
+    xTickCase = 'none',
+    yTickCase = 'none',
+    xTickMap,
+    yTickMap,
     formatStr,
     formatValue: fmt = (v) => (v == null ? '—' : Number(v).toFixed(2)),
     height,
@@ -69,15 +95,21 @@ export function HeatmapMatrix({
     const [zMin, zMax] = formatRange(formatStr);
     const display = showValues !== false;
 
+    const xMap = parseTickMap(xTickMap);
+    const yMap = parseTickMap(yTickMap);
+    const xsDisplay = xs.map(v => applyTickTransform(v, xTickCase, xMap));
+    const ysDisplay = ys.map(v => applyTickTransform(v, yTickCase, yMap));
+
     const trace = {
         type: 'heatmap',
-        x: xs.map(String),
-        y: ys.map(String),
+        x: xsDisplay,
+        y: ysDisplay,
         z,
         text,
         texttemplate: display ? '%{text}' : '',
         textfont: { size: 11 },
         colorscale,
+        reversescale: !!reverseColorscale,
         zmin: zMin,
         zmax: zMax ?? undefined,
         hovertemplate: `<b>%{y} × %{x}</b><br>Valor: %{text}<extra></extra>`,

@@ -20,7 +20,7 @@ export default function Results() {
     const [filterDimensionIds, setFilterDimensionIds] = useState([]);
 
     // ── Estado: dashboard ──
-    const [dashboardData, setDashboardData] = useState(null);
+    const [rawResult, setRawResult] = useState(null);
     const [indicatorLayout, setIndicatorLayout] = useState(null);
     const [cursoActivo, setCursoActivo] = useState(null);
 
@@ -59,7 +59,7 @@ export default function Results() {
                 setIndicatorDims(result.dimensions || {});
                 setFilterDimensionIds(result.filter_dimensions || []);
                 setSelectedFilters({});
-                setDashboardData(null);
+                setRawResult(null);
                 setCursoActivo(null);
                 // Cargar layout del indicador seleccionado
                 const indObj = indicators.find(i => String(i.id_indicator) === String(selectedIndicator));
@@ -79,7 +79,7 @@ export default function Results() {
             return;
         }
         setLoadingDashboard(true);
-        setDashboardData(null);
+        setRawResult(null);
         setCursoActivo(null);
 
         try {
@@ -89,8 +89,8 @@ export default function Results() {
             const res = await fetchAuth(`${API_BASE_URL}/results/indicator/${selectedIndicator}/data${filtersParam}`);
             if (!res.ok) throw new Error("Error al generar dashboard");
             const result = await res.json();
+            setRawResult(result);
             const processed = processDataForDashboard(result);
-            setDashboardData(processed);
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
                 toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
             }
@@ -101,7 +101,8 @@ export default function Results() {
         }
     };
 
-    // ── Datos computados del dashboard ──
+    // ── Datos procesados y computados del dashboard ──
+    const dashboardData    = useMemo(() => rawResult ? processDataForDashboard(rawResult) : null, [rawResult]);
     const dashboardComputed = useMemo(() => computeDashboardKPIs(dashboardData), [dashboardData]);
 
     // ── Filtros del curso activo ──
@@ -195,7 +196,11 @@ export default function Results() {
                                     }}
                                 >
                                     <option value="">Todos</option>
-                                    {dim.values.map(v => (
+                                    {dim.values.filter(v => {
+                                        if (v === null || v === undefined) return false;
+                                        const s = String(v).trim().toLowerCase();
+                                        return s && s !== 'nan' && s !== 'nat' && s !== 'none' && s !== 'null';
+                                    }).map(v => (
                                         <option key={v} value={v}>{v}</option>
                                     ))}
                                 </select>
