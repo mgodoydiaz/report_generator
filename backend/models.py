@@ -188,6 +188,8 @@ class Indicator(Base):
     temporal_config   = Column(Text, default="{}")    # JSON
     achievement_levels = Column(Text, default="[]")   # JSON array de strings
     dashboard_layout  = Column(Text, default="{}")    # JSON
+    derived_columns   = Column(Text, default="[]")    # JSON — campos calculados [{name, label, expression}]
+    pdf_layout        = Column(Text, default="{}")    # JSON — layout del informe PDF
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     org_id            = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
 

@@ -76,6 +76,38 @@ export const CHART_COMPONENTS = [
         ],
     },
 
+    // ── Distribución / KPI ──
+    {
+        id: 'Histogram',
+        label: 'Histograma',
+        type: 'chart',
+        group: 'simple',
+        axisConfig: [
+            { key: 'valueField', label: 'Eje X — Valor a distribuir', optionType: 'value' },
+            { key: 'groupField', label: 'Agrupación (opcional, superpone series)', optionType: 'group' },
+        ],
+    },
+    {
+        id: 'HeatmapMatrix',
+        label: 'Mapa de Calor (Matriz)',
+        type: 'chart',
+        group: 'matrix',
+        axisConfig: [
+            { key: 'xField',     label: 'Eje X — Dimensión',  optionType: 'any'   },
+            { key: 'yField',     label: 'Eje Y — Dimensión',  optionType: 'any'   },
+            { key: 'valueField', label: 'Valor (intensidad)', optionType: 'value' },
+        ],
+    },
+    {
+        id: 'GaugeIndicator',
+        label: 'Medidor (Gauge KPI)',
+        type: 'chart',
+        group: 'special',
+        axisConfig: [
+            { key: 'valueField', label: 'Campo numérico a promediar', optionType: 'value' },
+        ],
+    },
+
     // ── Gráficos especiales ──
     {
         id: 'RadarProfile',
@@ -106,12 +138,29 @@ export const CHART_COMPONENTS = [
 export const CHART_GROUPS = [
     { key: 'simple',   label: 'Gráficos simples'          },
     { key: 'double_x', label: 'Gráficos de doble eje X'   },
+    { key: 'matrix',   label: 'Matrices / Calor'          },
     { key: 'special',  label: 'Gráficos especiales'       },
     { key: 'temporal', label: 'Gráficos temporales'       },
 ];
 
 export const TABLE_COMPONENTS = [
+    {
+        id: 'PivotTable',
+        label: 'Tabla Pivote',
+        type: 'table',
+        axisConfig: [
+            { key: 'pivotConfig', label: 'Configurar filas, columnas y valores', optionType: 'pivot' },
+        ],
+    },
     { id: 'SummaryTable',           label: 'Resumen por Grupo',  type: 'table', axisConfig: [] },
+    {
+        id: 'FilterableTable',
+        label: 'Lista con Filtros',
+        type: 'table',
+        axisConfig: [
+            { key: 'flatTableConfig', label: 'Configurar columnas y filtros', optionType: 'flatTable' },
+        ],
+    },
     { id: 'DetailListTable',        label: 'Lista de Items',     type: 'table', axisConfig: [] },
     { id: 'DetailListWithProgress', label: 'Lista con Progreso', type: 'table', axisConfig: [
         { key: 'dimensionField', label: 'Campo de dimensión (etiqueta agrupadora)', optionType: 'dimension' },

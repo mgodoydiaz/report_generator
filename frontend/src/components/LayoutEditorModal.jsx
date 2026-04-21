@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2 } from 'lucide-react';
+import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2, FlaskConical } from 'lucide-react';
+import { validateExpression } from '../tooling/formulaEvaluator';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -358,6 +359,118 @@ function TabEditor({ tab, tabIndex, onUpdate, onDelete, isOnly, indicator }) {
     );
 }
 
+// ── Editor de campos derivados ────────────────────────────────────────────────
+
+function DerivedColumnsEditor({ derivedColumns, onChange }) {
+    const cols = derivedColumns || [];
+
+    const add = () => onChange([...cols, { name: '', label: '', expression: '' }]);
+    const remove = (i) => onChange(cols.filter((_, idx) => idx !== i));
+    const update = (i, field, value) => {
+        const next = cols.map((c, idx) => idx === i ? { ...c, [field]: value } : c);
+        onChange(next);
+    };
+
+    return (
+        <div className="space-y-4">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+                Define campos calculados a partir de los campos existentes. Estarán disponibles
+                en todos los gráficos y tablas del dashboard como si fueran campos reales.
+            </p>
+
+            {cols.length === 0 && (
+                <div className="text-center py-8 text-slate-400 text-xs border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                    No hay campos derivados. Agrega uno para comenzar.
+                </div>
+            )}
+
+            <div className="space-y-3">
+                {cols.map((col, i) => {
+                    const validation = col.expression ? validateExpression(col.expression) : null;
+                    const hasError = validation && !validation.ok;
+                    return (
+                        <div key={i} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 space-y-2">
+                            <div className="flex gap-2">
+                                {/* Nombre interno */}
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                                        Nombre interno
+                                    </label>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-xs text-slate-400 font-mono">_</span>
+                                        <input
+                                            type="text"
+                                            value={col.name.replace(/^_/, '')}
+                                            onChange={e => update(i, 'name', e.target.value.replace(/[^a-z0-9_]/gi, '_').toLowerCase())}
+                                            placeholder="rendimiento_pct"
+                                            className="flex-1 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                        />
+                                    </div>
+                                </div>
+                                {/* Etiqueta */}
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                                        Etiqueta
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={col.label}
+                                        onChange={e => update(i, 'label', e.target.value)}
+                                        placeholder="Rendimiento %"
+                                        className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => remove(i)}
+                                    className="mt-5 p-1.5 text-slate-300 dark:text-slate-600 hover:text-red-500 transition-colors"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            </div>
+                            {/* Expresión */}
+                            <div>
+                                <label className="block text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">
+                                    Expresión
+                                </label>
+                                <input
+                                    type="text"
+                                    value={col.expression}
+                                    onChange={e => update(i, 'expression', e.target.value)}
+                                    placeholder="correctas / total * 100"
+                                    className={`w-full bg-white dark:bg-slate-800 border rounded-lg px-2.5 py-1.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
+                                        hasError
+                                            ? 'border-rose-300 dark:border-rose-700 text-rose-700 dark:text-rose-300'
+                                            : 'border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                                    }`}
+                                />
+                                {hasError && (
+                                    <p className="text-[11px] text-rose-500 mt-1">{validation.error}</p>
+                                )}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            <button
+                onClick={add}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-all w-full justify-center"
+            >
+                <Plus size={12} />
+                Agregar campo derivado
+            </button>
+
+            <div className="rounded-xl bg-slate-100 dark:bg-slate-800/60 px-3 py-2.5 text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5">
+                <p className="font-semibold">Sintaxis</p>
+                <p>Operadores: <code className="font-mono">+ − × ÷ ( )</code></p>
+                <p>Campos: escribe el nombre sin <code className="font-mono">_</code> (ej. <code className="font-mono">correctas</code>)</p>
+                <p>Funciones: <code className="font-mono">round(x)</code> · <code className="font-mono">abs(x)</code> · <code className="font-mono">min(x,y)</code> · <code className="font-mono">max(x,y)</code> · <code className="font-mono">sqrt(x)</code></p>
+                <p>División por cero → muestra <code className="font-mono">—</code></p>
+            </div>
+        </div>
+    );
+}
+
 // ── Modal principal ───────────────────────────────────────────────────────────
 
 export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }) {
@@ -365,6 +478,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
     const [layout, setLayout] = useState(SIMCE_PRESET_LAYOUT);
     const [activeTab, setActiveTab] = useState(0);
     const [saving, setSaving] = useState(false);
+    const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'derived'
+    const [derivedColumns, setDerivedColumns] = useState([]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -375,6 +490,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
             setLayout(cloneLayout(SIMCE_PRESET_LAYOUT));
         }
         setActiveTab(0);
+        setMode('dashboard');
+        setDerivedColumns(indicator?.derived_columns || []);
     }, [isOpen, indicator]);
 
     const handleAddTab = () => {
@@ -418,11 +535,12 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     temporal_config: indicator.temporal_config,
                     achievement_levels: indicator.achievement_levels,
                     dashboard_layout: layout,
+                    derived_columns: derivedColumns,
                 }),
             });
             if (!res.ok) throw new Error('Error al guardar el layout');
             toast.success('Layout guardado');
-            onSave?.({ ...indicator, dashboard_layout: layout });
+            onSave?.({ ...indicator, dashboard_layout: layout, derived_columns: derivedColumns });
             onClose();
         } catch (err) {
             toast.error(err.message);
@@ -461,32 +579,64 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     </button>
                 </div>
 
-                {/* Tab bar */}
-                <div className="flex items-end gap-1 px-6 pt-4 border-b border-slate-100 dark:border-slate-800 shrink-0 overflow-x-auto">
-                    {layout.tabs.map((tab, idx) => (
-                        <button key={tab.id || idx} className={tabStyle(activeTab === idx)} onClick={() => setActiveTab(idx)}>
-                            {tab.label || `Tab ${idx + 1}`}
-                        </button>
-                    ))}
+                {/* Mode switcher */}
+                <div className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0">
                     <button
-                        onClick={handleAddTab}
-                        className="mb-0.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-all flex items-center gap-1 whitespace-nowrap"
+                        onClick={() => setMode('dashboard')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'dashboard' ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
                     >
-                        <Plus size={12} />
-                        Tab
+                        <LayoutGrid size={13} />
+                        Dashboard
+                    </button>
+                    <button
+                        onClick={() => setMode('derived')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'derived' ? 'bg-violet-50 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                    >
+                        <FlaskConical size={13} />
+                        Campos Derivados
+                        {derivedColumns.length > 0 && (
+                            <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/50 text-violet-600 dark:text-violet-400 text-[10px] font-bold">
+                                {derivedColumns.length}
+                            </span>
+                        )}
                     </button>
                 </div>
 
+                {/* Tab bar (dashboard mode only) */}
+                {mode === 'dashboard' && (
+                    <div className="flex items-end gap-1 px-6 pt-3 border-b border-slate-100 dark:border-slate-800 shrink-0 overflow-x-auto">
+                        {layout.tabs.map((tab, idx) => (
+                            <button key={tab.id || idx} className={tabStyle(activeTab === idx)} onClick={() => setActiveTab(idx)}>
+                                {tab.label || `Tab ${idx + 1}`}
+                            </button>
+                        ))}
+                        <button
+                            onClick={handleAddTab}
+                            className="mb-0.5 px-3 py-1.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-400 hover:border-indigo-400 hover:text-indigo-500 transition-all flex items-center gap-1 whitespace-nowrap"
+                        >
+                            <Plus size={12} />
+                            Tab
+                        </button>
+                    </div>
+                )}
+
                 {/* Editor content */}
                 <div className="flex-1 overflow-y-auto px-6 py-5">
-                    {layout.tabs[activeTab] && (
-                        <TabEditor
-                            tab={layout.tabs[activeTab]}
-                            tabIndex={activeTab}
-                            indicator={indicator}
-                            onUpdate={(t) => handleUpdateTab(activeTab, t)}
-                            onDelete={() => handleDeleteTab(activeTab)}
-                            isOnly={layout.tabs.length === 1}
+                    {mode === 'dashboard' ? (
+                        layout.tabs[activeTab] && (
+                            <TabEditor
+                                tab={layout.tabs[activeTab]}
+                                tabIndex={activeTab}
+                                indicator={indicator}
+                                onUpdate={(t) => handleUpdateTab(activeTab, t)}
+                                onDelete={() => handleDeleteTab(activeTab)}
+                                isOnly={layout.tabs.length === 1}
+                            />
+                        )
+                    ) : (
+                        <DerivedColumnsEditor
+                            derivedColumns={derivedColumns}
+                            onChange={setDerivedColumns}
                         />
                     )}
                 </div>

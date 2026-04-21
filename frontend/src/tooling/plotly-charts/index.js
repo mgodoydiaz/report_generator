@@ -3,6 +3,9 @@
 export * from './comparison';
 export * from './distribution';
 export * from './evolution';
+export * from './gauge';
+export * from './heatmap';
+export * from './pivotTable';
 export * from './radar';
 export * from './tables';
 export { default as PlotlyWrapper } from './PlotlyWrapper';

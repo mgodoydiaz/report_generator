@@ -72,6 +72,87 @@ export function BoxPlotByGroup({
     );
 }
 
+// ── Histogram ─────────────────────────────────────────────────────────────────
+/**
+ * Props:
+ *   records     Array<Object>
+ *   valueField  string   campo numérico a distribuir
+ *   groupField  string   campo opcional de agrupación (traces superpuestos)
+ *   groups      string[] (opcional) lista explícita de grupos
+ *   nbins       number   número de bins (default auto)
+ *   colors      string[]
+ *   formatStr   string
+ *   height      number
+ *   labelX, labelY, showLegend
+ */
+export function Histogram({
+    records = [],
+    valueField = '_rend',
+    groupField,
+    groups = [],
+    nbins,
+    colors = CATEGORY_COLORS,
+    formatStr,
+    height,
+    labelX,
+    labelY,
+    showLegend,
+}) {
+    if (!valueField) {
+        return <p className="text-slate-400 text-sm p-4">Configuración incompleta</p>;
+    }
+
+    const isPct = formatStr?.split('.')[0] === '%';
+
+    let traces;
+    if (groupField) {
+        const groupList = groups.length
+            ? groups
+            : [...new Set(records.map(r => r[groupField]).filter(Boolean))].sort();
+        traces = groupList.map((g, i) => ({
+            type: 'histogram',
+            name: String(g),
+            x: records.filter(r => r[groupField] === g).map(r => r[valueField]).filter(v => v != null),
+            marker: { color: colors[i % colors.length] },
+            opacity: 0.65,
+            nbinsx: nbins,
+            hovertemplate: `<b>${g}</b><br>Rango: %{x}<br>Frecuencia: %{y}<extra></extra>`,
+        }));
+    } else {
+        traces = [{
+            type: 'histogram',
+            x: records.map(r => r[valueField]).filter(v => v != null),
+            marker: { color: colors[0] },
+            nbinsx: nbins,
+            hovertemplate: `Rango: %{x}<br>Frecuencia: %{y}<extra></extra>`,
+        }];
+    }
+
+    if (!traces.some(t => t.x.length)) {
+        return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
+    }
+
+    return (
+        <PlotlyWrapper
+            data={traces}
+            layout={{
+                barmode: groupField ? 'overlay' : 'group',
+                showlegend: showLegend ?? !!groupField,
+                legend: { orientation: 'h', y: -0.2 },
+                xaxis: {
+                    tickformat: isPct ? '.0%' : undefined,
+                    ...(labelX ? { title: { text: labelX, font: { size: 11 } } } : {}),
+                },
+                yaxis: {
+                    ...(labelY ? { title: { text: labelY, font: { size: 11 } } } : { title: { text: 'Frecuencia', font: { size: 11 } } }),
+                },
+                margin: { t: 16, r: 16, b: labelX ? 56 : 40, l: 48 },
+            }}
+            height={height || 280}
+        />
+    );
+}
+
 // ── PieComposition ────────────────────────────────────────────────────────────
 /**
  * Props:

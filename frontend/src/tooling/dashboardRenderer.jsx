@@ -9,9 +9,10 @@
  * y un toast de aviso.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Users, Target, Award, BarChart3, AlertTriangle, LayoutGrid } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { applyDerivedColumns } from './formulaEvaluator';
 import {
     pct, formatValue, CURSO_COLORS,
     KPICard, MetricToggle,
@@ -27,6 +28,9 @@ import {
     BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
     TrendLine,
     RadarProfile,
+    Histogram, HeatmapMatrix, GaugeIndicator,
+    PivotTable,
+    FilterableTable,
     SummaryTable, DetailListTable, DetailListWithProgress,
 } from './plotly-charts';
 
@@ -73,7 +77,11 @@ const COMPONENT_MAP = {
     TablaResumenCursos, TablaAlumnos, TablaPreguntas,
     BarByGroup, HorizontalBarByDimension, GroupedBarByPeriod, DoubleGroupedBar,
     BoxPlotByGroup, PieComposition, StackedCountByGroup, StackedCountByGroupAndPeriod,
-    TrendLine, RadarProfile, SummaryTable, DetailListTable, DetailListWithProgress,
+    TrendLine, RadarProfile,
+    Histogram, HeatmapMatrix, GaugeIndicator,
+    PivotTable,
+    FilterableTable,
+    SummaryTable, DetailListTable, DetailListWithProgress,
 };
 
 // ── Campos requeridos por componente Plotly ───────────────────────────────────
@@ -90,6 +98,11 @@ const PLOTLY_REQUIRED_FIELDS = {
     StackedCountByGroupAndPeriod: ['groupField', 'periodField', 'categoryField'],
     TrendLine:                    ['groupField', 'periodField', 'valueField'],
     RadarProfile:                 ['groupField', 'axisField', 'valueField'],
+    Histogram:                    ['valueField'],
+    HeatmapMatrix:                ['xField', 'yField', 'valueField'],
+    GaugeIndicator:               ['valueField'],
+    PivotTable:                   ['pivotConfig'],
+    FilterableTable:              ['flatTableConfig'],
     DetailListWithProgress:       ['dimensionField', 'progressField'],
     SummaryTable:                 [],
     DetailListTable:              [],
@@ -372,6 +385,58 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 ...vp,
             };
         }
+        case 'Histogram': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
+            return {
+                records: computed.estudiantes,
+                valueField: activeValueField,
+                groupField: item.groupField,
+                groups: item.groupField ? computed.cursos : [],
+                nbins: item.nbins,
+                formatStr: resolvedFormatStr,
+                colors: CURSO_COLORS,
+                ...vp,
+            };
+        }
+        case 'HeatmapMatrix': {
+            const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            return {
+                records: computed.estudiantes,
+                xField: item.xField,
+                yField: item.yField,
+                valueField: activeValueField,
+                aggregation: item.aggregation || 'avg',
+                colorscale: item.colorscale || 'Viridis',
+                formatStr: resolvedFormatStr,
+                formatValue: fmtFn,
+                ...vp,
+            };
+        }
+        case 'GaugeIndicator': {
+            return {
+                records: computed.estudiantes,
+                valueField: activeValueField,
+                aggregation: item.aggregation || 'avg',
+                min: item.min,
+                max: item.max,
+                thresholds: item.thresholds,
+                formatStr: resolvedFormatStr,
+                formatValue: fmtFn,
+                labelX: item.labelX || resolvedValueLabel,
+            };
+        }
+        case 'PivotTable':
+            return {
+                records: computed.estudiantes,
+                pivotConfig: item.pivotConfig,
+                formatStr: resolvedFormatStr,
+            };
+        case 'FilterableTable':
+            return {
+                records: computed.estudiantes,
+                flatTableConfig: item.flatTableConfig || {},
+                formatValue: fmtFn,
+            };
         case 'SummaryTable':
             return {
                 records: computed.estudiantes,
@@ -442,6 +507,11 @@ const AUTO_TITLES = {
     DoubleGroupedBar: 'Barras Doblemente Agrupadas',
     TrendLine: 'Tendencia Temporal',
     RadarProfile: 'Perfil de Dimensiones',
+    Histogram: 'Histograma',
+    HeatmapMatrix: 'Mapa de Calor',
+    GaugeIndicator: 'Medidor',
+    PivotTable: 'Tabla Pivote',
+    FilterableTable: 'Lista con Filtros',
     SummaryTable: 'Resumen por Grupo',
     DetailListTable: 'Detalle de Items',
     DetailListWithProgress: 'Detalle con Progreso',
@@ -643,10 +713,20 @@ function EmptyLayoutPlaceholder() {
     );
 }
 
-export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick }) {
+export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick, derivedColumns }) {
     const [activeTab, setActiveTab] = useState(0);
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
+
+    // Aplicar columnas derivadas del indicador sobre los records
+    const enrichedEstudiantes = useMemo(
+        () => applyDerivedColumns(computed?.estudiantes || [], derivedColumns || []),
+        [computed?.estudiantes, derivedColumns]
+    );
+    const enrichedComputed = useMemo(
+        () => ({ ...computed, estudiantes: enrichedEstudiantes }),
+        [computed, enrichedEstudiantes]
+    );
 
     // Si no hay layout configurado, mostrar placeholder — sin fallback SIMCE
     if (!layout?.tabs?.length) return <EmptyLayoutPlaceholder />;
@@ -654,7 +734,7 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
     const resolvedLayout = layout;
 
     const ctx = {
-        computed, datosCurso, cursoActivo, setCursoActivo, onCursoClick,
+        computed: enrichedComputed, datosCurso, cursoActivo, setCursoActivo, onCursoClick,
         metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
     };
 

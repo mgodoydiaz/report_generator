@@ -7,7 +7,7 @@
  *   DetailListWithProgress — Tabla de detalle con barra de progreso
  */
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import { avg, formatValue, CATEGORY_COLORS, levelColors } from './constants';
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
@@ -200,6 +200,180 @@ export function DetailListTable({
                     ))}
                 </tbody>
             </table>
+        </div>
+    );
+}
+
+// ── FilterableTable ───────────────────────────────────────────────────────────
+/**
+ * Tabla plana con filtros interactivos y sort clickable por columna.
+ *
+ *   records           Array<Object>
+ *   flatTableConfig   {
+ *     columns:      [{ field, label }]   columnas a mostrar
+ *     filterFields: string[]             campos con dropdown de filtro
+ *     sortBy:       string               campo de orden inicial
+ *     sortDir:      'asc'|'desc'
+ *   }
+ *   formatValue       (v) => string      para campos numéricos
+ *   emptyMessage      string
+ */
+export function FilterableTable({
+    records = [],
+    flatTableConfig = {},
+    formatValue: fmt,
+    emptyMessage = 'Sin datos',
+}) {
+    const { columns = [], filterFields = [], sortBy: initSort = '', sortDir: initDir = 'desc' } = flatTableConfig;
+
+    const [activeFilters, setActiveFilters] = useState({});
+    const [sortField, setSortField]         = useState(initSort);
+    const [sortDir,   setSortDir  ]         = useState(initDir);
+
+    // Derive unique values per filterField from records
+    const filterOptions = useMemo(() => {
+        const opts = {};
+        for (const field of filterFields) {
+            opts[field] = [...new Set(records.map(r => r[field]).filter(v => v != null))].sort();
+        }
+        return opts;
+    }, [records, filterFields]);
+
+    // Apply active filters
+    const filtered = useMemo(() => {
+        let rows = records;
+        for (const [field, val] of Object.entries(activeFilters)) {
+            if (val) rows = rows.filter(r => String(r[field]) === String(val));
+        }
+        return rows;
+    }, [records, activeFilters]);
+
+    // Apply sort
+    const sorted = useMemo(() => {
+        if (!sortField) return filtered;
+        return [...filtered].sort((a, b) => {
+            const av = a[sortField], bv = b[sortField];
+            if (av == null && bv == null) return 0;
+            if (av == null) return 1;
+            if (bv == null) return -1;
+            const numA = Number(av), numB = Number(bv);
+            const cmp = !isNaN(numA) && !isNaN(numB) ? numA - numB : String(av).localeCompare(String(bv), 'es');
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+    }, [filtered, sortField, sortDir]);
+
+    const handleSort = (field) => {
+        if (sortField === field) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortField(field);
+            setSortDir('asc');
+        }
+    };
+
+    const setFilter = (field, val) => {
+        setActiveFilters(prev => ({ ...prev, [field]: val || null }));
+    };
+
+    const SortIcon = ({ field }) => {
+        if (sortField !== field) return <span className="ml-1 text-slate-300 dark:text-slate-600">↕</span>;
+        return <span className="ml-1 text-indigo-400">{sortDir === 'asc' ? '↑' : '↓'}</span>;
+    };
+
+    // Columns fallback: if no config, show all fields from first record
+    const cols = columns.length > 0
+        ? columns
+        : Object.keys(records[0] || {}).map(f => ({ field: f, label: f.replace(/^_/, '').replace(/_/g, ' ') }));
+
+    const isNumeric = (field) => {
+        const sample = records.find(r => r[field] != null);
+        return sample && !isNaN(Number(sample[field]));
+    };
+
+    return (
+        <div>
+            {/* Filter bar */}
+            {filterFields.length > 0 && (
+                <div className="flex flex-wrap gap-2 px-3 py-2.5 border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+                    {filterFields.map(field => {
+                        const colMeta = cols.find(c => c.field === field);
+                        const label = colMeta?.label || field.replace(/^_/, '').replace(/_/g, ' ');
+                        const opts = filterOptions[field] || [];
+                        return (
+                            <div key={field} className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide">
+                                    {label}
+                                </span>
+                                <select
+                                    value={activeFilters[field] || ''}
+                                    onChange={e => setFilter(field, e.target.value)}
+                                    className="text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2 py-1 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                >
+                                    <option value="">Todos</option>
+                                    {opts.map(v => (
+                                        <option key={v} value={v}>{v}</option>
+                                    ))}
+                                </select>
+                            </div>
+                        );
+                    })}
+                    {Object.values(activeFilters).some(Boolean) && (
+                        <button
+                            onClick={() => setActiveFilters({})}
+                            className="text-[10px] font-medium text-rose-500 hover:text-rose-700 dark:hover:text-rose-300 transition-colors"
+                        >
+                            Limpiar filtros
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Table */}
+            {sorted.length === 0 ? (
+                <p className="text-slate-400 text-sm p-4">{emptyMessage}</p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse text-sm">
+                        <thead>
+                            <tr className="bg-slate-50/50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-800">
+                                <th className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest text-left w-8">#</th>
+                                {cols.map(col => (
+                                    <th
+                                        key={col.field}
+                                        onClick={() => handleSort(col.field)}
+                                        className="p-3 font-bold text-slate-400 text-[11px] uppercase tracking-widest text-left cursor-pointer hover:text-slate-600 dark:hover:text-slate-300 transition-colors select-none whitespace-nowrap"
+                                    >
+                                        {col.label}
+                                        <SortIcon field={col.field} />
+                                    </th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50 dark:divide-slate-800">
+                            {sorted.map((row, i) => (
+                                <tr key={i} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors">
+                                    <td className="p-3 text-slate-400 font-semibold text-xs">{i + 1}</td>
+                                    {cols.map(col => {
+                                        const val = row[col.field];
+                                        const display = (fmt && isNumeric(col.field) && val != null)
+                                            ? fmt(val)
+                                            : (val ?? '—');
+                                        return (
+                                            <td key={col.field} className="p-3 text-xs text-slate-700 dark:text-slate-300">
+                                                {String(display)}
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                    <div className="px-3 py-2 text-[11px] text-slate-400 dark:text-slate-600 border-t border-slate-100 dark:border-slate-800">
+                        {sorted.length} {sorted.length === 1 ? 'fila' : 'filas'}
+                        {filtered.length !== records.length && ` (filtrado de ${records.length})`}
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

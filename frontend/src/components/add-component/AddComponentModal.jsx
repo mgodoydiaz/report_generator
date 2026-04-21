@@ -287,6 +287,7 @@ export default function AddComponentModal({ isOpen, onClose, onConfirm, indicato
                             onVisualChange={(key, value) => setVisualOptions(prev => ({ ...prev, [key]: value }))}
                             allMetrics={indicatorMetrics}
                             allDimensions={allDimensions}
+                            derivedColumns={indicator?.derived_columns || []}
                         />
                     )}
                     {step === 3 && (

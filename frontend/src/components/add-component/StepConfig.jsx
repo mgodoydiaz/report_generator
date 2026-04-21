@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { ChevronRight, ExternalLink, X } from 'lucide-react';
 import { getFieldOptions } from './componentDefs';
+import PivotTableConfig from './PivotTableConfig';
+import FlatTableConfig from './FlatTableConfig';
 
 // ── Helper: convierte nombre de columna al fieldName normalizado ─────────────
 
@@ -284,7 +286,7 @@ function VisualOptionsForm({ comp, axisSelections, visualOptions, onVisualChange
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx, axisCompleted, selections, onSelect, onMultiToggle, multiPicked, visualOptions, onVisualChange, allMetrics, allDimensions }) {
+export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx, axisCompleted, selections, onSelect, onMultiToggle, multiPicked, visualOptions, onVisualChange, allMetrics, allDimensions, derivedColumns }) {
     const steps = comp?.axisConfig || [];
     const [showExternalPicker, setShowExternalPicker] = useState(false);
 
@@ -305,6 +307,32 @@ export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx,
 
     const currentStep = steps[axisStepIdx];
     if (!currentStep) return null;
+
+    // Tabla pivote: UI especial — reemplaza el flow estándar de ejes
+    if (currentStep.optionType === 'pivot') {
+        return (
+            <PivotTableConfig
+                allMetrics={allMetrics || []}
+                allDimensions={allDimensions || []}
+                derivedColumns={derivedColumns || []}
+                initial={selections[currentStep.key]}
+                onConfirm={(cfg) => onSelect(currentStep.key, cfg)}
+            />
+        );
+    }
+
+    // Tabla plana con filtros: UI especial
+    if (currentStep.optionType === 'flatTable') {
+        return (
+            <FlatTableConfig
+                allMetrics={allMetrics || []}
+                allDimensions={allDimensions || []}
+                derivedColumns={derivedColumns || []}
+                initial={selections[currentStep.key]}
+                onConfirm={(cfg) => onSelect(currentStep.key, cfg)}
+            />
+        );
+    }
 
     const options = getFieldOptions(currentStep.optionType, columnRoles, roleLabels);
     const isMulti = currentStep.optionType === 'value' && options.length > 1;

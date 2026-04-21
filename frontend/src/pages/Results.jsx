@@ -22,6 +22,7 @@ export default function Results() {
     // ── Estado: dashboard ──
     const [dashboardData, setDashboardData] = useState(null);
     const [indicatorLayout, setIndicatorLayout] = useState(null);
+    const [indicatorDerivedCols, setIndicatorDerivedCols] = useState([]);
     const [cursoActivo, setCursoActivo] = useState(null);
 
     const debounceTimer = useRef(null);
@@ -55,6 +56,7 @@ export default function Results() {
             setSelectedFilters({});
             setFilterDimensionIds([]);
             setIndicatorLayout(null);
+            setIndicatorDerivedCols([]);
             setDashboardData(null);
             setCursoActivo(null);
             return;
@@ -85,6 +87,7 @@ export default function Results() {
                 console.log('[Results] dashboard_layout recibido del servidor:', JSON.stringify(layout, null, 2));
                 // layout válido = objeto con tabs. {} vacío o null → null
                 setIndicatorLayout(layout?.tabs?.length ? layout : null);
+                setIndicatorDerivedCols(indObj?.derived_columns || []);
 
                 // Procesar datos inmediatamente (sin filtros aún)
                 const processed = processDataForDashboard(result);
@@ -284,6 +287,7 @@ export default function Results() {
                     datosCurso={datosCurso}
                     cursoActivo={cursoActivo}
                     setCursoActivo={setCursoActivo}
+                    derivedColumns={indicatorDerivedCols}
                 />
             )}
 

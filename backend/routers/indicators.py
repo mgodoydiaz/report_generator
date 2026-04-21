@@ -24,6 +24,8 @@ class IndicatorBase(BaseModel):
     temporal_config: Optional[Dict[str, Any]] = None
     achievement_levels: Optional[List[str]] = None
     dashboard_layout: Optional[Dict[str, Any]] = None
+    derived_columns: Optional[List[Dict[str, Any]]] = None
+    pdf_layout: Optional[Dict[str, Any]] = None
 
 
 class IndicatorCreate(IndicatorBase):
@@ -62,6 +64,8 @@ def _indicator_to_dict(ind: Indicator) -> dict:
         "temporal_config": _parse_json_field(ind.temporal_config, {}),
         "achievement_levels": _parse_json_field(ind.achievement_levels, []),
         "dashboard_layout": _parse_json_field(ind.dashboard_layout, {}),
+        "derived_columns": _parse_json_field(ind.derived_columns, []),
+        "pdf_layout": _parse_json_field(ind.pdf_layout, {}),
         "updated_at": ind.updated_at.strftime("%Y-%m-%d %H:%M:%S") if ind.updated_at else "",
         "metric_ids": metric_ids,
     }
@@ -99,6 +103,8 @@ async def create_indicator(
             temporal_config=json.dumps(indicator.temporal_config or {}, ensure_ascii=False),
             achievement_levels=json.dumps(indicator.achievement_levels or [], ensure_ascii=False),
             dashboard_layout=json.dumps(indicator.dashboard_layout or {}, ensure_ascii=False),
+            derived_columns=json.dumps(indicator.derived_columns or [], ensure_ascii=False),
+            pdf_layout=json.dumps(indicator.pdf_layout or {}, ensure_ascii=False),
             updated_at=datetime.utcnow(),
             org_id=user.org_id,
         )
@@ -150,6 +156,10 @@ async def update_indicator(
             record.achievement_levels = json.dumps(indicator.achievement_levels, ensure_ascii=False)
         if indicator.dashboard_layout is not None:
             record.dashboard_layout = json.dumps(indicator.dashboard_layout, ensure_ascii=False)
+        if indicator.derived_columns is not None:
+            record.derived_columns = json.dumps(indicator.derived_columns, ensure_ascii=False)
+        if indicator.pdf_layout is not None:
+            record.pdf_layout = json.dumps(indicator.pdf_layout, ensure_ascii=False)
         record.updated_at = datetime.utcnow()
 
         if indicator.metric_ids is not None:
