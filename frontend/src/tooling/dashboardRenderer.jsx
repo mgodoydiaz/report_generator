@@ -87,23 +87,26 @@ const COMPONENT_MAP = {
 // ── Campos requeridos por componente Plotly ───────────────────────────────────
 // Los componentes legacy no tienen validación de campos.
 
+// Campos realmente requeridos (sin default posible).
+// groupField, valueField, categoryField, dimensionField, axisField, periodField
+// ya tienen defaults inteligentes en buildComponentProps — no se listan aquí.
 const PLOTLY_REQUIRED_FIELDS = {
-    BarByGroup:                   ['groupField', 'valueField'],
-    BoxPlotByGroup:               ['groupField', 'valueField'],
-    PieComposition:               ['categoryField'],
-    StackedCountByGroup:          ['groupField', 'categoryField'],
-    HorizontalBarByDimension:     ['dimensionField', 'valueField'],
-    GroupedBarByPeriod:           ['groupField', 'subGroupField', 'valueField'],
-    DoubleGroupedBar:            ['groupField', 'subGroupField', 'valueField'],
-    StackedCountByGroupAndPeriod: ['groupField', 'periodField', 'categoryField'],
-    TrendLine:                    ['groupField', 'periodField', 'valueField'],
-    RadarProfile:                 ['groupField', 'axisField', 'valueField'],
-    Histogram:                    ['valueField'],
-    HeatmapMatrix:                ['xField', 'yField', 'valueField'],
-    GaugeIndicator:               ['valueField'],
+    BarByGroup:                   [],
+    BoxPlotByGroup:               [],
+    PieComposition:               [],
+    StackedCountByGroup:          [],
+    HorizontalBarByDimension:     [],
+    GroupedBarByPeriod:           [],
+    DoubleGroupedBar:             [],
+    StackedCountByGroupAndPeriod: [],
+    TrendLine:                    [],
+    RadarProfile:                 [],
+    Histogram:                    [],
+    HeatmapMatrix:                ['xField', 'yField'],
+    GaugeIndicator:               [],
     PivotTable:                   ['pivotConfig'],
     FilterableTable:              ['flatTableConfig'],
-    DetailListWithProgress:       ['dimensionField', 'progressField'],
+    DetailListWithProgress:       ['progressField'],
     SummaryTable:                 [],
     DetailListTable:              [],
 };
@@ -263,8 +266,8 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField,
-                valueField: activeValueField,
+                groupField: item.groupField ?? '_curso',
+                valueField: activeValueField ?? '_rend',
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
@@ -277,8 +280,8 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField,
-                valueField: activeValueField,
+                groupField: item.groupField ?? '_curso',
+                valueField: activeValueField ?? '_rend',
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
                 colors: CURSO_COLORS,
@@ -289,18 +292,22 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             const vp = { showLegend: item.showLegend };
             return {
                 records: computed.estudiantes,
-                categoryField: item.categoryField,
+                categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
                 ...vp,
             };
         }
         case 'StackedCountByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            // Si groupField apunta a _habilidad, usar todos los registros (no solo por curso)
+            const gf = item.groupField ?? '_curso';
+            const recs = gf === '_habilidad' ? computed.estudiantes : computed.estudiantes;
+            const grps = gf === '_habilidad' ? computed.habilidades : computed.cursos;
             return {
-                records: computed.estudiantes,
-                groups: computed.cursos,
-                groupField: item.groupField,
-                categoryField: item.categoryField,
+                records: recs,
+                groups: grps,
+                groupField: gf,
+                categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
                 ...vp,
             };
@@ -310,20 +317,22 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField,
-                categoryField: item.categoryField,
+                groupField: item.groupField ?? '_curso',
+                categoryField: item.categoryField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
-                periodField: item.periodField,
+                periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
                 ...vp,
             };
         }
         case 'HorizontalBarByDimension': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            // En tab general usar todos los registros; en tab curso usar solo ese curso
+            const useAll = !datosCurso?.preguntas?.length;
             return {
-                records: datosCurso.preguntas,
-                dimensionField: item.dimensionField,
-                valueField: activeValueField,
+                records: useAll ? computed.estudiantes : datosCurso.preguntas,
+                dimensionField: item.dimensionField ?? '_habilidad',
+                valueField: activeValueField ?? '_rend',
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
                 formatStr: resolvedFormatStr,
@@ -333,21 +342,18 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'DoubleGroupedBar':
         case 'GroupedBarByPeriod': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
-            const rawSubGroup = item.subGroupField || item.periodField; // backward compat con layouts antiguos
-            // legendField permite elegir qué campo drive los colores/leyenda.
-            // Si legendField === groupField, se intercambian: groupField pasa al X axis y subGroupField a la leyenda se invierte.
-            let effGroup = item.groupField;
+            const rawSubGroup = item.subGroupField || item.periodField || '_evaluacion_num';
+            let effGroup = item.groupField ?? '_curso';
             let effSubGroup = rawSubGroup;
             if (item.legendField && item.legendField !== rawSubGroup) {
-                // El usuario eligió que el groupField sea la leyenda → swap
                 effGroup = rawSubGroup;
-                effSubGroup = item.groupField;
+                effSubGroup = item.groupField ?? '_curso';
             }
             return {
                 records: computed.estudiantes,
                 groupField: effGroup,
                 subGroupField: effSubGroup,
-                valueField: activeValueField,
+                valueField: activeValueField ?? '_rend',
                 subGroupLabels: temporalLabels,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
@@ -361,9 +367,9 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: computed.estudiantes,
                 groups: computed.cursos,
-                groupField: item.groupField,
-                valueField: activeValueField,
-                periodField: item.periodField,
+                groupField: item.groupField ?? '_curso',
+                valueField: activeValueField ?? '_rend',
+                periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
                 valueLabel: resolvedValueLabel,
                 formatValue: fmtFn,
@@ -377,9 +383,9 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: datosCurso.preguntas,
                 groups: computed.cursos,
-                groupField: item.groupField,
-                axisField: item.axisField,
-                valueField: activeValueField,
+                groupField: item.groupField ?? '_curso',
+                axisField: item.axisField ?? '_habilidad',
+                valueField: activeValueField ?? '_rend',
                 formatValue: fmtFn,
                 colors: CURSO_COLORS,
                 ...vp,
