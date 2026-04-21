@@ -5,6 +5,7 @@ import StepConfig from './StepConfig';
 import StepPreview from './StepPreview';
 import { ALL_COMPONENTS } from './componentDefs';
 import { API_BASE_URL } from '../../constants';
+import { useAuth } from '../../context/AuthContext';
 
 const STEP_TITLES = {
     1: { title: 'Elige un componente',      sub: 'Selecciona el tipo de visualización para el dashboard' },
@@ -29,6 +30,7 @@ function splitItemFields(item, compMeta) {
 
 export default function AddComponentModal({ isOpen, onClose, onConfirm, indicator, initialItem }) {
     const isEditMode = !!initialItem;
+    const { fetchAuth } = useAuth();
 
     // Métricas y dimensiones del indicador (para el picker de campo externo)
     // Solo se cargan las métricas referenciadas en column_roles del indicador.
@@ -36,14 +38,13 @@ export default function AddComponentModal({ isOpen, onClose, onConfirm, indicato
     const [allDimensions, setAllDimensions] = useState([]);
     useEffect(() => {
         if (!isOpen) return;
-        // Extraer metric_ids únicos de column_roles del indicador
         const columnRoles = indicator?.column_roles || {};
         const metricIds = [...new Set(
             Object.values(columnRoles).flat().map(e => e.metric_id).filter(Boolean)
         )];
         Promise.all([
-            fetch(`${API_BASE_URL}/metrics`).then(r => r.ok ? r.json() : []),
-            fetch(`${API_BASE_URL}/dimensions`).then(r => r.ok ? r.json() : []),
+            fetchAuth(`${API_BASE_URL}/metrics`).then(r => r.ok ? r.json() : []),
+            fetchAuth(`${API_BASE_URL}/dimensions`).then(r => r.ok ? r.json() : []),
         ]).then(([metrics, dims]) => {
             setIndicatorMetrics(metrics.filter(m => metricIds.includes(m.id_metric)));
             setAllDimensions(dims);

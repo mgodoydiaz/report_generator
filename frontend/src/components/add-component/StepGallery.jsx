@@ -47,7 +47,7 @@ const ICON_COLOR = {
 
 const CATEGORIES = [
     {
-        key: 'special',
+        key: 'widgets',
         label: 'Especiales',
         items: SPECIAL_COMPONENTS,
     },
