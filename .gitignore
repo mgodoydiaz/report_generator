@@ -65,6 +65,7 @@ tests/runs/*
 codex-review.md 
 comunicacion_agente.md
 agents/
+.claude/settings.local.json
 
 # Archivos locales
 # backend/tests/runs/*  # movido a tests/runs/
