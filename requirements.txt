@@ -34,3 +34,5 @@ camelot-py
 pymupdf
 docxtpl
 docx2pdf
+weasyprint
+jinja2

@@ -27,6 +27,7 @@ export const STEP_OPTIONS = [
   "GenerateGraphics",
   "GenerateTables",
   "RenderReport",
+  "RenderPDFReport",
   "GenerateDocxReport",
   "DeleteTempFiles",
 
@@ -49,7 +50,8 @@ export const STEP_TRANSLATIONS = {
   "ExportConsolidatedExcel": "Exportar Datos",
   "GenerateGraphics": "Crear Gráficos",
   "GenerateTables": "Preparar Tablas",
-  "RenderReport": "Generar Informe PDF",
+  "RenderReport": "Generar Informe (LaTeX)",
+  "RenderPDFReport": "Generar Informe PDF",
   "GenerateDocxReport": "Generar Documento DOCX",
   "DeleteTempFiles": "Limpiar Archivos"
 };

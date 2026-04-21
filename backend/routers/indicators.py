@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Any, List, Optional, Dict
 from sqlalchemy.orm import Session
@@ -177,6 +178,44 @@ async def update_indicator(
         raise
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{indicator_id}/export-pdf")
+async def export_pdf(
+    indicator_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Genera y descarga el informe PDF del indicador usando su pdf_layout configurado."""
+    try:
+        record = db.query(Indicator).filter(
+            Indicator.id_indicator == indicator_id,
+            Indicator.org_id == user.org_id,
+        ).first()
+        if not record:
+            raise HTTPException(status_code=404, detail="Indicador no encontrado")
+
+        pdf_layout = _parse_json_field(record.pdf_layout, {})
+        if not pdf_layout.get("sections"):
+            raise HTTPException(
+                status_code=422,
+                detail="El indicador no tiene secciones PDF configuradas. "
+                       "Agrega secciones en el Editor de Layout → pestaña Informe PDF."
+            )
+
+        from backend.rgenerator.core.report_steps import build_pdf_bytes
+        pdf_bytes = build_pdf_bytes(record, db, user.org_id)
+
+        safe_name = record.name.replace(" ", "_").replace("/", "-")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="informe_{safe_name}.pdf"'},
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 

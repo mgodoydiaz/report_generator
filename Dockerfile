@@ -17,13 +17,21 @@
 FROM python:3.11-slim AS base
 
 # Dependencias del sistema:
-#   ghostscript  → requerido por camelot-py para extraer tablas de PDF
-#   gcc          → compilador C para paquetes con extensiones nativas
-#   libglib2.0-0 → requerido por camelot-py / OpenCV
+#   ghostscript      → requerido por camelot-py para extraer tablas de PDF
+#   gcc              → compilador C para paquetes con extensiones nativas
+#   libglib2.0-0     → requerido por camelot-py / OpenCV
+#   libpango-1.0-0   → requerido por WeasyPrint (layout de texto)
+#   libpangoft2-1.0-0 → fuentes TrueType para WeasyPrint
+#   libharfbuzz0b    → shaping de texto para WeasyPrint
+#   libffi-dev       → dependencia de WeasyPrint en build
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ghostscript \
     gcc \
     libglib2.0-0 \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

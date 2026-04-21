@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2, FlaskConical } from 'lucide-react';
+import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2, FlaskConical, FileText, Download, BarChart2, Table2, Type, Minus } from 'lucide-react';
 import { validateExpression } from '../tooling/formulaEvaluator';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
@@ -471,6 +471,226 @@ function DerivedColumnsEditor({ derivedColumns, onChange }) {
     );
 }
 
+// ── Editor de informe PDF ─────────────────────────────────────────────────────
+
+function flattenDashboardItems(layout) {
+    const items = [];
+    for (const tab of (layout?.tabs || [])) {
+        for (const row of (tab.rows || [])) {
+            for (const item of (row.items || [])) {
+                if (item.type === 'chart' || item.type === 'table') {
+                    items.push({ ...item, _tabLabel: tab.label });
+                }
+            }
+        }
+    }
+    return items;
+}
+
+const SECTION_ICONS = {
+    cover:      <FileText size={13} className="text-indigo-400 shrink-0" />,
+    chart:      <BarChart2 size={13} className="text-emerald-500 shrink-0" />,
+    table:      <Table2 size={13} className="text-violet-500 shrink-0" />,
+    text:       <Type size={13} className="text-amber-500 shrink-0" />,
+    page_break: <Minus size={13} className="text-slate-400 shrink-0" />,
+};
+
+function PdfSectionCard({ sec, idx, total, onChange, onRemove, onMove, dashboardItems }) {
+    return (
+        <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/30 space-y-2">
+            <div className="flex items-center gap-2">
+                {SECTION_ICONS[sec.type]}
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 capitalize flex-1">
+                    {sec.type === 'cover' ? 'Portada' :
+                     sec.type === 'chart' ? 'Gráfico' :
+                     sec.type === 'table' ? 'Tabla' :
+                     sec.type === 'text'  ? 'Texto libre' : 'Salto de página'}
+                </span>
+                <button onClick={() => onMove(idx, -1)} disabled={idx === 0}
+                    className="p-1 text-slate-300 hover:text-slate-500 disabled:opacity-30 transition-colors">
+                    <ChevronUp size={13} />
+                </button>
+                <button onClick={() => onMove(idx, 1)} disabled={idx === total - 1}
+                    className="p-1 text-slate-300 hover:text-slate-500 disabled:opacity-30 transition-colors">
+                    <ChevronDown size={13} />
+                </button>
+                <button onClick={() => onRemove(idx)}
+                    className="p-1 text-slate-300 hover:text-red-500 transition-colors">
+                    <Trash2 size={13} />
+                </button>
+            </div>
+
+            {sec.type === 'cover' && (
+                <div className="space-y-1.5">
+                    <input type="text" placeholder="Título" value={sec.title || ''}
+                        onChange={e => onChange(idx, { ...sec, title: e.target.value })}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                    <input type="text" placeholder="Subtítulo" value={sec.subtitle || ''}
+                        onChange={e => onChange(idx, { ...sec, subtitle: e.target.value })}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                </div>
+            )}
+
+            {(sec.type === 'chart' || sec.type === 'table') && (
+                <div className="space-y-1.5">
+                    <input type="text" placeholder="Título de sección" value={sec.heading || ''}
+                        onChange={e => onChange(idx, { ...sec, heading: e.target.value })}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                    <select
+                        value={dashboardItems.indexOf(sec.item) >= 0 ? dashboardItems.indexOf(sec.item) : ''}
+                        onChange={e => {
+                            const item = dashboardItems[parseInt(e.target.value)];
+                            if (item) onChange(idx, { ...sec, item });
+                        }}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                    >
+                        <option value="">— Selecciona componente del dashboard —</option>
+                        {dashboardItems.map((it, i) => (
+                            <option key={i} value={i}>
+                                [{it._tabLabel}] {itemLabel(it)}
+                            </option>
+                        ))}
+                    </select>
+                    {sec.item && (
+                        <p className="text-[10px] text-slate-400 font-mono px-1">
+                            {sec.item.component || sec.item.type}
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {sec.type === 'text' && (
+                <div className="space-y-1.5">
+                    <input type="text" placeholder="Título de sección" value={sec.heading || ''}
+                        onChange={e => onChange(idx, { ...sec, heading: e.target.value })}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                    <textarea placeholder="Contenido..." value={sec.body || ''}
+                        rows={3}
+                        onChange={e => onChange(idx, { ...sec, body: e.target.value })}
+                        className="w-full text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-y" />
+                </div>
+            )}
+        </div>
+    );
+}
+
+function PdfLayoutEditor({ pdfLayout, onChange, dashboardLayout, indicatorId, fetchAuth }) {
+    const sections = pdfLayout?.sections || [];
+    const dashboardItems = flattenDashboardItems(dashboardLayout);
+    const [downloading, setDownloading] = useState(false);
+
+    const updateSections = (next) => onChange({ ...pdfLayout, sections: next });
+
+    const addSection = (type) => {
+        const base = { type };
+        if (type === 'cover')      Object.assign(base, { title: '', subtitle: '' });
+        if (type === 'text')       Object.assign(base, { heading: '', body: '' });
+        if (type === 'chart')      Object.assign(base, { heading: '', item: null });
+        if (type === 'table')      Object.assign(base, { heading: '', item: null });
+        updateSections([...sections, base]);
+    };
+
+    const removeSection = (i) => updateSections(sections.filter((_, idx) => idx !== i));
+
+    const moveSection = (i, dir) => {
+        const next = [...sections];
+        const target = i + dir;
+        if (target < 0 || target >= next.length) return;
+        [next[i], next[target]] = [next[target], next[i]];
+        updateSections(next);
+    };
+
+    const updateSection = (i, sec) => updateSections(sections.map((s, idx) => idx === i ? sec : s));
+
+    const handleDownload = async () => {
+        setDownloading(true);
+        try {
+            const res = await fetchAuth(`${API_BASE_URL}/indicators/${indicatorId}/export-pdf`, { method: 'POST' });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ detail: 'Error desconocido' }));
+                throw new Error(err.detail || 'Error al generar PDF');
+            }
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `informe.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const ADD_OPTIONS = [
+        { type: 'cover',      label: 'Portada',            icon: <FileText size={12} /> },
+        { type: 'chart',      label: 'Gráfico del dashboard', icon: <BarChart2 size={12} /> },
+        { type: 'table',      label: 'Tabla del dashboard',   icon: <Table2 size={12} /> },
+        { type: 'text',       label: 'Texto libre',           icon: <Type size={12} /> },
+        { type: 'page_break', label: 'Salto de página',       icon: <Minus size={12} /> },
+    ];
+
+    return (
+        <div className="space-y-4">
+            <p className="text-xs text-slate-400 dark:text-slate-500">
+                Define las secciones del informe PDF. Los gráficos y tablas se toman del dashboard configurado.
+            </p>
+
+            {sections.length === 0 && (
+                <div className="text-center py-8 text-slate-400 text-xs border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
+                    Sin secciones. Agrega una portada para comenzar.
+                </div>
+            )}
+
+            <div className="space-y-2">
+                {sections.map((sec, i) => (
+                    <PdfSectionCard
+                        key={i}
+                        sec={sec}
+                        idx={i}
+                        total={sections.length}
+                        onChange={updateSection}
+                        onRemove={removeSection}
+                        onMove={moveSection}
+                        dashboardItems={dashboardItems}
+                    />
+                ))}
+            </div>
+
+            {/* Botones agregar */}
+            <div className="flex flex-wrap gap-1.5">
+                {ADD_OPTIONS.map(opt => (
+                    <button
+                        key={opt.type}
+                        onClick={() => addSection(opt.type)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 text-xs text-slate-500 hover:border-indigo-400 hover:text-indigo-600 transition-all"
+                    >
+                        {opt.icon}
+                        {opt.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Botón descargar */}
+            {sections.length > 0 && indicatorId && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                        onClick={handleDownload}
+                        disabled={downloading}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white text-xs font-bold shadow transition-all"
+                    >
+                        <Download size={13} />
+                        {downloading ? 'Generando PDF...' : 'Descargar PDF de prueba'}
+                    </button>
+                    <p className="text-[10px] text-slate-400 mt-1">Guarda los cambios antes de descargar.</p>
+                </div>
+            )}
+        </div>
+    );
+}
+
 // ── Modal principal ───────────────────────────────────────────────────────────
 
 export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }) {
@@ -478,8 +698,9 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
     const [layout, setLayout] = useState(SIMCE_PRESET_LAYOUT);
     const [activeTab, setActiveTab] = useState(0);
     const [saving, setSaving] = useState(false);
-    const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'derived'
+    const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'derived' | 'pdf'
     const [derivedColumns, setDerivedColumns] = useState([]);
+    const [pdfLayout, setPdfLayout] = useState({ sections: [] });
 
     useEffect(() => {
         if (!isOpen) return;
@@ -492,6 +713,7 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
         setActiveTab(0);
         setMode('dashboard');
         setDerivedColumns(indicator?.derived_columns || []);
+        setPdfLayout(indicator?.pdf_layout?.sections ? indicator.pdf_layout : { sections: [] });
     }, [isOpen, indicator]);
 
     const handleAddTab = () => {
@@ -536,11 +758,12 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     achievement_levels: indicator.achievement_levels,
                     dashboard_layout: layout,
                     derived_columns: derivedColumns,
+                    pdf_layout: pdfLayout,
                 }),
             });
             if (!res.ok) throw new Error('Error al guardar el layout');
             toast.success('Layout guardado');
-            onSave?.({ ...indicator, dashboard_layout: layout, derived_columns: derivedColumns });
+            onSave?.({ ...indicator, dashboard_layout: layout, derived_columns: derivedColumns, pdf_layout: pdfLayout });
             onClose();
         } catch (err) {
             toast.error(err.message);
@@ -600,6 +823,18 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                             </span>
                         )}
                     </button>
+                    <button
+                        onClick={() => setMode('pdf')}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${mode === 'pdf' ? 'bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                    >
+                        <FileText size={13} />
+                        Informe PDF
+                        {(pdfLayout?.sections?.length > 0) && (
+                            <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                                {pdfLayout.sections.length}
+                            </span>
+                        )}
+                    </button>
                 </div>
 
                 {/* Tab bar (dashboard mode only) */}
@@ -633,10 +868,18 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                                 isOnly={layout.tabs.length === 1}
                             />
                         )
-                    ) : (
+                    ) : mode === 'derived' ? (
                         <DerivedColumnsEditor
                             derivedColumns={derivedColumns}
                             onChange={setDerivedColumns}
+                        />
+                    ) : (
+                        <PdfLayoutEditor
+                            pdfLayout={pdfLayout}
+                            onChange={setPdfLayout}
+                            dashboardLayout={layout}
+                            indicatorId={indicator?.id_indicator}
+                            fetchAuth={fetchAuth}
                         />
                     )}
                 </div>

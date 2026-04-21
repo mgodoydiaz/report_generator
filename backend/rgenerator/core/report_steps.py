@@ -124,6 +124,382 @@ class GenerateGraphics(Step):
         self._log_artifacts_delta(ctx, before)
 
 
+# ── Helpers compartidos para RenderPDFReport ─────────────────────────────────
+
+def _to_field_name(name: str) -> str:
+    import re
+    s = name.strip().lower()
+    s = re.sub(r'[^a-z0-9_]', '_', s)
+    s = re.sub(r'_+', '_', s).strip('_')
+    return f'_{s}'
+
+
+def _build_records(db, indicator, org_id: int) -> list[dict]:
+    """Construye lista plana de registros desde MetricData para un indicador."""
+    from backend.models import IndicatorMetric, Metric, MetricDimension, MetricData, Dimension
+
+    metric_links = db.query(IndicatorMetric).filter(
+        IndicatorMetric.id_indicator == indicator.id_indicator
+    ).all()
+    metric_ids = [lnk.id_metric for lnk in metric_links]
+    if not metric_ids:
+        return []
+
+    metrics = db.query(Metric).filter(Metric.id_metric.in_(metric_ids)).all()
+    metrics_by_id = {m.id_metric: m for m in metrics}
+
+    all_dim_ids = set()
+    for mid in metric_ids:
+        links = db.query(MetricDimension).filter(MetricDimension.id_metric == mid).all()
+        all_dim_ids.update(lnk.id_dimension for lnk in links)
+
+    dims_by_id = {}
+    if all_dim_ids:
+        dims = db.query(Dimension).filter(Dimension.id_dimension.in_(all_dim_ids)).all()
+        dims_by_id = {d.id_dimension: d for d in dims}
+
+    records = []
+    for mid in metric_ids:
+        m = metrics_by_id.get(mid)
+        if not m:
+            continue
+
+        meta_fields = []
+        try:
+            mj = json.loads(m.meta_json) if isinstance(m.meta_json, str) else (m.meta_json or {})
+            meta_fields = mj.get('fields', [])
+        except Exception:
+            pass
+
+        dim_links = db.query(MetricDimension).filter(MetricDimension.id_metric == mid).all()
+        dim_ids = [lnk.id_dimension for lnk in dim_links]
+
+        data_rows = db.query(MetricData).filter(MetricData.id_metric == mid).all()
+        for row in data_rows:
+            try:
+                dims_json = json.loads(row.dimensions_json) if isinstance(row.dimensions_json, str) else (row.dimensions_json or {})
+            except Exception:
+                dims_json = {}
+
+            rec = {}
+            # Value fields
+            raw_val = row.value
+            if meta_fields:
+                try:
+                    parsed = json.loads(raw_val) if isinstance(raw_val, str) else raw_val
+                    if isinstance(parsed, dict):
+                        for f in meta_fields:
+                            fname = _to_field_name(f['name'])
+                            rec[fname] = parsed.get(f['name'])
+                    else:
+                        key = _to_field_name(meta_fields[0]['name']) if meta_fields else _to_field_name(m.name)
+                        rec[key] = parsed
+                except Exception:
+                    key = _to_field_name(m.name)
+                    rec[key] = raw_val
+            else:
+                key = _to_field_name(m.name)
+                try:
+                    rec[key] = float(raw_val) if raw_val is not None else None
+                except (ValueError, TypeError):
+                    rec[key] = raw_val
+
+            # Dimension fields
+            for did in dim_ids:
+                dim = dims_by_id.get(did)
+                if dim:
+                    dkey = _to_field_name(dim.name)
+                    rec[dkey] = dims_json.get(str(did))
+
+            records.append(rec)
+
+    return records
+
+
+def _chart_to_png_b64(item: dict, records: list[dict]) -> str:
+    """Renderiza un componente del dashboard como PNG base64 usando matplotlib."""
+    import io, base64
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    import collections
+
+    comp = item.get('component', '')
+    x_field = item.get('xField') or item.get('valueField', '')
+    y_field = item.get('yField', '')
+    group_field = item.get('groupField', '')
+
+    fig, ax = plt.subplots(figsize=(7, 3.5))
+
+    try:
+        if comp in ('HeatmapMatrix',):
+            x_f = item.get('xField', '')
+            y_f = item.get('yField', '')
+            v_f = item.get('valueField', '')
+            xs = sorted({str(r.get(x_f, '')) for r in records if r.get(x_f) is not None})
+            ys = sorted({str(r.get(y_f, '')) for r in records if r.get(y_f) is not None})
+            z = []
+            for y in ys:
+                row_vals = []
+                for x in xs:
+                    vals = [float(r.get(v_f) or 0) for r in records
+                            if str(r.get(x_f)) == x and str(r.get(y_f)) == y
+                            and r.get(v_f) is not None]
+                    row_vals.append(sum(vals) / len(vals) if vals else 0)
+                z.append(row_vals)
+            im = ax.imshow(z, aspect='auto', cmap='Blues')
+            ax.set_xticks(range(len(xs))); ax.set_xticklabels(xs, fontsize=8)
+            ax.set_yticks(range(len(ys))); ax.set_yticklabels(ys, fontsize=8)
+            fig.colorbar(im, ax=ax)
+
+        elif comp == 'GaugeIndicator':
+            vals = [float(r.get(x_field) or 0) for r in records if r.get(x_field) is not None]
+            val = sum(vals) / len(vals) if vals else 0
+            ax.axis('off')
+            ax.text(0.5, 0.6, f'{val:.1f}', ha='center', va='center',
+                    fontsize=40, fontweight='bold', color='#4f46e5', transform=ax.transAxes)
+            ax.text(0.5, 0.35, item.get('labelX', x_field), ha='center', va='center',
+                    fontsize=11, color='#64748b', transform=ax.transAxes)
+
+        elif comp == 'Histogram':
+            vals = [float(r.get(x_field) or 0) for r in records if r.get(x_field) is not None]
+            ax.hist(vals, bins=item.get('nbins', 10), color='#6366f1', alpha=0.8, edgecolor='white')
+            ax.set_xlabel(item.get('labelX', x_field), fontsize=9)
+            ax.set_ylabel(item.get('labelY', 'Frecuencia'), fontsize=9)
+            ax.spines[['top', 'right']].set_visible(False)
+
+        else:
+            # Barras genéricas: agrupa por x_field, promedia y_field
+            buckets = collections.defaultdict(list)
+            for r in records:
+                xv = str(r.get(x_field, ''))
+                yv = r.get(y_field or x_field)
+                try:
+                    buckets[xv].append(float(yv))
+                except (TypeError, ValueError):
+                    pass
+            if buckets:
+                labels = sorted(buckets.keys())
+                vals = [sum(buckets[l]) / len(buckets[l]) for l in labels]
+                colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
+                          '#f43f5e', '#3b82f6', '#a855f7']
+                ax.bar(labels, vals,
+                       color=[colors[i % len(colors)] for i in range(len(labels))],
+                       width=0.6, zorder=3)
+                ax.set_ylabel(item.get('labelY', y_field or ''), fontsize=9)
+                ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+                ax.spines[['top', 'right']].set_visible(False)
+                for i, (lbl, val) in enumerate(zip(labels, vals)):
+                    ax.text(i, val + max(vals) * 0.01, f'{val:.1f}',
+                            ha='center', va='bottom', fontsize=8)
+                plt.xticks(rotation=30, ha='right', fontsize=8)
+            else:
+                ax.text(0.5, 0.5, 'Sin datos', ha='center', va='center',
+                        transform=ax.transAxes, color='#94a3b8')
+                ax.axis('off')
+
+    except Exception as e:
+        ax.text(0.5, 0.5, f'Error: {e}', ha='center', va='center',
+                transform=ax.transAxes, color='#ef4444', fontsize=8)
+        ax.axis('off')
+
+    ax.set_title(item.get('labelX', ''), fontsize=10, pad=8)
+    fig.tight_layout()
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+    plt.close(fig)
+    buf.seek(0)
+    return base64.b64encode(buf.read()).decode()
+
+
+def _table_section(item: dict, records: list[dict]) -> dict:
+    """Convierte un componente tabla en columnas + filas para el template HTML."""
+    comp = item.get('component', '')
+
+    if comp == 'PivotTable':
+        cfg = item.get('pivotConfig', {})
+        row_fields = cfg.get('rows', [])
+        col_fields = cfg.get('cols', [])
+        values_cfg = cfg.get('values', [])
+
+        if not row_fields or not values_cfg:
+            return {'columns': [], 'rows': []}
+
+        # Agrupación simple: filas × columnas
+        import collections
+        buckets = collections.defaultdict(list)
+        col_keys = set()
+        for rec in records:
+            rk = tuple(str(rec.get(f, '')) for f in row_fields)
+            ck = tuple(str(rec.get(f, '')) for f in col_fields) if col_fields else ('',)
+            col_keys.add(ck)
+            for vc in values_cfg:
+                vv = rec.get(vc['field'])
+                try:
+                    buckets[(rk, ck, vc['field'])].append(float(vv))
+                except (TypeError, ValueError):
+                    pass
+
+        row_keys = sorted({k[0] for k in buckets.keys()})
+        col_keys_sorted = sorted(col_keys)
+
+        # Headers
+        header_row = ['/'.join(row_fields)]
+        for ck in col_keys_sorted:
+            ck_label = ' / '.join(ck) if any(ck) else ''
+            for vc in values_cfg:
+                lbl = vc.get('label', vc['field'])
+                header_row.append(f'{ck_label} {lbl}'.strip())
+
+        rows_out = []
+        for rk in row_keys:
+            row = [' / '.join(rk)]
+            for ck in col_keys_sorted:
+                for vc in values_cfg:
+                    vals = buckets.get((rk, ck, vc['field']), [])
+                    agg = vc.get('aggregation', 'avg')
+                    if not vals:
+                        row.append('—')
+                    elif agg == 'sum':
+                        row.append(f'{sum(vals):.2f}')
+                    elif agg == 'count':
+                        row.append(str(len(vals)))
+                    elif agg == 'min':
+                        row.append(f'{min(vals):.2f}')
+                    elif agg == 'max':
+                        row.append(f'{max(vals):.2f}')
+                    else:
+                        row.append(f'{sum(vals)/len(vals):.2f}')
+            rows_out.append(row)
+
+        return {'columns': header_row, 'rows': rows_out}
+
+    else:
+        # Tabla plana
+        cfg = item.get('flatTableConfig', {})
+        col_cfgs = cfg.get('columns', [])
+        if not col_cfgs and records:
+            col_cfgs = [{'field': k, 'label': k} for k in list(records[0].keys())[:8]]
+        columns = [c.get('label', c.get('field', '')) for c in col_cfgs]
+        fields = [c.get('field', '') for c in col_cfgs]
+        sort_by = cfg.get('sortBy')
+        sort_dir = cfg.get('sortDir', 'asc')
+        recs = sorted(records, key=lambda r: str(r.get(sort_by, '') or ''),
+                      reverse=(sort_dir == 'desc')) if sort_by else records
+        rows_out = [[str(r.get(f, '') or '') for f in fields] for r in recs[:200]]
+        return {'columns': columns, 'rows': rows_out}
+
+
+def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
+    """
+    Genera el PDF como bytes para un indicador dado.
+    Puede ser llamado desde el step o directamente desde el endpoint.
+    """
+    from datetime import date
+    from jinja2 import Environment, FileSystemLoader
+    from weasyprint import HTML as WeasyprintHTML
+
+    pdf_layout = indicator.pdf_layout
+    if isinstance(pdf_layout, str):
+        try:
+            pdf_layout = json.loads(pdf_layout)
+        except Exception:
+            pdf_layout = {}
+
+    raw_sections = pdf_layout.get('sections', [])
+    records = _build_records(db, indicator, org_id)
+
+    # Renderizar cada sección
+    rendered = []
+    for sec in raw_sections:
+        t = sec.get('type')
+        if t == 'cover':
+            rendered.append({'type': 'cover', 'title': sec.get('title', indicator.name),
+                             'subtitle': sec.get('subtitle', '')})
+        elif t == 'page_break':
+            rendered.append({'type': 'page_break'})
+        elif t == 'text':
+            rendered.append({'type': 'text', 'heading': sec.get('heading', ''),
+                             'body': sec.get('body', '')})
+        elif t == 'chart':
+            item = sec.get('item', {})
+            b64 = _chart_to_png_b64(item, records)
+            rendered.append({'type': 'chart', 'heading': sec.get('heading', ''),
+                             'image_b64': b64, 'caption': sec.get('caption', '')})
+        elif t == 'table':
+            item = sec.get('item', {})
+            tdata = _table_section(item, records)
+            rendered.append({'type': 'table', 'heading': sec.get('heading', ''),
+                             'columns': tdata['columns'], 'rows': tdata['rows']})
+
+    # Jinja2
+    templates_dir = Path(__file__).parent.parent / 'templates'
+    env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+    template = env.get_template('report_base.html')
+    html_str = template.render(
+        sections=rendered,
+        org_name=getattr(indicator, 'org_id', ''),
+        report_date=date.today().strftime('%d de %B de %Y'),
+    )
+
+    return WeasyprintHTML(string=html_str).write_pdf()
+
+
+class RenderPDFReport(Step):
+    """
+    Genera el informe PDF del indicador usando WeasyPrint.
+
+    Parámetros:
+        indicator_id (int): ID del indicador. Si no se pasa, se lee de ctx.params.
+
+    Requiere:
+        - ctx.db: sesión SQLAlchemy activa.
+        - ctx.org_id: ID de organización para multi-tenancy.
+        - El indicador debe tener pdf_layout configurado.
+
+    Produce:
+        - ctx.outputs['report_pdf']: Path al archivo informe.pdf generado.
+    """
+
+    def __init__(self, indicator_id: int = None):
+        super().__init__(name='RenderPDFReport')
+        self.indicator_id = indicator_id
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+        ind_id = self.indicator_id or ctx.params.get('indicator_id')
+        if not ind_id:
+            self._log(f'[{self.name}] Error: indicator_id no especificado.')
+            return
+
+        from backend.models import Indicator
+        indicator = ctx.db.query(Indicator).filter(
+            Indicator.id_indicator == ind_id,
+            Indicator.org_id == ctx.org_id,
+        ).first()
+        if not indicator:
+            self._log(f'[{self.name}] Error: indicador {ind_id} no encontrado.')
+            return
+
+        try:
+            pdf_bytes = build_pdf_bytes(indicator, ctx.db, ctx.org_id)
+
+            out_dir = getattr(ctx, 'outputs_dir', None) or Path('.')
+            out_dir = Path(out_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            out_path = out_dir / 'informe.pdf'
+            out_path.write_bytes(pdf_bytes)
+
+            ctx.outputs['report_pdf'] = out_path
+            self._log(f'[{self.name}] PDF generado: {out_path}')
+        except Exception as e:
+            self._log(f'[{self.name}] Error generando PDF: {e}')
+            raise
+
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
 class GenerateTables(Step):
     """
     Genera tablas utilizando funciones de report_tools.

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+/* ── Página ─────────────────────────────────────────────────────────────── */
+@page {
+  size: A4;
+  margin: 2cm 2.2cm 2.2cm 2.2cm;
+  @bottom-right {
+    content: element(footer);
+  }
+}
+@page:first { margin-top: 0; margin-bottom: 0; }
+
+body {
+  font-family: "DejaVu Sans", Arial, sans-serif;
+  font-size: 10pt;
+  color: #1e293b;
+  margin: 0;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.page-footer {
+  position: running(footer);
+  text-align: right;
+  font-size: 7.5pt;
+  color: #94a3b8;
+  padding-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* ── Portada ─────────────────────────────────────────────────────────────── */
+.cover {
+  page: cover;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  min-height: 26cm;
+  text-align: center;
+  page-break-after: always;
+}
+@page cover { margin: 0; }
+
+.cover-bar-top {
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(90deg, #4f46e5, #06b6d4);
+  margin-bottom: 3cm;
+}
+.cover-bar-bottom {
+  width: 100%;
+  height: 8px;
+  background: linear-gradient(90deg, #06b6d4, #4f46e5);
+  margin-top: 3cm;
+}
+.cover h1 {
+  font-size: 28pt;
+  color: #4f46e5;
+  font-weight: bold;
+  margin: 0 0 0.3cm 0;
+}
+.cover .subtitle {
+  font-size: 13pt;
+  color: #64748b;
+  margin-bottom: 1cm;
+}
+.cover .accent-line {
+  width: 100px;
+  height: 5px;
+  background: linear-gradient(90deg, #6366f1, #06b6d4);
+  border-radius: 3px;
+  margin: 0.5cm auto;
+}
+.cover .meta {
+  font-size: 9pt;
+  color: #94a3b8;
+  line-height: 1.8;
+}
+
+/* ── Salto de página ─────────────────────────────────────────────────────── */
+.page-break { page-break-before: always; }
+
+/* ── Secciones ───────────────────────────────────────────────────────────── */
+h2 {
+  font-size: 14pt;
+  color: #4f46e5;
+  border-bottom: 2px solid #e0e7ff;
+  padding-bottom: 4px;
+  margin-top: 0.8cm;
+  margin-bottom: 0.3cm;
+}
+p {
+  line-height: 1.6;
+  color: #334155;
+}
+
+/* ── Tabla ───────────────────────────────────────────────────────────────── */
+table.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.4cm;
+  font-size: 8.5pt;
+}
+table.data-table th {
+  background: #4f46e5;
+  color: white;
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: bold;
+}
+table.data-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+table.data-table tr:nth-child(even) td { background: #f8fafc; }
+
+/* ── Gráfico ─────────────────────────────────────────────────────────────── */
+.chart-wrap {
+  margin-top: 0.5cm;
+  text-align: center;
+}
+.chart-wrap img {
+  max-width: 15cm;
+  max-height: 9cm;
+}
+.caption {
+  font-size: 7.5pt;
+  color: #64748b;
+  margin-top: 3px;
+  text-align: center;
+}
+
+/* ── KPI inline ──────────────────────────────────────────────────────────── */
+.kpi-grid {
+  display: flex;
+  gap: 0.5cm;
+  margin-top: 0.4cm;
+  flex-wrap: wrap;
+}
+.kpi-box {
+  flex: 1;
+  min-width: 3cm;
+  border: 1.5px solid #e0e7ff;
+  border-radius: 8px;
+  padding: 0.4cm;
+  text-align: center;
+}
+.kpi-value {
+  font-size: 22pt;
+  font-weight: bold;
+  color: #4f46e5;
+}
+.kpi-label {
+  font-size: 7.5pt;
+  color: #64748b;
+  margin-top: 2px;
+}
+</style>
+</head>
+<body>
+
+<!-- Footer (aparece en todas las páginas excepto portada) -->
+<div class="page-footer">{{ org_name }} · {{ report_date }}</div>
+
+{% for section in sections %}
+
+  {% if section.type == 'cover' %}
+  <div class="cover">
+    <div class="cover-bar-top"></div>
+    <div class="accent-line"></div>
+    <h1>{{ section.title }}</h1>
+    <div class="subtitle">{{ section.subtitle }}</div>
+    <div class="accent-line"></div>
+    <div class="meta">
+      {{ org_name }}<br>
+      Fecha: {{ report_date }}
+    </div>
+    <div class="cover-bar-bottom"></div>
+  </div>
+
+  {% elif section.type == 'page_break' %}
+  <div class="page-break"></div>
+
+  {% elif section.type == 'text' %}
+  {% if section.heading %}
+  <h2>{{ section.heading }}</h2>
+  {% endif %}
+  <p>{{ section.body | replace('\n', '<br>') }}</p>
+
+  {% elif section.type == 'chart' %}
+  {% if section.heading %}
+  <h2>{{ section.heading }}</h2>
+  {% endif %}
+  <div class="chart-wrap">
+    <img src="data:image/png;base64,{{ section.image_b64 }}" alt="{{ section.heading }}">
+    {% if section.caption %}
+    <div class="caption">{{ section.caption }}</div>
+    {% endif %}
+  </div>
+
+  {% elif section.type == 'table' %}
+  {% if section.heading %}
+  <h2>{{ section.heading }}</h2>
+  {% endif %}
+  {% if section.rows %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        {% for col in section.columns %}
+        <th>{{ col }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in section.rows %}
+      <tr>
+        {% for cell in row %}
+        <td>{{ cell }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#94a3b8;font-style:italic;">Sin datos disponibles.</p>
+  {% endif %}
+
+  {% endif %}
+{% endfor %}
+
+</body>
+</html>
