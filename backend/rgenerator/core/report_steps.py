@@ -390,14 +390,61 @@ def _table_section(item: dict, records: list[dict]) -> dict:
         return {'columns': columns, 'rows': rows_out}
 
 
+def _load_branding(pdf_layout: dict, db, org_id: int) -> Optional[dict]:
+    """Carga los assets de branding desde la DB y los convierte a base64."""
+    import base64
+    from backend.models import Organization, OrganizationAsset
+    from backend.config import BASE_DIR
+
+    brand_cfg = pdf_layout.get('branding')
+    if not brand_cfg:
+        return None
+
+    assets_dir = BASE_DIR / 'data' / 'org_assets' / str(org_id)
+
+    def _load_asset(asset_id) -> tuple:
+        if not asset_id:
+            return None, None
+        asset = db.query(OrganizationAsset).filter(
+            OrganizationAsset.id == asset_id,
+            OrganizationAsset.org_id == org_id,
+        ).first()
+        if not asset:
+            return None, None
+        path = assets_dir / asset.filename
+        if not path.exists():
+            return None, None
+        data = base64.b64encode(path.read_bytes()).decode('ascii')
+        return data, asset.content_type
+
+    left_b64, left_ct = _load_asset(brand_cfg.get('left_image_id'))
+    right_b64, right_ct = _load_asset(brand_cfg.get('right_image_id'))
+
+    center = brand_cfg.get('center_header', [])
+    if isinstance(center, str):
+        center = [center]
+
+    return {
+        'left_image_b64': left_b64,
+        'left_image_ct': left_ct or 'image/png',
+        'right_image_b64': right_b64,
+        'right_image_ct': right_ct or 'image/png',
+        'center_header': center,
+        'left_footer': brand_cfg.get('left_footer', ''),
+        'show_page_number': brand_cfg.get('show_page_number', True),
+    }
+
+
 def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
     """
     Genera el PDF como bytes para un indicador dado.
     Puede ser llamado desde el step o directamente desde el endpoint.
     """
+    import locale
     from datetime import date
     from jinja2 import Environment, FileSystemLoader
     from weasyprint import HTML as WeasyprintHTML
+    from backend.models import Organization
 
     pdf_layout = indicator.pdf_layout
     if isinstance(pdf_layout, str):
@@ -408,6 +455,13 @@ def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
 
     raw_sections = pdf_layout.get('sections', [])
     records = _build_records(db, indicator, org_id)
+
+    # Resolver nombre de la organización
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    org_name = org.name if org else str(org_id)
+
+    # Cargar branding (logos + header)
+    branding = _load_branding(pdf_layout, db, org_id)
 
     # Renderizar cada sección
     rendered = []
@@ -438,8 +492,9 @@ def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
     template = env.get_template('report_base.html')
     html_str = template.render(
         sections=rendered,
-        org_name=getattr(indicator, 'org_id', ''),
-        report_date=date.today().strftime('%d de %B de %Y'),
+        org_name=org_name,
+        report_date=date.today().strftime('%d/%m/%Y'),
+        branding=branding,
     )
 
     return WeasyprintHTML(string=html_str).write_pdf()

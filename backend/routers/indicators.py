@@ -181,6 +181,41 @@ async def update_indicator(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class LayoutUpsert(BaseModel):
+    dashboard_layout: Optional[Dict[str, Any]] = None
+    pdf_layout: Optional[Dict[str, Any]] = None
+
+
+@router.post("/{indicator_id}/layout")
+async def upsert_layout(
+    indicator_id: int,
+    body: LayoutUpsert,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Actualiza dashboard_layout y/o pdf_layout de un indicador en una sola request.
+    Solo actualiza los campos que se pasan (los omitidos no se tocan)."""
+    record = db.query(Indicator).filter(
+        Indicator.id_indicator == indicator_id,
+        Indicator.org_id == user.org_id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Indicador no encontrado")
+
+    try:
+        from datetime import datetime
+        if body.dashboard_layout is not None:
+            record.dashboard_layout = json.dumps(body.dashboard_layout, ensure_ascii=False)
+        if body.pdf_layout is not None:
+            record.pdf_layout = json.dumps(body.pdf_layout, ensure_ascii=False)
+        record.updated_at = datetime.utcnow()
+        db.commit()
+        return {"status": "success"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/{indicator_id}/export-pdf")
 async def export_pdf(
     indicator_id: int,

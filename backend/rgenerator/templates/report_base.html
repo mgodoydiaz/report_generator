@@ -6,12 +6,16 @@
 /* ── Página ─────────────────────────────────────────────────────────────── */
 @page {
   size: A4;
-  margin: 2cm 2.2cm 2.2cm 2.2cm;
-  @bottom-right {
-    content: element(footer);
-  }
+  margin: {% if branding %}3cm{% else %}2cm{% endif %} 2.2cm 2.2cm 2.2cm;
+  {% if branding %}
+  @top-left   { content: element(page-logo-left); vertical-align: middle; }
+  @top-center { content: element(page-header-center); vertical-align: middle; }
+  @top-right  { content: element(page-logo-right); vertical-align: middle; }
+  {% endif %}
+  @bottom-left  { content: element(footer-left); }
+  @bottom-right { content: element(footer-right); }
 }
-@page:first { margin-top: 0; margin-bottom: 0; }
+@page cover { margin: 0; }
 
 body {
   font-family: "DejaVu Sans", Arial, sans-serif;
@@ -20,14 +24,44 @@ body {
   margin: 0;
 }
 
-/* ── Footer ─────────────────────────────────────────────────────────────── */
-.page-footer {
-  position: running(footer);
-  text-align: right;
+/* ── Header running elements ─────────────────────────────────────────────── */
+{% if branding %}
+.page-logo-left {
+  position: running(page-logo-left);
+}
+.page-logo-right {
+  position: running(page-logo-right);
+}
+.page-header-center {
+  position: running(page-header-center);
+  text-align: center;
+  font-size: 7.5pt;
+  color: #334155;
+  line-height: 1.5;
+}
+.page-logo-left img,
+.page-logo-right img {
+  height: 1.8cm;
+  max-width: 5cm;
+  object-fit: contain;
+}
+{% endif %}
+
+/* ── Footer running elements ─────────────────────────────────────────────── */
+.footer-left {
+  position: running(footer-left);
   font-size: 7.5pt;
   color: #94a3b8;
   padding-top: 4px;
   border-top: 1px solid #e2e8f0;
+}
+.footer-right {
+  position: running(footer-right);
+  font-size: 7.5pt;
+  color: #94a3b8;
+  padding-top: 4px;
+  border-top: 1px solid #e2e8f0;
+  text-align: right;
 }
 
 /* ── Portada ─────────────────────────────────────────────────────────────── */
@@ -41,8 +75,6 @@ body {
   text-align: center;
   page-break-after: always;
 }
-@page cover { margin: 0; }
-
 .cover-bar-top {
   width: 100%;
   height: 8px;
@@ -78,6 +110,19 @@ body {
   color: #94a3b8;
   line-height: 1.8;
 }
+{% if branding and branding.left_image_b64 %}
+.cover-logos {
+  display: flex;
+  justify-content: center;
+  gap: 2cm;
+  margin-bottom: 1cm;
+}
+.cover-logos img {
+  height: 2.5cm;
+  max-width: 7cm;
+  object-fit: contain;
+}
+{% endif %}
 
 /* ── Salto de página ─────────────────────────────────────────────────────── */
 .page-break { page-break-before: always; }
@@ -161,14 +206,50 @@ table.data-table tr:nth-child(even) td { background: #f8fafc; }
 </head>
 <body>
 
-<!-- Footer (aparece en todas las páginas excepto portada) -->
-<div class="page-footer">{{ org_name }} · {{ report_date }}</div>
+<!-- Running header elements (branding) -->
+{% if branding %}
+<div class="page-logo-left">
+  {% if branding.left_image_b64 %}
+  <img src="data:{{ branding.left_image_ct }};base64,{{ branding.left_image_b64 }}" alt="Logo izquierdo">
+  {% endif %}
+</div>
+<div class="page-header-center">
+  {% for line in branding.center_header %}
+  {{ line }}<br>
+  {% endfor %}
+</div>
+<div class="page-logo-right">
+  {% if branding.right_image_b64 %}
+  <img src="data:{{ branding.right_image_ct }};base64,{{ branding.right_image_b64 }}" alt="Logo derecho">
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Footer running elements -->
+<div class="footer-left">{{ branding.left_footer if branding and branding.left_footer else org_name }}</div>
+<div class="footer-right">
+  {% if not branding or branding.show_page_number != false %}
+  <span>Página <pdf:pagenumber></span>
+  {% else %}
+  {{ report_date }}
+  {% endif %}
+</div>
 
 {% for section in sections %}
 
   {% if section.type == 'cover' %}
   <div class="cover">
     <div class="cover-bar-top"></div>
+    {% if branding and (branding.left_image_b64 or branding.right_image_b64) %}
+    <div class="cover-logos">
+      {% if branding.left_image_b64 %}
+      <img src="data:{{ branding.left_image_ct }};base64,{{ branding.left_image_b64 }}" alt="Logo izquierdo">
+      {% endif %}
+      {% if branding.right_image_b64 %}
+      <img src="data:{{ branding.right_image_ct }};base64,{{ branding.right_image_b64 }}" alt="Logo derecho">
+      {% endif %}
+    </div>
+    {% endif %}
     <div class="accent-line"></div>
     <h1>{{ section.title }}</h1>
     <div class="subtitle">{{ section.subtitle }}</div>

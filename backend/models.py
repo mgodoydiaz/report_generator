@@ -36,6 +36,22 @@ class Organization(Base):
     dimensions  = relationship("Dimension", back_populates="organization")
     indicators  = relationship("Indicator", back_populates="organization")
     specs       = relationship("Spec", back_populates="organization")
+    assets      = relationship("OrganizationAsset", back_populates="organization", cascade="all, delete-orphan")
+
+
+class OrganizationAsset(Base):
+    """Imágenes y archivos por organización (logos, portadas, etc.)."""
+    __tablename__ = "organization_assets"
+
+    id           = Column(Integer, primary_key=True, index=True)
+    org_id       = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    kind         = Column(String(50), nullable=False, default="logo")  # logo | cover | footer
+    name         = Column(String(200), nullable=False)
+    filename     = Column(String(300), nullable=False)
+    content_type = Column(String(100), nullable=False, default="image/png")
+    uploaded_at  = Column(DateTime, default=datetime.utcnow)
+
+    organization = relationship("Organization", back_populates="assets")
 
 
 class User(Base):

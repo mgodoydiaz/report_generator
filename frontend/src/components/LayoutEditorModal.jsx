@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2, FlaskConical, FileText, Download, BarChart2, Table2, Type, Minus } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, Save, Plus, Trash2, LayoutGrid, ChevronUp, ChevronDown, GripVertical, Settings2, FlaskConical, FileText, Download, BarChart2, Table2, Type, Minus, Image, Upload } from 'lucide-react';
 import { validateExpression } from '../tooling/formulaEvaluator';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
@@ -574,12 +574,147 @@ function PdfSectionCard({ sec, idx, total, onChange, onRemove, onMove, dashboard
     );
 }
 
-function PdfLayoutEditor({ pdfLayout, onChange, dashboardLayout, indicatorId, fetchAuth }) {
+// ── Branding Editor ───────────────────────────────────────────────────────────
+
+function BrandingEditor({ branding = {}, onChange, orgId, fetchAuth }) {
+    const [assets, setAssets] = useState([]);
+    const [uploading, setUploading] = useState(false);
+    const uploadRef = useRef(null);
+
+    const fetchAssets = useCallback(async () => {
+        if (!orgId) return;
+        try {
+            const res = await fetchAuth(`${API_BASE_URL}/organizations/${orgId}/assets?kind=logo`);
+            if (res.ok) setAssets(await res.json());
+        } catch { /* silent */ }
+    }, [fetchAuth, orgId]);
+
+    useEffect(() => { fetchAssets(); }, [fetchAssets]);
+
+    const update = (patch) => onChange({ ...branding, ...patch });
+
+    const handleUpload = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setUploading(true);
+        try {
+            const fd = new FormData();
+            fd.append('file', file);
+            const res = await fetchAuth(
+                `${API_BASE_URL}/organizations/${orgId}/assets?kind=logo&name=${encodeURIComponent(file.name)}`,
+                { method: 'POST', body: fd }
+            );
+            if (!res.ok) throw new Error('Error al subir imagen');
+            toast.success('Logo subido');
+            await fetchAssets();
+        } catch (err) {
+            toast.error(err.message);
+        } finally {
+            setUploading(false);
+            e.target.value = '';
+        }
+    };
+
+    const AssetSelect = ({ label, value, onSelect }) => (
+        <div className="flex-1 min-w-0">
+            <label className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mb-0.5 block">{label}</label>
+            <select
+                value={value || ''}
+                onChange={e => onSelect(e.target.value ? Number(e.target.value) : null)}
+                className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 px-2 py-1.5"
+            >
+                <option value="">— Sin logo —</option>
+                {assets.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+            </select>
+        </div>
+    );
+
+    const centerHeader = branding.center_header || ['', '', ''];
+
+    return (
+        <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/40 p-3 space-y-3">
+            <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+                    <Image size={12} /> Branding del informe
+                </span>
+                <div className="flex items-center gap-1.5">
+                    <button
+                        onClick={() => uploadRef.current?.click()}
+                        disabled={uploading}
+                        className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 hover:bg-indigo-100 transition-colors border border-indigo-200 dark:border-indigo-800"
+                    >
+                        <Upload size={10} />
+                        {uploading ? 'Subiendo…' : 'Subir logo'}
+                    </button>
+                    <input ref={uploadRef} type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+                </div>
+            </div>
+
+            {/* Logo selectors */}
+            <div className="flex gap-2">
+                <AssetSelect label="Logo izquierdo" value={branding.left_image_id}
+                    onSelect={v => update({ left_image_id: v })} />
+                <AssetSelect label="Logo derecho" value={branding.right_image_id}
+                    onSelect={v => update({ right_image_id: v })} />
+            </div>
+
+            {/* Center header lines */}
+            <div className="space-y-1">
+                <label className="text-[10px] text-slate-500 dark:text-slate-400 font-medium block">Encabezado central (3 líneas)</label>
+                {[0, 1, 2].map(i => (
+                    <input
+                        key={i}
+                        type="text"
+                        value={centerHeader[i] || ''}
+                        placeholder={i === 0 ? 'Título principal' : i === 1 ? 'Subtítulo' : 'Fecha / descripción'}
+                        onChange={e => {
+                            const next = [...centerHeader];
+                            next[i] = e.target.value;
+                            update({ center_header: next });
+                        }}
+                        className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 px-2 py-1.5"
+                    />
+                ))}
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-2 items-end">
+                <div className="flex-1">
+                    <label className="text-[10px] text-slate-500 dark:text-slate-400 font-medium mb-0.5 block">Pie izquierdo (autor)</label>
+                    <input
+                        type="text"
+                        value={branding.left_footer || ''}
+                        placeholder="Nombre del autor"
+                        onChange={e => update({ left_footer: e.target.value })}
+                        className="w-full text-xs rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 px-2 py-1.5"
+                    />
+                </div>
+                <label className="flex items-center gap-1.5 text-[10px] text-slate-600 dark:text-slate-300 pb-1.5 cursor-pointer">
+                    <input
+                        type="checkbox"
+                        checked={branding.show_page_number !== false}
+                        onChange={e => update({ show_page_number: e.target.checked })}
+                        className="rounded"
+                    />
+                    N° de página
+                </label>
+            </div>
+        </div>
+    );
+}
+
+// ── PDF Layout Editor ─────────────────────────────────────────────────────────
+
+function PdfLayoutEditor({ pdfLayout, onChange, dashboardLayout, indicatorId, fetchAuth, orgId }) {
     const sections = pdfLayout?.sections || [];
+    const branding = pdfLayout?.branding || {};
     const dashboardItems = flattenDashboardItems(dashboardLayout);
     const [downloading, setDownloading] = useState(false);
 
     const updateSections = (next) => onChange({ ...pdfLayout, sections: next });
+    const updateBranding = (next) => onChange({ ...pdfLayout, branding: next });
 
     const addSection = (type) => {
         const base = { type };
@@ -638,6 +773,13 @@ function PdfLayoutEditor({ pdfLayout, onChange, dashboardLayout, indicatorId, fe
                 Define las secciones del informe PDF. Los gráficos y tablas se toman del dashboard configurado.
             </p>
 
+            <BrandingEditor
+                branding={branding}
+                onChange={updateBranding}
+                orgId={orgId}
+                fetchAuth={fetchAuth}
+            />
+
             {sections.length === 0 && (
                 <div className="text-center py-8 text-slate-400 text-xs border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-xl">
                     Sin secciones. Agrega una portada para comenzar.
@@ -694,7 +836,7 @@ function PdfLayoutEditor({ pdfLayout, onChange, dashboardLayout, indicatorId, fe
 // ── Modal principal ───────────────────────────────────────────────────────────
 
 export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }) {
-    const { fetchAuth } = useAuth();
+    const { fetchAuth, user } = useAuth();
     const [layout, setLayout] = useState(SIMCE_PRESET_LAYOUT);
     const [activeTab, setActiveTab] = useState(0);
     const [saving, setSaving] = useState(false);
@@ -880,6 +1022,7 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                             dashboardLayout={layout}
                             indicatorId={indicator?.id_indicator}
                             fetchAuth={fetchAuth}
+                            orgId={user?.org_id}
                         />
                     )}
                 </div>

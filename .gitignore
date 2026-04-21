@@ -70,3 +70,6 @@ agents/
 # Archivos locales
 # backend/tests/runs/*  # movido a tests/runs/
 data/pipeline_runs/*
+
+# Assets de organizaciones (imágenes subidas por los usuarios)
+data/org_assets/

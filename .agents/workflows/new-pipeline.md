@@ -3,6 +3,8 @@ description: Crear un nuevo pipeline desde cero
 ---
 # `/new-pipeline` — Crear un nuevo pipeline desde cero
 
+> **Modo autónomo (Claude sin UI):** El pipeline vive en PostgreSQL — crear y ejecutar solo con API REST. Ver flujo httpx al final.
+
 Skill ejecutable: el asistente guía al usuario con preguntas para construir el JSON del pipeline, propone la secuencia de pasos, y lo persiste en la tabla `pipelines` de PostgreSQL.
 
 > **Nota**: los pipelines viven como filas en PostgreSQL (`pipelines.config_json`). No se guardan como archivos sueltos. El `pipeline_id` lo autogenera la DB.
@@ -123,3 +125,45 @@ Leer el pipeline recién creado (por `pipeline_id`) y mostrar al usuario el resu
 - **Multi-tenant**: El `org_id` se toma del usuario autenticado (vía API) o hay que pasarlo explícitamente (vía SQLAlchemy). Un pipeline solo es visible para usuarios de la misma organización.
 - **Pipelines legacy en archivos**: Los antiguos `data/database/pipelines/pipeline<NNN>.json` ya no se usan en runtime; si aparecen, son material de referencia para migrar.
 - **Clave de metadata**: La clave canónica es `pipeline_metadata`. `workflow_metadata` sigue soportado como fallback por compatibilidad con configs antiguos.
+
+---
+
+## Flujo autónomo completo (Python httpx — sin UI)
+
+```python
+import httpx, json
+
+BASE = "http://localhost:8000/api"
+TOKEN = httpx.post(f"{BASE}/auth/login",
+    json={"email": "admin@org.cl", "password": "secreto"}).json()["access_token"]
+H = {"Authorization": f"Bearer {TOKEN}"}
+
+PIPELINE_JSON = {
+    "pipeline_metadata": {
+        "name": "ETL IDEL-Woodcock 2025 (IA)",
+        "description": "Carga datos IDEL desde Excel largo y guarda en métrica",
+        "input": "Excel",
+        "output": "Métrica"
+    },
+    "context": {"base_dir": "./data"},
+    "pipeline": [
+        {"step": "InitRun",         "params": {"evaluation": "IDEL_2025", "base_dir": "./data"}},
+        {"step": "RequestUserFiles", "params": {"file_specs": [
+            {"id": "consolidado_largo", "label": "Consolidado IDEL largo", "multiple": False, "optional": False}
+        ]}},
+        {"step": "RunExcelETL",     "params": {"input_key": "consolidado_largo", "output_key": "df_idel"}},
+        {"step": "SaveToMetric",    "params": {"metric_id": 9, "input_key": "df_idel", "clear_existing": False}},
+        {"step": "DeleteTempFiles", "params": {}},
+    ]
+}
+
+# Crear
+r = httpx.post(f"{BASE}/pipelines/config", headers=H, json=PIPELINE_JSON)
+pid = r.json()["new_id"]
+print("Pipeline creado:", pid)
+
+# Ejecutar (el backend maneja RequestUserFiles con pausa interactiva)
+httpx.post(f"{BASE}/pipelines/{pid}/run", headers=H)
+```
+
+**Nota sobre `RequestUserFiles`:** Si el pipeline tiene ese step, la primera ejecución pausará con `status: NEEDS_REVIEW`. El usuario sube el archivo desde la UI, luego se reanuda llamando `POST /api/pipelines/{id}/resume` (o el botón en la UI).

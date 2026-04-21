@@ -3,6 +3,10 @@ description: Crear un nuevo gráfico o tabla para el sistema de dashboards
 ---
 # `/add-chart` — Agregar un nuevo gráfico o tabla al sistema de dashboards
 
+> **Autonomía de Claude:**
+> - **Opción A** (catálogo existente): Claude puede ejecutarlo autónomamente via API — sin editar código ni hacer build del frontend.
+> - **Opción B/C** (componente nuevo): requiere editar archivos JSX y hacer `npm run build`. Solo con intervención humana en el entorno de desarrollo.
+
 Guía paso a paso para crear un nuevo componente de visualización (gráfico o tabla) y dejarlo disponible en el Editor de Layout.
 
 ## Contexto

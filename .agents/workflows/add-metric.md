@@ -3,6 +3,8 @@ description: Crear una nueva métrica
 ---
 # `/add-metric` — Crear una nueva métrica
 
+> **Modo autónomo (Claude sin UI):** Usar Camino A (API REST) con el flujo de Python `httpx` documentado al final. No requiere editar archivos ni reiniciar el servidor.
+
 Skill ejecutable: el asistente guía el proceso interactivamente, consulta el estado actual de la DB y escribe los cambios mediante la API REST o SQLAlchemy.
 
 > **Nota**: Las métricas y dimensiones viven en PostgreSQL. Nunca editar los `.xlsx` de `data/database/` — son legacy y no se leen en runtime.
@@ -181,3 +183,43 @@ El artifact debe ser un `DataFrame` con columnas que incluyan:
   - Para tipo simple: una sola columna con el nombre exacto de la métrica
 
 `SaveToMetric` usa `ctx.db` y `ctx.org_id` internamente — no necesita configuración adicional, solo requiere que el pipeline se ejecute desde el backend autenticado.
+
+---
+
+## Flujo autónomo completo (Python httpx — sin UI)
+
+```python
+import httpx
+
+BASE = "http://localhost:8000/api"
+TOKEN = httpx.post(f"{BASE}/auth/login",
+    json={"email": "admin@org.cl", "password": "secreto"}).json()["access_token"]
+H = {"Authorization": f"Bearer {TOKEN}"}
+
+# 1. Crear dimensiones faltantes
+dim_ids = []
+for dim_name in ["Establecimiento", "Año", "Curso", "Evaluación", "Versión"]:
+    r = httpx.post(f"{BASE}/dimensions/", headers=H,
+        json={"name": dim_name, "data_type": "str", "validation_mode": "free"})
+    dim_ids.append(r.json()["id_dimension"])
+
+# 2. Crear métrica con dimensiones
+r = httpx.post(f"{BASE}/metrics/", headers=H, json={
+    "name": "Resultados IDEL-Woodcock",
+    "data_type": "object",
+    "description": "Puntaje y nivel de riesgo por subprueba Woodcock",
+    "meta_json": {"fields": [
+        {"name": "Puntaje", "type": "float"},
+        {"name": "Nivel de Riesgo", "type": "str"},
+    ]},
+    "dimension_ids": dim_ids,
+})
+metric_id = r.json()["id_metric"]
+print("Métrica creada:", metric_id)
+
+# 3. Importar datos desde Excel (formato largo ya normalizado)
+with open("data/input/idel/Consolidado_IDEL_2025_largo.xlsx", "rb") as f:
+    httpx.post(f"{BASE}/metrics/{metric_id}/import", headers=H,
+        files={"files": ("datos.xlsx", f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+print("Datos importados.")
+```
