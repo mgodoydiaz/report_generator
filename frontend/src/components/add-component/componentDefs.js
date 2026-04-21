@@ -133,6 +133,39 @@ export const CHART_COMPONENTS = [
             { key: 'valueField',  label: 'Eje Y — Valor',        optionType: 'value'  },
         ],
     },
+    {
+        id: 'ImprovementRateByGroup',
+        label: 'Tasa de Mejora por Grupo',
+        type: 'chart',
+        group: 'temporal',
+        axisConfig: [
+            { key: 'groupField',  label: 'Eje X — Agrupación',            optionType: 'group'  },
+            { key: 'timeField',   label: 'Campo temporal (ordinal)',      optionType: 'period' },
+            { key: 'entityField', label: 'Campo de entidad (ej. _rut)',   optionType: 'any'    },
+            { key: 'levelField',  label: 'Campo de nivel (categórico)',   optionType: 'category' },
+        ],
+    },
+    {
+        id: 'TrendKPI',
+        label: 'KPI con Tendencia',
+        type: 'chart',
+        group: 'special',
+        axisConfig: [
+            { key: 'valueField',   label: 'Campo de valor',              optionType: 'any'   },
+            { key: 'aggregation',  label: 'Agregación',                  optionType: 'any'   },
+        ],
+    },
+    {
+        id: 'TransitionMatrix',
+        label: 'Matriz de Transición (Sankey)',
+        type: 'chart',
+        group: 'temporal',
+        axisConfig: [
+            { key: 'timeField',   label: 'Campo temporal',              optionType: 'period'   },
+            { key: 'entityField', label: 'Campo de entidad (ej. _rut)', optionType: 'any'      },
+            { key: 'levelField',  label: 'Campo de nivel',              optionType: 'category' },
+        ],
+    },
 ];
 
 export const CHART_GROUPS = [
@@ -169,11 +202,18 @@ export const TABLE_COMPONENTS = [
     { id: 'TablaResumenCursos', label: 'Tabla Resumen Cursos',     type: 'table', axisConfig: [], legacy: true },
     { id: 'TablaAlumnos',       label: 'Tabla Alumnos (legacy)',   type: 'table', axisConfig: [], legacy: true },
     { id: 'TablaPreguntas',     label: 'Tabla Preguntas (legacy)', type: 'table', axisConfig: [], legacy: true },
+    {
+        id: 'StudentRiskList',
+        label: 'Lista de Alumnos en Riesgo',
+        type: 'table',
+        axisConfig: [],
+    },
 ];
 
 export const SPECIAL_COMPONENTS = [
-    { id: 'kpis',            label: 'Tarjetas KPI',      type: 'kpis',            axisConfig: [] },
-    { id: 'course_selector', label: 'Selector de Curso', type: 'course_selector', axisConfig: [] },
+    { id: 'kpis',               label: 'Tarjetas KPI',         type: 'kpis',               axisConfig: [] },
+    { id: 'course_selector',    label: 'Selector de Curso',    type: 'course_selector',    axisConfig: [] },
+    { id: 'subprueba_selector', label: 'Selector de Subprueba', type: 'subprueba_selector', axisConfig: [] },
 ];
 
 export const ALL_COMPONENTS = [...SPECIAL_COMPONENTS, ...TABLE_COMPONENTS, ...CHART_COMPONENTS];

@@ -76,13 +76,21 @@ export function HeatmapMatrix({
     }
 
     const aggregate = (vals) => {
-        const clean = vals.filter(v => v != null && !isNaN(v));
+        if (aggregation === 'count_true') {
+            return vals.filter(v => v === true || v === 1 || v === '1').length;
+        }
+        if (aggregation === 'mean_percent') {
+            if (!vals.length) return null;
+            const trueCount = vals.filter(v => v === true || v === 1 || v === '1').length;
+            return trueCount / vals.length;
+        }
+        const clean = vals.filter(v => v != null && !isNaN(Number(v)));
         if (!clean.length) return null;
-        if (aggregation === 'sum') return clean.reduce((a, b) => a + b, 0);
+        if (aggregation === 'sum') return clean.reduce((a, b) => a + Number(b), 0);
         if (aggregation === 'count') return clean.length;
-        if (aggregation === 'min') return Math.min(...clean);
-        if (aggregation === 'max') return Math.max(...clean);
-        return clean.reduce((a, b) => a + b, 0) / clean.length;
+        if (aggregation === 'min') return Math.min(...clean.map(Number));
+        if (aggregation === 'max') return Math.max(...clean.map(Number));
+        return clean.reduce((a, b) => a + Number(b), 0) / clean.length;
     };
 
     const z = ys.map(y => xs.map(x => {

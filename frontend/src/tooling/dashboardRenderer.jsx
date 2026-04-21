@@ -33,6 +33,9 @@ import {
     FilterableTable,
     SummaryTable, DetailListTable, DetailListWithProgress,
     ImprovementRateByGroup,
+    TrendKPI,
+    StudentRiskList,
+    TransitionMatrix,
 } from './plotly-charts';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
@@ -84,6 +87,9 @@ const COMPONENT_MAP = {
     FilterableTable,
     SummaryTable, DetailListTable, DetailListWithProgress,
     ImprovementRateByGroup,
+    TrendKPI,
+    StudentRiskList,
+    TransitionMatrix,
 };
 
 // ── Campos requeridos por componente Plotly ───────────────────────────────────
@@ -112,6 +118,9 @@ const PLOTLY_REQUIRED_FIELDS = {
     SummaryTable:                 [],
     DetailListTable:              [],
     ImprovementRateByGroup:       [],
+    TrendKPI:                     [],
+    StudentRiskList:              [],
+    TransitionMatrix:             [],
 };
 
 function getMissingFields(componentId, item) {
@@ -380,7 +389,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'StackedCountByGroup': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             const gf = item.groupField ?? '_curso';
-            const recs = filteredEstudiantes;
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
             const grps = gf === '_curso'
                 ? computed.cursos
                 : [...new Set(recs.map(r => r[gf]).filter(Boolean))].sort();
@@ -388,7 +397,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 records: recs,
                 groups: grps,
                 groupField: gf,
-                categoryField: item.categoryField ?? '_logro',
+                categoryField: item.categoryField ?? item.levelField ?? '_logro',
                 categoryLevels: computed.achievement_levels || [],
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
@@ -497,12 +506,13 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'HeatmapMatrix': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const hmRecs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
             return {
-                records: filteredEstudiantes,
+                records: hmRecs,
                 xField: item.xField,
                 yField: item.yField,
-                valueField: activeValueField,
-                aggregation: item.aggregation || 'avg',
+                valueField: item.valueField ?? activeValueField,
+                aggregation: item.agg ?? item.aggregation ?? 'avg',
                 achievement_levels: computed.achievement_levels || [],
                 colorscale: item.colorscale || 'YlOrRd',
                 reverseColorscale: !!item.reverseColorscale,
@@ -594,6 +604,38 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             };
         }
 
+        case 'TrendKPI': {
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            return {
+                records: recs,
+                label: item.label || '',
+                valueField: item.valueField,
+                aggregation: item.aggregation || 'mean_percent',
+                groupField: item.groupField,
+                scoreField: item.scoreField,
+                invertColors: item.invertColors ?? false,
+                sparklineData: item.sparklineData,
+            };
+        }
+        case 'StudentRiskList': {
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            return {
+                records: recs,
+                topN: item.topN || 10,
+                achievement_levels: computed.achievement_levels || [],
+            };
+        }
+        case 'TransitionMatrix': {
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            return {
+                records: recs,
+                timeField: item.timeField ?? '_evaluacion_num',
+                entityField: item.entityField ?? '_rut',
+                levelField: item.levelField ?? '_worst_level_label',
+                achievement_levels: computed.achievement_levels || [],
+            };
+        }
+
         default:
             return base;
     }
@@ -639,6 +681,9 @@ const AUTO_TITLES = {
     SummaryTable: 'Resumen por Grupo',
     DetailListTable: 'Detalle de Items',
     DetailListWithProgress: 'Detalle con Progreso',
+    TrendKPI: 'KPI con Tendencia',
+    StudentRiskList: 'Alumnos en Riesgo',
+    TransitionMatrix: 'Matriz de Transición',
 };
 
 // ── Error de configuración ────────────────────────────────────────────────────
@@ -789,22 +834,24 @@ export function ItemRenderer({ item, ctx }) {
         );
     }
 
-    const Comp = COMPONENT_MAP[item.component];
+    // Formato nuevo: type = nombre del componente; formato viejo: component = nombre del componente
+    const componentId = item.component || item.type;
+    const Comp = COMPONENT_MAP[componentId];
     if (!Comp) return null;
 
-    const missingFields = getMissingFields(item.component, item);
+    const missingFields = getMissingFields(componentId, item);
     if (missingFields.length > 0) {
-        return <MissingConfigError componentId={item.component} missingFields={missingFields} />;
+        return <MissingConfigError componentId={componentId} missingFields={missingFields} />;
     }
 
-    const props = buildComponentProps(item.component, ctx, item, activeValueIdx);
-    const title = item.title || AUTO_TITLES[item.component];
+    const props = buildComponentProps(componentId, ctx, item, activeValueIdx);
+    const title = item.title || AUTO_TITLES[componentId];
 
-    if (item.component === 'TablaAlumnos' && datosCurso.estudiantes.length === 0) return null;
-    if (item.component === 'TablaPreguntas' && datosCurso.preguntas.length === 0) return null;
-    if (item.component === 'GraficoHabilidades' && (!activeRoles?.habilidad || datosCurso.preguntas.length === 0)) return null;
+    if (componentId === 'TablaAlumnos' && datosCurso.estudiantes.length === 0) return null;
+    if (componentId === 'TablaPreguntas' && datosCurso.preguntas.length === 0) return null;
+    if (componentId === 'GraficoHabilidades' && (!activeRoles?.habilidad || datosCurso.preguntas.length === 0)) return null;
 
-    const isTable = item.type === 'table';
+    const isTable = item.type === 'table' || ['PivotTable', 'FilterableTable', 'SummaryTable', 'DetailListTable', 'DetailListWithProgress', 'StudentRiskList'].includes(componentId);
     const hasLegacyToggle = props.toggle;
     const hasValueToggle = Array.isArray(item.valueField) && item.valueField.length > 1;
 

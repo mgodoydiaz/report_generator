@@ -6,7 +6,7 @@
 
 - **Rama:** `dev`
 - **Indicador objetivo:** `id=3` (PDL / IDEL-Woodcock, evaluación de lectura por subpruebas)
-- **Sprint activo:** Sprint 1 — Fundaciones de datos (S1.1 ⏳)
+- **Sprint activo:** Sprint 4 — Configurabilidad (S2+S3 completados)
 - **Plan origen:** `C:\Users\magod\.claude\plans\en-primer-lugar-quiero-foamy-whisper.md` (aprobado)
 - **Fecha de plan aprobado:** 2026-04-21
 
@@ -14,9 +14,9 @@
 
 | # | Archivo | Estado |
 |---|---|---|
-| 1 | [sprint-01-foundations.md](./sprint-01-foundations.md) | ⏳ activo |
-| 2 | [sprint-02-components.md](./sprint-02-components.md) | ⏸ planeado |
-| 3 | [sprint-03-layout-pdl.md](./sprint-03-layout-pdl.md) | ⏸ planeado (usuario ejecuta) |
+| 1 | [sprint-01-foundations.md](./sprint-01-foundations.md) | ✅ completo |
+| 2 | [sprint-02-components.md](./sprint-02-components.md) | ✅ completo (TrendKPI, StudentRiskList, TransitionMatrix) |
+| 3 | [sprint-03-layout-pdl.md](./sprint-03-layout-pdl.md) | ✅ completo (layout v2 aplicado a indicador 3) |
 | 4 | [sprint-04-configurability.md](./sprint-04-configurability.md) | ⏸ planeado |
 | 5 | [sprint-05-polish.md](./sprint-05-polish.md) | ⏸ planeado |
 | 6 | (futuro) Sprint 6 — Informe PDF WeasyPrint | 🔮 diferido |
