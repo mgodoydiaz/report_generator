@@ -26,7 +26,9 @@ engine = create_engine(
     pool_pre_ping=True,       # reconecta si la conexión se cayó
     pool_size=5,
     max_overflow=10,
-    echo=os.getenv("DEBUG", "false").lower() == "true",
+    # SQL_ECHO: imprime cada query SQL. Independiente de DEBUG para poder
+    # debuggear la app sin inundar los logs con consultas de SQLAlchemy.
+    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
