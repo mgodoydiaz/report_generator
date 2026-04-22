@@ -37,6 +37,33 @@ class IndicatorUpdate(IndicatorBase):
     metric_ids: Optional[List[int]] = None
 
 
+class ExportPDFRequest(BaseModel):
+    """Body opcional para POST /{id}/export-pdf."""
+    filters: Optional[Dict[str, Any]] = None
+    engine: Optional[str] = None                    # override del motor (default: pdf_layout.engine)
+    branding_override: Optional[Dict[str, Any]] = None  # overrides ad‑hoc de branding
+    save_as_default: bool = False                   # si True, persiste branding en pdf_layout
+
+
+# Motores de informe disponibles — expuesto al frontend para poblar el modal
+REPORT_ENGINES = [
+    {
+        "id": "weasyprint",
+        "label": "Layout del indicador",
+        "description": "Genera el PDF a partir del pdf_layout configurado en el Editor de Layout.",
+        "requires_sections": True,
+        "available": True,
+    },
+    {
+        "id": "pdl_idel",
+        "label": "Informe PDL IDEL-Woodcock",
+        "description": "Informe especializado multi-curso con matrices de transición (hardcodeado).",
+        "requires_sections": False,
+        "available": True,
+    },
+]
+
+
 def _parse_json_field(value, default):
     """Safely parse a JSON text field returning default on failure."""
     if isinstance(value, str) and value:
@@ -73,6 +100,14 @@ def _indicator_to_dict(ind: Indicator) -> dict:
 
 
 # --- Endpoints ---
+
+@router.get("/export-pdf/engines")
+async def list_report_engines(
+    user: User = Depends(get_current_user),
+):
+    """Lista los motores de informe PDF disponibles (para poblar el modal de generación)."""
+    return REPORT_ENGINES
+
 
 @router.get("/")
 async def get_indicators(
@@ -219,10 +254,21 @@ async def upsert_layout(
 @router.post("/{indicator_id}/export-pdf")
 async def export_pdf(
     indicator_id: int,
+    body: Optional[ExportPDFRequest] = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Genera y descarga el informe PDF del indicador usando su pdf_layout configurado."""
+    """
+    Genera y descarga el informe PDF del indicador.
+
+    Dispatcher por motor (clave pdf_layout.engine):
+      - "weasyprint" (default): usa build_pdf_bytes con las secciones configuradas.
+      - "pdl_idel": reservado para el informe PDL IDEL-Woodcock (Fase B).
+
+    Body opcional: { "filters": { "<id_dimension>": "<valor>", ... } }
+    Los filtros se propagan a los MetricData antes de renderizar, de modo que
+    el PDF refleje la misma vista que el usuario tiene en la página Results.
+    """
     try:
         record = db.query(Indicator).filter(
             Indicator.id_indicator == indicator_id,
@@ -232,15 +278,66 @@ async def export_pdf(
             raise HTTPException(status_code=404, detail="Indicador no encontrado")
 
         pdf_layout = _parse_json_field(record.pdf_layout, {})
-        if not pdf_layout.get("sections"):
+        filters = body.filters if body else None
+        branding_override = body.branding_override if body else None
+        save_as_default = bool(body.save_as_default) if body else False
+        engine_override = body.engine if body else None
+
+        # Precedencia del engine: override del modal > pdf_layout.engine > default weasyprint
+        engine = (engine_override or pdf_layout.get("engine") or "weasyprint").lower()
+
+        # Validar que el engine esté disponible
+        engine_meta = next((e for e in REPORT_ENGINES if e["id"] == engine), None)
+        if not engine_meta or not engine_meta.get("available"):
+            valid = [e["id"] for e in REPORT_ENGINES if e.get("available")]
             raise HTTPException(
                 status_code=422,
-                detail="El indicador no tiene secciones PDF configuradas. "
-                       "Agrega secciones en el Editor de Layout → pestaña Informe PDF."
+                detail=f"Motor de informe '{engine}' no disponible. "
+                       f"Valores válidos: {', '.join(valid)}."
             )
 
-        from backend.rgenerator.core.report_steps import build_pdf_bytes
-        pdf_bytes = build_pdf_bytes(record, db, user.org_id)
+        # Persistir branding como default del indicador (opt‑in vía checkbox del modal)
+        if save_as_default and branding_override:
+            try:
+                merged = dict(pdf_layout)
+                merged['branding'] = {**(pdf_layout.get('branding') or {}), **branding_override}
+                record.pdf_layout = json.dumps(merged, ensure_ascii=False)
+                record.updated_at = datetime.utcnow()
+                db.commit()
+                # Refrescar pdf_layout local para que el render vea lo guardado
+                pdf_layout = merged
+                branding_override = None
+            except Exception:
+                db.rollback()
+                raise
+
+        if engine == "weasyprint":
+            if not pdf_layout.get("sections"):
+                raise HTTPException(
+                    status_code=422,
+                    detail="El indicador no tiene secciones PDF configuradas. "
+                           "Agrega secciones en el Editor de Layout → pestaña Informe PDF."
+                )
+            from backend.rgenerator.core.report_steps import build_pdf_bytes
+            pdf_bytes = build_pdf_bytes(
+                record, db, user.org_id,
+                filters=filters,
+                branding_override=branding_override,
+            )
+        elif engine == "pdl_idel":
+            from backend.rgenerator.tooling.report_pdl_idel_tools import build_pdl_idel_pdf_bytes
+            try:
+                pdf_bytes = build_pdl_idel_pdf_bytes(
+                    record, db, user.org_id, filters=filters,
+                )
+            except ValueError as e:
+                # Sin datos tras aplicar filtros — feedback accionable al usuario.
+                raise HTTPException(status_code=422, detail=str(e))
+        else:
+            raise HTTPException(
+                status_code=501,
+                detail=f"Motor '{engine}' aún no implementado."
+            )
 
         safe_name = record.name.replace(" ", "_").replace("/", "-")
         return Response(

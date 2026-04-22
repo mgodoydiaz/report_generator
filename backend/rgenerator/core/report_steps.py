@@ -134,8 +134,19 @@ def _to_field_name(name: str) -> str:
     return f'_{s}'
 
 
-def _build_records(db, indicator, org_id: int) -> list[dict]:
-    """Construye lista plana de registros desde MetricData para un indicador."""
+def _build_records(
+    db,
+    indicator,
+    org_id: int,
+    filters: Optional[Dict[str, object]] = None,
+) -> list[dict]:
+    """
+    Construye lista plana de registros desde MetricData para un indicador.
+
+    filters: dict opcional {id_dimension_str: valor} — se aplica sobre
+        dimensions_json de cada MetricData antes de proyectar el record.
+        Mismo contrato que GET /api/results/indicator/{id}/data?filters=...
+    """
     from backend.models import IndicatorMetric, Metric, MetricDimension, MetricData, Dimension
 
     metric_links = db.query(IndicatorMetric).filter(
@@ -180,6 +191,12 @@ def _build_records(db, indicator, org_id: int) -> list[dict]:
                 dims_json = json.loads(row.dimensions_json) if isinstance(row.dimensions_json, str) else (row.dimensions_json or {})
             except Exception:
                 dims_json = {}
+
+            if filters and not all(
+                str(dims_json.get(fk, "")) == str(fv)
+                for fk, fv in filters.items()
+            ):
+                continue
 
             rec = {}
             # Value fields
@@ -435,10 +452,24 @@ def _load_branding(pdf_layout: dict, db, org_id: int) -> Optional[dict]:
     }
 
 
-def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
+def build_pdf_bytes(
+    indicator,
+    db,
+    org_id: int,
+    filters: Optional[Dict[str, object]] = None,
+    branding_override: Optional[Dict[str, object]] = None,
+) -> bytes:
     """
     Genera el PDF como bytes para un indicador dado.
     Puede ser llamado desde el step o directamente desde el endpoint.
+
+    filters: dict opcional {id_dimension_str: valor} que se propaga a
+        _build_records para limitar los MetricData incluidos en charts/tablas.
+    branding_override: dict opcional con overrides de branding ad‑hoc para
+        esta generación (no se persiste). Se mergea sobre pdf_layout.branding
+        antes de resolver assets y renderizar. Claves soportadas:
+        left_image_id, right_image_id, center_header (list[str]),
+        left_footer (str), show_page_number (bool).
     """
     import locale
     from datetime import date
@@ -453,8 +484,15 @@ def build_pdf_bytes(indicator, db, org_id: int) -> bytes:
         except Exception:
             pdf_layout = {}
 
+    # Merge branding_override sobre pdf_layout.branding (no muta el layout persistido)
+    if branding_override:
+        merged_layout = dict(pdf_layout)
+        merged_branding = {**(pdf_layout.get('branding') or {}), **branding_override}
+        merged_layout['branding'] = merged_branding
+        pdf_layout = merged_layout
+
     raw_sections = pdf_layout.get('sections', [])
-    records = _build_records(db, indicator, org_id)
+    records = _build_records(db, indicator, org_id, filters=filters)
 
     # Resolver nombre de la organización
     org = db.query(Organization).filter(Organization.id == org_id).first()
