@@ -275,7 +275,7 @@ Solo si hay una razón técnica específica para no usar Plotly (no debería ocu
 
 ## Registrar en el Editor de Layout
 
-**`frontend/src/components/LayoutEditorModal.jsx`** — agregar al catálogo para que el usuario lo vea al editar un layout:
+El catálogo vive en `frontend/src/components/add-component/componentDefs.js`. Agregar una entrada en `CHART_COMPONENTS`, `TABLE_COMPONENTS` o `SPECIAL_COMPONENTS` según corresponda:
 
 ```js
 const CHART_COMPONENTS = [
@@ -284,13 +284,62 @@ const CHART_COMPONENTS = [
         id: 'MiNuevoGrafico',
         label: 'Nombre legible para el editor de layout',
         type: 'chart',
-        requires: ['logro_1'],   // roles requeridos — controla visibilidad
+        group: 'simple',                       // grupo en la galería (ver CHART_GROUPS)
+        requires: ['logro_1'],                 // roles requeridos — controla visibilidad
+        requiresSingleMetricContext: false,    // ver abajo
+        axisConfig: [
+            { key: 'valueField', label: 'Eje Y', optionType: 'value' },
+            { key: 'groupField', label: 'Eje X', optionType: 'group' },
+        ],
+        configurableProps: [ /* ver abajo */ ],
     },
 ];
-// Para tablas usar TABLE_COMPONENTS
 ```
 
-Valores posibles de `requires`: `logro_1`, `logro_2`, `nivel_de_logro`, `habilidad`, `habilidad_2`, `evaluacion_num`. Dejar `[]` si no depende de ningún rol.
+### `requires` — visibilidad por rol del indicador
+
+Valores posibles: `logro_1`, `logro_2`, `nivel_de_logro`, `habilidad`, `habilidad_2`, `evaluacion_num`. Dejar `[]` si no depende de ningún rol. Cuando el rol no está activo en el indicador, el componente se oculta sin errores.
+
+### `requiresSingleMetricContext` — charts sensibles a escala
+
+Poner `true` cuando el componente mezcla escalas si recibe registros de múltiples subpruebas (ej. `BarByGroup`, `BoxPlotByGroup`, `TrendLine` — el eje Y cambia de significado por subprueba y la comparación pierde sentido). El `LayoutEditorModal` muestra un warning si un tab usa uno de estos charts sin filtrar por `_habilidad` y sin `subprueba_selector`. En dev mode, `dashboardRenderer` también loggea el warning en consola.
+
+### `configurableProps` — schema de propiedades editables desde UI (Sprint 4)
+
+Declara los props que el usuario puede editar desde el formulario dinámico del `LayoutEditorModal`. Complementa `axisConfig` (que es solo para campos de datos):
+
+```js
+configurableProps: [
+    { name: 'title', type: 'text', label: 'Título del bloque' },
+
+    // Fuente de datos (estudiantes global vs curso activo)
+    { name: 'dataSource', type: 'select', label: 'Fuente de datos',
+      options: [
+          { value: 'estudiantes',      label: 'Estudiantes (global)' },
+          { value: 'cursoEstudiantes', label: 'Curso activo' },
+      ],
+      default: 'estudiantes',
+    },
+
+    { name: 'topN', type: 'number', label: 'Top N', default: 10, min: 1, max: 100 },
+    { name: 'showLegend', type: 'boolean', label: 'Mostrar leyenda', default: true },
+    { name: 'color', type: 'color', label: 'Color principal' },
+],
+```
+
+**Tipos soportados:** `text`, `number`, `select`, `boolean`, `color`. El formulario los renderiza con inputs estándar y persiste el valor en el JSON del item del layout. Los props declarados en `configurableProps` tienen precedencia sobre los legacy (`VISUAL_OPTIONS_BY_TYPE` en `StepConfig.jsx`) — si el mismo nombre aparece en ambos, se usa el declarativo.
+
+**Propiedades no declaradas:** los campos custom que no están en `axisConfig` ni en `configurableProps` se preservan al guardar (no se pierden). Esto permite seguir usando props avanzadas como `filter`, `pivotConfig`, `flatTableConfig` sin que el modal las descarte.
+
+### Probar desde el Editor de Layout
+
+1. Abrir un indicador → "Editar layout".
+2. Agregar una fila, click "Agregar" → elegir el componente en la galería.
+3. Paso 2: configurar ejes (si hay `axisConfig`). Al completarlos, aparece el formulario visual con todos los `configurableProps`.
+4. Paso 3: vista previa.
+5. Guardar → refrescar el dashboard.
+
+**Fuente de verdad del catálogo:** `frontend/src/components/add-component/componentDefs.js`. El modal lee desde ahí; no hay listas duplicadas.
 
 ---
 
