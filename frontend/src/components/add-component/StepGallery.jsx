@@ -11,6 +11,7 @@ const COMP_ICONS = {
     // Especiales
     kpis:                          Sparkles,
     course_selector:               SlidersHorizontal,
+    subprueba_selector:            SlidersHorizontal,
     // Tablas
     SummaryTable:                  TableProperties,
     DetailListTable:               LayoutList,
@@ -32,17 +33,19 @@ const COMP_ICONS = {
 };
 
 const TYPE_COLOR = {
-    kpis:            'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700',
-    course_selector: 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700',
-    table:           'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700',
-    chart:           'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700',
+    kpis:               'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700',
+    course_selector:    'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700',
+    subprueba_selector: 'bg-slate-50 dark:bg-slate-800/40 border-slate-200 dark:border-slate-700',
+    table:              'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-700',
+    chart:              'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700',
 };
 
 const ICON_COLOR = {
-    kpis:            'text-amber-500',
-    course_selector: 'text-slate-400',
-    table:           'text-indigo-500',
-    chart:           'text-emerald-600',
+    kpis:               'text-amber-500',
+    course_selector:    'text-slate-400',
+    subprueba_selector: 'text-slate-400',
+    table:              'text-indigo-500',
+    chart:              'text-emerald-600',
 };
 
 const CATEGORIES = [

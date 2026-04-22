@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { ChartColumn, RefreshCcw, Play } from 'lucide-react';
+import { ChartColumn, RefreshCcw, Play, FileDown } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -72,6 +72,42 @@ export default function Results() {
         loadIndicatorDims();
     }, [selectedIndicator, indicators]);
 
+    const [exportingPdf, setExportingPdf] = useState(false);
+
+    // S2.7 · Exportar PDF del indicador activo
+    const handleExportPdf = async () => {
+        if (!selectedIndicator) return;
+        setExportingPdf(true);
+        const t = toast.loading("Generando PDF...");
+        try {
+            const res = await fetchAuth(
+                `${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`,
+                { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filters: selectedFilters }) }
+            );
+            if (!res.ok) {
+                const txt = await res.text().catch(() => '');
+                throw new Error(txt || 'Error generando PDF');
+            }
+            const blob = await res.blob();
+            const indObj = indicators.find(i => String(i.id_indicator) === String(selectedIndicator));
+            const safeName = (indObj?.name || `indicador-${selectedIndicator}`).replace(/[^a-z0-9_-]+/gi, '-');
+            const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${safeName}_${stamp}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            toast.success("PDF descargado", { id: t });
+        } catch (err) {
+            toast.error(err.message || String(err), { id: t });
+        } finally {
+            setExportingPdf(false);
+        }
+    };
+
     // ── Generar Dashboard ──
     const handleGenerateDashboard = async () => {
         if (!selectedIndicator) {
@@ -90,10 +126,7 @@ export default function Results() {
             if (!res.ok) throw new Error("Error al generar dashboard");
             const result = await res.json();
             setRawResult(result);
-            const processed = processDataForDashboard(result);
-            if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
-                toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
-            }
+            // La verificación de vacío se hace en useEffect tras dashboardData actualizar
         } catch (err) {
             toast.error(err.message);
         } finally {
@@ -102,8 +135,14 @@ export default function Results() {
     };
 
     // ── Datos procesados y computados del dashboard ──
-    const dashboardData    = useMemo(() => rawResult ? processDataForDashboard(rawResult) : null, [rawResult]);
+    const dashboardData     = useMemo(() => rawResult ? processDataForDashboard(rawResult) : null, [rawResult]);
     const dashboardComputed = useMemo(() => computeDashboardKPIs(dashboardData), [dashboardData]);
+
+    useEffect(() => {
+        if (dashboardData && dashboardData.estudiantes.length === 0 && dashboardData.preguntas.length === 0) {
+            toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
+        }
+    }, [dashboardData]);
 
     // ── Filtros del curso activo ──
     const datosCurso = useMemo(() => {
@@ -208,7 +247,7 @@ export default function Results() {
                         );
                     })}
 
-                    <div>
+                    <div className="flex items-center gap-2">
                         <button
                             onClick={handleGenerateDashboard}
                             disabled={!selectedIndicator || loadingDashboard}
@@ -220,6 +259,15 @@ export default function Results() {
                                 <Play size={16} strokeWidth={3} />
                             )}
                             Generar Dashboard
+                        </button>
+                        <button
+                            onClick={handleExportPdf}
+                            disabled={!selectedIndicator || exportingPdf}
+                            title="Exportar PDF del indicador"
+                            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 text-white px-5 py-2.5 rounded-2xl font-bold text-sm shadow-lg transition-all active:scale-95 disabled:cursor-not-allowed"
+                        >
+                            {exportingPdf ? <RefreshCcw size={16} className="animate-spin" /> : <FileDown size={16} strokeWidth={2.5} />}
+                            PDF
                         </button>
                     </div>
                 </div>

@@ -4,22 +4,24 @@
 
 ## Estado actual
 
-- **Rama:** `dev`
+- **Rama:** `dev_1`
 - **Indicador objetivo:** `id=3` (PDL / IDEL-Woodcock, evaluación de lectura por subpruebas)
-- **Sprint activo:** Sprint 4 — Configurabilidad (S2+S3 completados)
+- **Sprint activo:** Sprints 2-5 cerrados (priorizando escalabilidad). Siguiente: sprint de informes hardcodeados para cumplir entregas.
 - **Plan origen:** `C:\Users\magod\.claude\plans\en-primer-lugar-quiero-foamy-whisper.md` (aprobado)
 - **Fecha de plan aprobado:** 2026-04-21
+- **Fecha de cierre v2:** 2026-04-21
 
 ## Índice de sprints
 
 | # | Archivo | Estado |
 |---|---|---|
 | 1 | [sprint-01-foundations.md](./sprint-01-foundations.md) | ✅ completo |
-| 2 | [sprint-02-components.md](./sprint-02-components.md) | ✅ completo (TrendKPI, StudentRiskList, TransitionMatrix) |
-| 3 | [sprint-03-layout-pdl.md](./sprint-03-layout-pdl.md) | ✅ completo (layout v2 aplicado a indicador 3) |
-| 4 | [sprint-04-configurability.md](./sprint-04-configurability.md) | ⏸ planeado |
-| 5 | [sprint-05-polish.md](./sprint-05-polish.md) | ⏸ planeado |
+| 2 | [sprint-02-components.md](./sprint-02-components.md) | ✅ completo (S2.1/S2.3/S2.4 en `f2cde85`; S2.2, S2.5–S2.9 en cierre Sprints 2-5) |
+| 3 | [sprint-03-layout-pdl.md](./sprint-03-layout-pdl.md) | ✅ completo (layout v2 aplicado, Tab 3 "Por Subprueba" extendido) |
+| 4 | [sprint-04-configurability.md](./sprint-04-configurability.md) | ✅ completo (configurableProps + formulario dinámico + color picker + tests vitest + docs) |
+| 5 | [sprint-05-polish.md](./sprint-05-polish.md) | ✅ completo (microcopy + EmptyState + emojis/pattern_shape) |
 | 6 | (futuro) Sprint 6 — Informe PDF WeasyPrint | 🔮 diferido |
+| 7 | (próximo) Informes hardcodeados | 🚧 por arrancar — shortcut para cumplir entregas |
 
 ---
 
@@ -88,6 +90,24 @@ Sprints 1-5 definidos y aprobados. Archivo rector: este.
 ---
 
 ## TODO diferidos (tracked pero fuera del plan v2)
+
+### Escalabilidad — pendientes de Sprints 2-5 (revisar tras informes hardcodeados)
+
+1. **Quitar defaults hardcodeados de PDL en `dashboardRenderer.jsx`.**
+   En `buildComponentProps` hay fallbacks cableados (`_curso`, `_rend`, `_logro`, `_habilidad`, `_evaluacion_num`) que asumen el schema del indicador PDL. Aplicar ese default en dominios distintos puede producir gráficos silenciosamente incorrectos (el campo existe con otro significado) o vacíos (el campo no existe y `filter`/`groupBy` devuelve sets vacíos). Plan tentativo: derivar defaults desde `indicator.column_roles` (el indicador ya declara qué columna juega cada rol), o subir el check al Editor de Layout y obligar a configurar `groupField`/`valueField`. Referencia: [frontend/src/tooling/dashboardRenderer.jsx](../frontend/src/tooling/dashboardRenderer.jsx) líneas con `?? '_curso'`, `?? '_rend'`, etc.
+
+2. **RUT como clave: evaluar downgrade.**
+   Sprint 1 introdujo `_rut` como clave primaria para dedup y derivaciones. Si un indicador no tiene dimensión RUT (o la tiene pero con nombre no detectable por `/\brut|run|documento\b/`), todos los records se descartan y el dashboard queda vacío. Alternativas: (a) fallback a clave `(_nombre, _curso)` cuando no hay RUT detectable; (b) detección por rol en `column_roles` en vez de nombre; (c) opt-out vía `indicator.dedup_strategy`. Referencia: [frontend/src/tooling/dataProcessing.js](../frontend/src/tooling/dataProcessing.js) — bloque `rutDimId` y filtro.
+
+### Sprint siguiente — Informes hardcodeados (shortcut para cumplir entregas)
+
+3. **Informes hardcodeados / personalizados** — ruta de atajo para plazos ajustados, consciente de que genera deuda. Propuesta: ejecutar scripts Python del backend llamándolos *por nombre*, sin plugin API genérica.
+   - Organizar en `backend/reports/<tenant>/<report_id>.py` con una función canónica (`build(db, org_id, indicator_id, out_path) -> Path`).
+   - Endpoint único `POST /api/indicators/{id}/run-report/{report_name}` que despacha al script por nombre, con allowlist declarada (evitar inyección).
+   - Cada script puede tener hardcodes de columnas/plantillas específicas del cliente. Acompañar con comentario `# HARDCODED FOR {cliente} — revisar si {fecha}`.
+   - Aislar todos los hardcodes dentro de esa carpeta para que la limpieza posterior sea un `grep` localizado.
+
+### Fuera del plan v2 (preexistentes)
 
 - Memoización backend-side / endpoint con cache
 - Snapshot de datos (versionar `metric_data` por fecha)

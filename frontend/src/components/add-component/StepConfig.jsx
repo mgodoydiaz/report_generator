@@ -116,10 +116,11 @@ function ExternalFieldPicker({ allMetrics, allDimensions, onPick, onCancel }) {
 // Se mostrará solo si aplica al tipo seleccionado.
 
 const VISUAL_OPTIONS_BY_TYPE = {
-    chart: ['title', 'legendField', 'labelY', 'labelX', 'showLegend', 'showValues'],
+    chart: ['title', 'legendField', 'labelY', 'labelX', 'showLegend', 'showValues', 'colorscale', 'reverseColorscale', 'xTickCase', 'yTickCase', 'xTickMap', 'yTickMap'],
     table: ['title'],
     kpis:  [],
     course_selector: [],
+    subprueba_selector: [],
 };
 
 // Opciones específicas por componente que NO tienen labelX
@@ -128,6 +129,9 @@ const NO_LABEL_Y = ['PieComposition', 'RadarProfile'];
 const NO_SHOW_VALUES = ['BoxPlotByGroup', 'RadarProfile', 'PieComposition', 'TrendLine'];
 // Componentes que soportan elegir columna de leyenda (tienen múltiples ejes de agrupación)
 const HAS_LEGEND_FIELD = ['DoubleGroupedBar'];
+// Componentes que soportan elegir escala de colores (y opciones asociadas)
+const HAS_COLORSCALE = ['HeatmapMatrix'];
+const HAS_TICK_TRANSFORM = ['HeatmapMatrix'];
 
 function getVisualFields(comp) {
     const type = comp?.type;
@@ -138,9 +142,21 @@ function getVisualFields(comp) {
         if (f === 'labelY'      && NO_LABEL_Y.includes(id))       return false;
         if (f === 'showValues'  && NO_SHOW_VALUES.includes(id))   return false;
         if (f === 'legendField' && !HAS_LEGEND_FIELD.includes(id)) return false;
+        if ((f === 'colorscale' || f === 'reverseColorscale') && !HAS_COLORSCALE.includes(id))    return false;
+        if ((f === 'xTickCase' || f === 'yTickCase' || f === 'xTickMap' || f === 'yTickMap') && !HAS_TICK_TRANSFORM.includes(id)) return false;
         return true;
     });
 }
+
+const COLORSCALE_OPTIONS = [
+    { value: 'YlOrRd',  label: 'Amarillo → Rojo (riesgo)',   preview: 'linear-gradient(90deg, #ffffcc, #fd8d3c, #bd0026)' },
+    { value: 'Reds',    label: 'Rojos',                        preview: 'linear-gradient(90deg, #fff5f0, #fb6a4a, #67000d)' },
+    { value: 'RdYlGn',  label: 'Rojo → Verde (divergente)',   preview: 'linear-gradient(90deg, #a50026, #ffffbf, #006837)' },
+    { value: 'Viridis', label: 'Viridis (azul-verde-amarillo)', preview: 'linear-gradient(90deg, #440154, #21918c, #fde725)' },
+    { value: 'Blues',   label: 'Azules',                       preview: 'linear-gradient(90deg, #f7fbff, #4292c6, #08306b)' },
+    { value: 'Greens',  label: 'Verdes',                       preview: 'linear-gradient(90deg, #f7fcf5, #41ab5d, #00441b)' },
+    { value: 'Hot',     label: 'Hot (negro-rojo-amarillo)',   preview: 'linear-gradient(90deg, #000000, #ff0000, #ffff00)' },
+];
 
 const VISUAL_FIELD_META = {
     title:       { label: 'Título del gráfico',     type: 'text',   placeholder: 'Ej: Logro por Curso' },
@@ -149,13 +165,135 @@ const VISUAL_FIELD_META = {
     labelX:      { label: 'Etiqueta eje X',          type: 'text',   placeholder: 'Ej: Curso' },
     showLegend:  { label: 'Mostrar leyenda',         type: 'toggle', default: true },
     showValues:  { label: 'Mostrar valores',         type: 'toggle', default: false },
+    colorscale:  { label: 'Escala de colores',       type: 'colorscale', default: 'YlOrRd' },
+    reverseColorscale: { label: 'Invertir escala (alto = color fuerte)', type: 'toggle', default: false },
+    xTickCase:   { label: 'Transformar ticks eje X', type: 'tickcase', default: 'none' },
+    yTickCase:   { label: 'Transformar ticks eje Y', type: 'tickcase', default: 'none' },
+    xTickMap:    { label: 'Mapa de etiquetas eje X', type: 'tickmap', placeholder: 'CT=Comprensión lectora\nFLO=Fluidez' },
+    yTickMap:    { label: 'Mapa de etiquetas eje Y', type: 'tickmap', placeholder: '1° BÁSICO=1° Básico' },
 };
+
+const TICKCASE_OPTIONS = [
+    { value: 'none',  label: 'Sin cambio' },
+    { value: 'upper', label: 'MAYÚSCULAS' },
+    { value: 'lower', label: 'minúsculas' },
+    { value: 'title', label: 'Primera Letra' },
+];
+
+// ── Renderer genérico de un configurableProp ─────────────────────────────────
+
+function ConfigurablePropInput({ prop, value, onChange }) {
+    const v = value ?? prop.default ?? (prop.type === 'boolean' ? false : '');
+
+    if (prop.type === 'text') {
+        return (
+            <input
+                type="text"
+                value={v}
+                onChange={(e) => onChange(e.target.value)}
+                placeholder={prop.placeholder || prop.help || ''}
+                className="w-full bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+        );
+    }
+    if (prop.type === 'number') {
+        return (
+            <input
+                type="number"
+                value={v}
+                min={prop.min}
+                max={prop.max}
+                onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+                className="w-full bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            />
+        );
+    }
+    if (prop.type === 'boolean') {
+        return (
+            <button
+                type="button"
+                onClick={() => onChange(!v)}
+                className={`relative w-9 h-5 rounded-full transition-colors ${v ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}
+            >
+                <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${v ? 'translate-x-4' : 'translate-x-0.5'}`} />
+            </button>
+        );
+    }
+    if (prop.type === 'select') {
+        return (
+            <select
+                value={v}
+                onChange={(e) => onChange(e.target.value)}
+                className="w-full bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+            >
+                <option value="">—</option>
+                {(prop.options || []).map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+            </select>
+        );
+    }
+    if (prop.type === 'color') {
+        return (
+            <input type="color" value={v || '#888888'} onChange={(e) => onChange(e.target.value)} className="h-8 w-14 cursor-pointer rounded" />
+        );
+    }
+    return null;
+}
+
+// Renderiza los props declarativos de un componente (S4.2).
+// Usa la misma onVisualChange para persistir en el item del layout.
+function ConfigurablePropsSection({ comp, visualOptions, onVisualChange }) {
+    const props = comp?.configurableProps || [];
+    if (props.length === 0) return null;
+    return (
+        <div className="space-y-3">
+            <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-widest">
+                Propiedades del componente
+            </p>
+            {props.map((p) => {
+                const value = visualOptions[p.name];
+                const isBool = p.type === 'boolean';
+                return (
+                    <div
+                        key={p.name}
+                        className={isBool ? 'flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40' : ''}
+                    >
+                        {isBool ? (
+                            <>
+                                <div className="flex-1">
+                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-300">{p.label}</span>
+                                    {p.help && <p className="text-[11px] text-slate-400 mt-0.5">{p.help}</p>}
+                                </div>
+                                <ConfigurablePropInput prop={p} value={value} onChange={(nv) => onVisualChange(p.name, nv)} />
+                            </>
+                        ) : (
+                            <>
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                                    {p.label}
+                                    {p.default !== undefined && <span className="ml-1 text-[10px] text-slate-400 font-normal">(default: {String(p.default)})</span>}
+                                </label>
+                                {p.help && <p className="text-[11px] text-slate-400 mb-1.5">{p.help}</p>}
+                                <ConfigurablePropInput prop={p} value={value} onChange={(nv) => onVisualChange(p.name, nv)} />
+                            </>
+                        )}
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
 
 // ── Formulario visual ─────────────────────────────────────────────────────────
 
 function VisualOptionsForm({ comp, axisSelections, visualOptions, onVisualChange }) {
-    const fields = getVisualFields(comp);
-    if (fields.length === 0) {
+    // Props ya declarados via configurableProps ganan sobre los legacy de
+    // VISUAL_OPTIONS_BY_TYPE — no duplicar inputs.
+    const declaredNames = new Set((comp?.configurableProps || []).map(p => p.name));
+    const fields = getVisualFields(comp).filter(f => !declaredNames.has(f));
+    const hasConfigurableProps = (comp?.configurableProps || []).length > 0;
+
+    if (fields.length === 0 && !hasConfigurableProps) {
         return (
             <div className="text-center py-8 text-slate-400 text-xs">
                 No hay opciones visuales para este componente.
@@ -174,6 +312,15 @@ function VisualOptionsForm({ comp, axisSelections, visualOptions, onVisualChange
 
     return (
         <div className="space-y-5">
+            {/* Props declarativos del componente (configurableProps) */}
+            {hasConfigurableProps && (
+                <ConfigurablePropsSection
+                    comp={comp}
+                    visualOptions={visualOptions}
+                    onVisualChange={onVisualChange}
+                />
+            )}
+
             {/* Resumen de ejes ya configurados */}
             {axisEntries.length > 0 && (
                 <div className="bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700/50 px-4 py-3">
@@ -262,6 +409,90 @@ function VisualOptionsForm({ comp, axisSelections, visualOptions, onVisualChange
                         );
                     }
 
+                    if (meta.type === 'colorscale') {
+                        const selected = value || meta.default;
+                        return (
+                            <div key={fieldKey}>
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-2">{meta.label}</label>
+                                <div className="space-y-1.5">
+                                    {COLORSCALE_OPTIONS.map(opt => {
+                                        const isActive = selected === opt.value;
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => onVisualChange('colorscale', opt.value)}
+                                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl border text-left transition-all ${
+                                                    isActive
+                                                        ? 'border-indigo-400 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20'
+                                                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 hover:border-slate-300 dark:hover:border-slate-600'
+                                                }`}
+                                            >
+                                                <div className={`w-4 h-4 min-w-4 rounded-full border-2 flex items-center justify-center ${
+                                                    isActive ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'
+                                                }`}>
+                                                    {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                                </div>
+                                                <div className="flex-1">
+                                                    <div className="text-xs font-medium text-slate-700 dark:text-slate-300">{opt.label}</div>
+                                                    <div className="h-2 mt-1 rounded-full border border-slate-200 dark:border-slate-700" style={{ background: opt.preview }} />
+                                                </div>
+                                                <code className="text-[11px] font-mono px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400">{opt.value}</code>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    if (meta.type === 'tickcase') {
+                        const selected = value || meta.default;
+                        return (
+                            <div key={fieldKey}>
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">{meta.label}</label>
+                                <div className="flex gap-1.5 flex-wrap">
+                                    {TICKCASE_OPTIONS.map(opt => {
+                                        const isActive = selected === opt.value;
+                                        return (
+                                            <button
+                                                key={opt.value}
+                                                type="button"
+                                                onClick={() => onVisualChange(fieldKey, opt.value)}
+                                                className={`text-[11px] px-2.5 py-1.5 rounded-lg border transition-all ${
+                                                    isActive
+                                                        ? 'border-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300'
+                                                        : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 text-slate-600 dark:text-slate-300 hover:border-slate-300'
+                                                }`}
+                                            >
+                                                {opt.label}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    if (meta.type === 'tickmap') {
+                        return (
+                            <div key={fieldKey}>
+                                <label className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                                    {meta.label}
+                                    <span className="ml-1 text-[10px] text-slate-400 font-normal">(opcional)</span>
+                                </label>
+                                <p className="text-[11px] text-slate-400 mb-1.5">Un mapeo por línea: <code className="font-mono">valor_original = texto_a_mostrar</code></p>
+                                <textarea
+                                    rows={3}
+                                    value={value || ''}
+                                    onChange={e => onVisualChange(fieldKey, e.target.value)}
+                                    placeholder={meta.placeholder}
+                                    className="w-full bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 rounded-xl px-3.5 py-2.5 text-xs font-mono text-slate-700 dark:text-slate-200 placeholder-slate-300 dark:placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition-all"
+                                />
+                            </div>
+                        );
+                    }
+
                     if (meta.type === 'toggle') {
                         return (
                             <div key={fieldKey} className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40">
@@ -338,9 +569,23 @@ export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx,
     const isMulti = currentStep.optionType === 'value' && options.length > 1;
     const total = steps.length;
 
-    // Detectar si la selección actual es un campo externo (no está en las opciones del indicador)
+    // Campos derivados disponibles como opciones adicionales (válidos como valor numérico)
+    const derivedOptsRaw = (derivedColumns || [])
+        .filter(d => d?.name && d?.expression)
+        .map(d => ({
+            value: d.name.startsWith('_') ? d.name : `_${d.name}`,
+            label: d.name,
+            kind: 'derivado',
+        }));
+    const derivedOpts = derivedOptsRaw.filter(d => !options.some(o => o.value === d.value));
+
+    // Detectar si la selección actual es un campo externo (no está en las opciones del indicador ni es derivado)
     const currentValue = isMulti ? null : selections[currentStep.key];
-    const isExternalValue = currentValue && !options.some(o => o.value === currentValue);
+    const isDerivedValue = currentValue && (derivedColumns || []).some(d => {
+        const fn = d?.name ? (d.name.startsWith('_') ? d.name : `_${d.name}`) : null;
+        return fn === currentValue;
+    });
+    const isExternalValue = currentValue && !options.some(o => o.value === currentValue) && !isDerivedValue;
 
     return (
         <div className="space-y-5">
@@ -542,6 +787,46 @@ export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx,
                                 Usar campo de otra métrica...
                             </button>
                         )}
+                    </div>
+                )}
+
+                {/* Campos derivados disponibles */}
+                {!showExternalPicker && derivedOpts.length > 0 && (
+                    <div className="mt-3 space-y-1.5">
+                        <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider">Campos derivados</p>
+                        {derivedOpts.map(opt => {
+                            const isSelected = isMulti
+                                ? multiPicked.includes(opt.value)
+                                : selections[currentStep.key] === opt.value;
+                            return (
+                                <button
+                                    key={opt.value}
+                                    onClick={() => {
+                                        if (isMulti) onMultiToggle(opt.value);
+                                        else onSelect(currentStep.key, opt.value);
+                                    }}
+                                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl border text-left transition-all ${
+                                        isSelected
+                                            ? 'border-emerald-400 dark:border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                            : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/40 hover:border-emerald-300 dark:hover:border-emerald-700'
+                                    }`}
+                                >
+                                    <div className={`w-4 h-4 min-w-4 ${isMulti ? 'rounded' : 'rounded-full'} border-2 flex items-center justify-center transition-all ${
+                                        isSelected ? 'border-emerald-600 bg-emerald-600' : 'border-slate-300 dark:border-slate-600'
+                                    }`}>
+                                        {isSelected && (isMulti
+                                            ? <svg width="9" height="9" viewBox="0 0 9 9" fill="none"><path d="M1.5 4.5L3.5 6.5L7.5 2.5" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                                            : <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                                        )}
+                                    </div>
+                                    <span className={`text-xs font-medium flex-1 ${isSelected ? 'text-emerald-700 dark:text-emerald-300' : 'text-slate-700 dark:text-slate-300'}`}>{opt.label}</span>
+                                    <span className="text-[10px] font-semibold text-emerald-400 dark:text-emerald-600 uppercase tracking-wide mr-1">derivado</span>
+                                    <code className={`text-[11px] font-mono px-1.5 py-0.5 rounded-md ${
+                                        isSelected ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400' : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400'
+                                    }`}>{opt.value}</code>
+                                </button>
+                            );
+                        })}
                     </div>
                 )}
 

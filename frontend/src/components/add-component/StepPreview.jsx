@@ -4,6 +4,7 @@ import { API_BASE_URL } from '../../constants';
 import { useAuth } from '../../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../../tooling/dataProcessing';
 import { ItemRenderer } from '../../tooling/dashboardRenderer';
+import { applyDerivedColumns } from '../../tooling/formulaEvaluator';
 
 // ── SVGs esquemáticos ─────────────────────────────────────────────────────────
 
@@ -105,12 +106,12 @@ const SCHEMA_SVGS = {
     RadarProfile: RadarSvg,
     StackedCountByGroup: StackSvg,
     SummaryTable: TableSvg, DetailListTable: TableSvg, DetailListWithProgress: TableSvg,
-    kpis: KpiSvg, course_selector: KpiSvg,
+    kpis: KpiSvg, course_selector: KpiSvg, subprueba_selector: KpiSvg,
 };
 
 // ── Componente principal ──────────────────────────────────────────────────────
 
-export default function StepPreview({ comp, axisSelections, indicator }) {
+export default function StepPreview({ comp, axisSelections, visualOptions = {}, indicator }) {
     const { fetchAuth } = useAuth();
     const [previewState, setPreviewState] = useState('idle'); // idle | loading | ready | error
     const [rawData, setRawData] = useState(null);
@@ -121,12 +122,22 @@ export default function StepPreview({ comp, axisSelections, indicator }) {
     const SchemaSvg = SCHEMA_SVGS[compId] || BarSvg;
 
     // Construir el item de layout que pasará al renderer
-    const layoutItem = comp?.type === 'kpis' || comp?.type === 'course_selector'
+    const layoutItem = comp?.type === 'kpis' || comp?.type === 'course_selector' || comp?.type === 'subprueba_selector'
         ? { type: comp.type }
-        : { type: comp?.type, component: comp?.id, ...axisSelections };
+        : { type: comp?.type, component: comp?.id, ...axisSelections, ...visualOptions };
 
-    // Procesar datos cuando llegan
-    const dashboardData = useMemo(() => rawData ? processDataForDashboard(rawData) : null, [rawData]);
+    // Procesar datos cuando llegan (aplicar campos derivados del indicador)
+    const dashboardData = useMemo(() => {
+        if (!rawData) return null;
+        const processed = processDataForDashboard(rawData);
+        const dcols = indicator?.derived_columns || [];
+        if (!dcols.length || !processed) return processed;
+        return {
+            ...processed,
+            estudiantes: applyDerivedColumns(processed.estudiantes || [], dcols),
+            preguntas:   applyDerivedColumns(processed.preguntas   || [], dcols),
+        };
+    }, [rawData, indicator]);
     const computed = useMemo(() => dashboardData ? computeDashboardKPIs(dashboardData) : null, [dashboardData]);
     const datosCurso = useMemo(() => {
         if (!dashboardData || !cursoActivo) return { estudiantes: [], preguntas: [] };
@@ -141,6 +152,8 @@ export default function StepPreview({ comp, axisSelections, indicator }) {
         datosCurso,
         cursoActivo,
         setCursoActivo,
+        subpruebaActiva: null,
+        setSubpruebaActiva: () => {},
         onCursoClick: setCursoActivo,
         metricLogro: 'logro',
         setMetricLogro: () => {},

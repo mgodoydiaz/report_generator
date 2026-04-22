@@ -13,17 +13,26 @@ const STEP_TITLES = {
     3: { title: 'Vista previa',             sub: 'Revisa el componente antes de agregarlo al dashboard' },
 };
 
-const VISUAL_KEYS = ['title', 'legendField', 'labelY', 'labelX', 'showLegend', 'showValues'];
+const LEGACY_VISUAL_KEYS = [
+    'title', 'legendField', 'labelY', 'labelX', 'showLegend', 'showValues',
+    'colorscale', 'reverseColorscale',
+    'xTickCase', 'yTickCase', 'xTickMap', 'yTickMap',
+];
 
-// Extract axis selections vs visual options from a saved item
+// Separa un item guardado en (axis, visual).
+// visual = campos declarados en configurableProps del componente +
+//          legacy visual keys + cualquier campo desconocido (para no perder
+//          props como `filter`, `dataSource`, `semaphoreField`, etc.).
 function splitItemFields(item, compMeta) {
-    const axisKeys = new Set((compMeta?.axisConfig || []).map(a => a.key));
-    const axis = {};
-    const visual = {};
+    const axisKeys   = new Set((compMeta?.axisConfig || []).map(a => a.key));
+    const declared   = new Set((compMeta?.configurableProps || []).map(p => p.name));
+    const axis       = {};
+    const visual     = {};
     for (const [k, v] of Object.entries(item || {})) {
         if (['type', 'component', 'requires'].includes(k)) continue;
-        if (VISUAL_KEYS.includes(k)) visual[k] = v;
-        else if (axisKeys.has(k)) axis[k] = v;
+        if (axisKeys.has(k)) axis[k] = v;
+        else if (declared.has(k) || LEGACY_VISUAL_KEYS.includes(k)) visual[k] = v;
+        else visual[k] = v; // preserva desconocidos (filter, pivotConfig, etc.)
     }
     return { axis, visual };
 }
@@ -119,7 +128,7 @@ export default function AddComponentModal({ isOpen, onClose, onConfirm, indicato
             if (axisCompleted) return true; // formulario visual: siempre puede avanzar
             if (!currentAxisStep) return true;
             const { optionType, key } = currentAxisStep;
-            if (optionType === 'value') return multiPicked.length > 0;
+            if (optionType === 'value') return multiPicked.length > 0 || !!axisSelections[key];
             return !!axisSelections[key];
         }
         return true;
@@ -133,8 +142,8 @@ export default function AddComponentModal({ isOpen, onClose, onConfirm, indicato
             return;
         }
         const { optionType, key } = currentAxisStep;
-        const isMulti = optionType === 'value';
-        const value = isMulti
+        const useMulti = optionType === 'value' && multiPicked.length > 0;
+        const value = useMulti
             ? (multiPicked.length === 1 ? multiPicked[0] : multiPicked)
             : axisSelections[key];
 
@@ -295,6 +304,7 @@ export default function AddComponentModal({ isOpen, onClose, onConfirm, indicato
                         <StepPreview
                             comp={selectedComp}
                             axisSelections={axisSelections}
+                            visualOptions={visualOptions}
                             indicator={indicator}
                         />
                     )}

@@ -1,5 +1,29 @@
 // ── Definición de campos configurables por tipo de gráfico ───────────────────
 
+// Presets de props visuales reutilizables para charts.
+// Los valores se materializan en el JSON del item cuando el usuario los edita
+// en LayoutEditorModal. Si el componente no recibe la prop, el chart usa su default.
+const VISUAL_PROPS_COMMON = [
+    { name: 'labelX',     type: 'text',    label: 'Etiqueta eje X',            help: 'Override del nombre del eje X' },
+    { name: 'labelY',     type: 'text',    label: 'Etiqueta eje Y',            help: 'Override del nombre del eje Y' },
+    { name: 'showLegend', type: 'boolean', label: 'Mostrar leyenda',            default: true },
+    { name: 'showValues', type: 'boolean', label: 'Mostrar valores en barras',  default: false },
+];
+
+const TITLE_PROP = { name: 'title', type: 'text', label: 'Título del bloque', help: 'Se muestra arriba del componente' };
+
+const DATA_SOURCE_PROP = {
+    name: 'dataSource',
+    type: 'select',
+    label: 'Fuente de datos',
+    help: 'estudiantes (dataset global) o cursoEstudiantes (filtrado por course_selector)',
+    options: [
+        { value: 'estudiantes',      label: 'Estudiantes (global)' },
+        { value: 'cursoEstudiantes', label: 'Curso activo (requiere course_selector)' },
+    ],
+    default: 'estudiantes',
+};
+
 export const CHART_COMPONENTS = [
     // ── Gráficos simples ──
     {
@@ -7,9 +31,14 @@ export const CHART_COMPONENTS = [
         label: 'Barras por Grupo',
         type: 'chart',
         group: 'simple',
+        requiresSingleMetricContext: true,
         axisConfig: [
             { key: 'valueField',  label: 'Eje Y — Valor a graficar',   optionType: 'value' },
             { key: 'groupField',  label: 'Eje X — Agrupación',         optionType: 'group' },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            ...VISUAL_PROPS_COMMON,
         ],
     },
     {
@@ -17,9 +46,16 @@ export const CHART_COMPONENTS = [
         label: 'Boxplot por Grupo',
         type: 'chart',
         group: 'simple',
+        requiresSingleMetricContext: true,
         axisConfig: [
             { key: 'valueField',  label: 'Eje Y — Valor a distribuir', optionType: 'value' },
             { key: 'groupField',  label: 'Eje X — Agrupación',         optionType: 'group' },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            { name: 'labelX', type: 'text', label: 'Etiqueta eje X' },
+            { name: 'labelY', type: 'text', label: 'Etiqueta eje Y' },
+            { name: 'showLegend', type: 'boolean', label: 'Mostrar leyenda', default: true },
         ],
     },
     {
@@ -30,6 +66,10 @@ export const CHART_COMPONENTS = [
         axisConfig: [
             { key: 'categoryField', label: 'Campo de categoría', optionType: 'category' },
         ],
+        configurableProps: [
+            TITLE_PROP,
+            { name: 'showLegend', type: 'boolean', label: 'Mostrar leyenda', default: true },
+        ],
     },
     {
         id: 'StackedCountByGroup',
@@ -39,6 +79,11 @@ export const CHART_COMPONENTS = [
         axisConfig: [
             { key: 'groupField',    label: 'Eje X — Agrupación',    optionType: 'group'    },
             { key: 'categoryField', label: 'Categoría (colores)',   optionType: 'category' },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            DATA_SOURCE_PROP,
+            ...VISUAL_PROPS_COMMON,
         ],
     },
     {
@@ -97,6 +142,38 @@ export const CHART_COMPONENTS = [
             { key: 'yField',     label: 'Eje Y — Dimensión',  optionType: 'any'   },
             { key: 'valueField', label: 'Valor (intensidad)', optionType: 'value' },
         ],
+        configurableProps: [
+            TITLE_PROP,
+            DATA_SOURCE_PROP,
+            {
+                name: 'agg',
+                type: 'select',
+                label: 'Agregación',
+                options: [
+                    { value: 'avg',           label: 'Promedio' },
+                    { value: 'sum',           label: 'Suma' },
+                    { value: 'count',         label: 'Conteo' },
+                    { value: 'count_true',    label: 'Conteo de verdaderos (boolean)' },
+                    { value: 'mean_percent',  label: 'Porcentaje (media de booleanos)' },
+                    { value: 'delta_mean_percent', label: 'Δ % entre primer y último período' },
+                ],
+                default: 'avg',
+            },
+            {
+                name: 'colorscale',
+                type: 'select',
+                label: 'Escala de color',
+                options: [
+                    { value: 'YlOrRd',   label: 'Amarillo→Rojo' },
+                    { value: 'Viridis',  label: 'Viridis' },
+                    { value: 'Blues',    label: 'Azules' },
+                    { value: 'RdYlGn',   label: 'Rojo→Verde' },
+                ],
+                default: 'YlOrRd',
+            },
+            { name: 'reverseColorscale', type: 'boolean', label: 'Invertir colorscale', default: false },
+            { name: 'showValues', type: 'boolean', label: 'Mostrar valores en celdas', default: true },
+        ],
     },
     {
         id: 'GaugeIndicator',
@@ -119,6 +196,10 @@ export const CHART_COMPONENTS = [
             { key: 'valueField',  label: 'Valor en cada eje',          optionType: 'value'     },
             { key: 'groupField',  label: 'Agrupación (series)',        optionType: 'group'     },
         ],
+        configurableProps: [
+            TITLE_PROP,
+            { name: 'showLegend', type: 'boolean', label: 'Mostrar leyenda', default: true },
+        ],
     },
 
     // ── Gráficos temporales ──
@@ -127,10 +208,15 @@ export const CHART_COMPONENTS = [
         label: 'Tendencia Temporal',
         type: 'chart',
         group: 'temporal',
+        requiresSingleMetricContext: true,
         axisConfig: [
             { key: 'groupField',  label: 'Series (agrupación)',  optionType: 'group'  },
             { key: 'periodField', label: 'Eje X — Período',      optionType: 'period' },
             { key: 'valueField',  label: 'Eje Y — Valor',        optionType: 'value'  },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            ...VISUAL_PROPS_COMMON,
         ],
     },
     {
@@ -144,6 +230,10 @@ export const CHART_COMPONENTS = [
             { key: 'entityField', label: 'Campo de entidad (ej. _rut)',   optionType: 'any'    },
             { key: 'levelField',  label: 'Campo de nivel (categórico)',   optionType: 'category' },
         ],
+        configurableProps: [
+            TITLE_PROP,
+            ...VISUAL_PROPS_COMMON,
+        ],
     },
     {
         id: 'TrendKPI',
@@ -153,6 +243,23 @@ export const CHART_COMPONENTS = [
         axisConfig: [
             { key: 'valueField',   label: 'Campo de valor',              optionType: 'any'   },
             { key: 'aggregation',  label: 'Agregación',                  optionType: 'any'   },
+        ],
+        configurableProps: [
+            { name: 'label', type: 'text', label: 'Etiqueta de la tarjeta', help: 'Ej. "% Crítico+Alto"' },
+            DATA_SOURCE_PROP,
+            {
+                name: 'aggregation',
+                type: 'select',
+                label: 'Agregación',
+                options: [
+                    { value: 'unique_count',  label: 'Conteo único del campo (ej. _rut)' },
+                    { value: 'mean_percent',  label: 'Porcentaje (media de booleanos)' },
+                    { value: 'avg',           label: 'Promedio' },
+                    { value: 'top_group',     label: 'Mostrar el grupo más crítico' },
+                ],
+                default: 'mean_percent',
+            },
+            { name: 'invertColors', type: 'boolean', label: 'Invertir colores (menor es mejor)', default: false, help: 'Útil cuando menor % es positivo' },
         ],
     },
     {
@@ -164,6 +271,10 @@ export const CHART_COMPONENTS = [
             { key: 'timeField',   label: 'Campo temporal',              optionType: 'period'   },
             { key: 'entityField', label: 'Campo de entidad (ej. _rut)', optionType: 'any'      },
             { key: 'levelField',  label: 'Campo de nivel',              optionType: 'category' },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            DATA_SOURCE_PROP,
         ],
     },
 ];
@@ -183,6 +294,26 @@ export const TABLE_COMPONENTS = [
         type: 'table',
         axisConfig: [
             { key: 'pivotConfig', label: 'Configurar filas, columnas y valores', optionType: 'pivot' },
+        ],
+        configurableProps: [
+            TITLE_PROP,
+            DATA_SOURCE_PROP,
+            {
+                name: 'semaphoreField',
+                type: 'text',
+                label: 'Campo para semáforo',
+                help: 'Si el valor coincide con un achievement_level, colorea la celda con su color (ej. "_logro", "_worst_level_label")',
+            },
+            {
+                name: 'semaphoreMode',
+                type: 'select',
+                label: 'Modo de semáforo',
+                options: [
+                    { value: 'cell', label: 'Por celda' },
+                    { value: 'row',  label: 'Por fila (peor nivel)' },
+                ],
+                default: 'cell',
+            },
         ],
     },
     { id: 'SummaryTable',           label: 'Resumen por Grupo',  type: 'table', axisConfig: [] },
@@ -207,6 +338,11 @@ export const TABLE_COMPONENTS = [
         label: 'Lista de Alumnos en Riesgo',
         type: 'table',
         axisConfig: [],
+        configurableProps: [
+            TITLE_PROP,
+            DATA_SOURCE_PROP,
+            { name: 'topN', type: 'number', label: 'Top N alumnos', default: 10, min: 1, max: 100 },
+        ],
     },
 ];
 

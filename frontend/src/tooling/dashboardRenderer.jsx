@@ -10,7 +10,7 @@
  */
 
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Users, Target, Award, BarChart3, AlertTriangle, LayoutGrid } from 'lucide-react';
+import { Users, Target, Award, BarChart3, AlertTriangle, LayoutGrid, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { applyDerivedColumns } from './formulaEvaluator';
 import {
@@ -37,6 +37,8 @@ import {
     StudentRiskList,
     TransitionMatrix,
 } from './plotly-charts';
+import { microcopyFor } from './plotly-charts/microcopy';
+import { EmptyState, emptyReason } from './plotly-charts/emptyState';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
 // No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
@@ -191,6 +193,26 @@ export function applyItemFilter(records, filter) {
         }
         return true;
     });
+}
+
+// ── Single-metric context check ──────────────────────────────────────────────
+// Componentes que mezclan escalas si reciben registros de múltiples subpruebas
+// (ej. BarByGroup, BoxPlotByGroup, TrendLine). Se considera "contexto único" si
+// el item declara un filtro sobre _habilidad o hay un `subprueba_selector`
+// activo en el mismo tab.
+const SINGLE_METRIC_CHARTS = new Set(['BarByGroup', 'BoxPlotByGroup', 'TrendLine']);
+
+export function needsSingleMetricWarning(componentId, item, tabContext = {}) {
+    if (!SINGLE_METRIC_CHARTS.has(componentId)) return false;
+    const { hasSubpruebaSelector = false, subpruebaActiva = null } = tabContext;
+    const filterHasHabilidad = item?.filter && (
+        Object.prototype.hasOwnProperty.call(item.filter, '_habilidad') ||
+        Object.prototype.hasOwnProperty.call(item.filter, '_habilidad_2')
+    );
+    if (filterHasHabilidad) return false;
+    if (hasSubpruebaSelector && subpruebaActiva) return false;
+    if (hasSubpruebaSelector) return false; // hay selector → el usuario puede filtrar
+    return true;
 }
 
 // ── Mapa campo interno → rol (para derivar formatStr/label desde roleFormats/roleLabels) ──
@@ -381,7 +403,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             return {
                 records: filteredEstudiantes,
                 categoryField: item.categoryField ?? '_logro',
-                categoryLevels: computed.achievement_levels || [],
+                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
@@ -398,7 +420,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 groups: grps,
                 groupField: gf,
                 categoryField: item.categoryField ?? item.levelField ?? '_logro',
-                categoryLevels: computed.achievement_levels || [],
+                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
@@ -410,7 +432,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
                 categoryField: item.categoryField ?? '_logro',
-                categoryLevels: computed.achievement_levels || [],
+                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
                 achievement_levels: computed.achievement_levels || [],
                 periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
@@ -507,12 +529,18 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'HeatmapMatrix': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
             const hmRecs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            const hmAgg = item.agg ?? item.aggregation ?? 'avg';
+            const hmFmt = hmAgg === 'count_true'
+                ? (v) => v == null ? '—' : String(Math.round(v))
+                : hmAgg === 'mean_percent'
+                    ? (v) => v == null ? '—' : `${Math.round(v * 100)}%`
+                    : fmtFn;
             return {
                 records: hmRecs,
                 xField: item.xField,
                 yField: item.yField,
                 valueField: item.valueField ?? activeValueField,
-                aggregation: item.agg ?? item.aggregation ?? 'avg',
+                aggregation: hmAgg,
                 achievement_levels: computed.achievement_levels || [],
                 colorscale: item.colorscale || 'YlOrRd',
                 reverseColorscale: !!item.reverseColorscale,
@@ -521,7 +549,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 xTickMap: item.xTickMap || '',
                 yTickMap: item.yTickMap || '',
                 formatStr: resolvedFormatStr,
-                formatValue: fmtFn,
+                formatValue: hmFmt,
                 ...vp,
             };
         }
@@ -546,6 +574,9 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
                 records: pivotRecs,
                 pivotConfig: item.pivotConfig,
                 formatStr: resolvedFormatStr,
+                semaphoreField: item.semaphoreField,
+                semaphoreMode: item.semaphoreMode || 'cell',
+                achievement_levels: computed.achievement_levels || [],
             };
         }
         case 'FilterableTable':
@@ -686,6 +717,43 @@ const AUTO_TITLES = {
     TransitionMatrix: 'Matriz de Transición',
 };
 
+// ── CSV export helper (S2.8) ─────────────────────────────────────────────────
+
+function recordsToCsv(records) {
+    if (!Array.isArray(records) || records.length === 0) return '';
+    // Unión de claves (excluye dimensiones crudas por defecto)
+    const keys = [];
+    const seen = new Set();
+    for (const r of records) {
+        for (const k of Object.keys(r)) {
+            if (k === '_raw_dims') continue;
+            if (!seen.has(k)) { seen.add(k); keys.push(k); }
+        }
+    }
+    const esc = (v) => {
+        if (v == null) return '';
+        const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const lines = [keys.join(',')];
+    for (const r of records) lines.push(keys.map(k => esc(r[k])).join(','));
+    return lines.join('\n');
+}
+
+function downloadCsv(records, filename) {
+    const csv = recordsToCsv(records);
+    if (!csv) return;
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+}
+
 // ── Error de configuración ────────────────────────────────────────────────────
 
 function MissingConfigError({ componentId, missingFields }) {
@@ -757,12 +825,23 @@ function ValueFieldToggle({ fields, activeIdx, onChange, computed }) {
     );
 }
 
-export function ItemRenderer({ item, ctx }) {
+export function ItemRenderer({ item, ctx, tabContext }) {
     const { computed, datosCurso, cursoActivo, setCursoActivo, subpruebaActiva, setSubpruebaActiva } = ctx;
     const { activeRoles } = computed;
     const [activeValueIdx, setActiveValueIdx] = useState(0);
+    const warnedRef = useRef(false);
 
     if (!itemIsVisible(item, activeRoles)) return null;
+
+    // Dev-only: advertir cuando un chart sensible a escala mezcla subpruebas
+    const componentIdForWarn = item.component || item.type;
+    if (import.meta.env.DEV && !warnedRef.current && needsSingleMetricWarning(componentIdForWarn, item, { ...(tabContext || {}), subpruebaActiva })) {
+        warnedRef.current = true;
+        console.warn(
+            '[dashboardRenderer] "' + componentIdForWarn + '" mezcla escalas de múltiples subpruebas. ' +
+            'Agrega filter: { _habilidad: "<subprueba>" } o un subprueba_selector en el tab.'
+        );
+    }
 
     if (item.type === 'kpis') {
         return (
@@ -855,32 +934,99 @@ export function ItemRenderer({ item, ctx }) {
     const hasLegacyToggle = props.toggle;
     const hasValueToggle = Array.isArray(item.valueField) && item.valueField.length > 1;
 
+    // S2.8 — habilitar export CSV si el componente recibe `records`
+    const exportableRecords = Array.isArray(props.records) && props.records.length > 0 ? props.records : null;
+    const handleExportCsv = () => {
+        const base = (title || componentId).replace(/[^a-z0-9-]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+        downloadCsv(exportableRecords, `${base || 'export'}_${stamp}.csv`);
+    };
+
     return (
         <div>
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 gap-2">
                 {title && <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400">{title}</h3>}
-                {hasLegacyToggle && props.toggle}
-                {hasValueToggle && (
-                    <ValueFieldToggle
-                        fields={item.valueField}
-                        activeIdx={activeValueIdx}
-                        onChange={setActiveValueIdx}
-                        computed={computed}
-                    />
-                )}
+                <div className="flex items-center gap-2 ml-auto">
+                    {hasLegacyToggle && props.toggle}
+                    {hasValueToggle && (
+                        <ValueFieldToggle
+                            fields={item.valueField}
+                            activeIdx={activeValueIdx}
+                            onChange={setActiveValueIdx}
+                            computed={computed}
+                        />
+                    )}
+                    {exportableRecords && (
+                        <button
+                            onClick={handleExportCsv}
+                            title="Descargar CSV"
+                            className="p-1.5 rounded-md text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-colors"
+                        >
+                            <Download size={14} />
+                        </button>
+                    )}
+                </div>
             </div>
             <div className={isTable ? 'bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm' : ''}>
-                <Comp {...props} />
+                {(() => {
+                    // Empty-state contextual: sólo para componentes Plotly que reciben `records`.
+                    // Los legacy/kpi/selector no pasan por aquí porque no tienen `records` en props.
+                    if (!Array.isArray(props.records)) return <Comp {...props} />;
+                    const hasFilter = !!(item.filter) || !!cursoActivo || !!subpruebaActiva;
+                    const reason = emptyReason({ records: props.records, activeFilters: hasFilter });
+                    if (reason) {
+                        return (
+                            <div className="p-4">
+                                <EmptyState
+                                    reason={reason}
+                                    onClearFilters={hasFilter ? () => {
+                                        setCursoActivo?.(null);
+                                        setSubpruebaActiva?.(null);
+                                    } : undefined}
+                                />
+                            </div>
+                        );
+                    }
+                    return <Comp {...props} />;
+                })()}
             </div>
+            {(() => {
+                if (item.hideMicrocopy) return null;
+                const fn = microcopyFor(componentId);
+                if (!fn) return null;
+                try {
+                    const txt = fn(props.records || [], {
+                        groupField: props.groupField,
+                        levelField: props.categoryField || props.levelField,
+                        xField: props.xField,
+                        yField: props.yField,
+                        valueField: props.valueField,
+                        entityField: props.entityField,
+                        timeField: props.timeField,
+                        achievementLevels: computed.achievement_levels || [],
+                    });
+                    if (!txt) return null;
+                    return <p className="mt-3 text-sm italic text-slate-500 dark:text-slate-400">{txt}</p>;
+                } catch { return null; }
+            })()}
         </div>
     );
 }
 
 // ── Row renderer ──────────────────────────────────────────────────────────────
 
-const GRID_COLS = { 1: 'grid-cols-1', 2: 'grid-cols-1 lg:grid-cols-2', 3: 'grid-cols-1 lg:grid-cols-3', 4: 'grid-cols-2 md:grid-cols-4' };
+// Breakpoints más agresivos: colapsa a 1 col <1024px. Para 4 cols,
+// en mobile <=768px queda 1 col (los KPIs arriba quedan legibles),
+// hasta md=2, hasta lg=4.
+const GRID_COLS = {
+    1: 'grid-cols-1',
+    2: 'grid-cols-1 md:grid-cols-1 lg:grid-cols-2',
+    3: 'grid-cols-1 md:grid-cols-2 lg:grid-cols-3',
+    4: 'grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-4',
+    6: 'grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-6',
+};
 
-function RowRenderer({ row, ctx }) {
+function RowRenderer({ row, ctx, tabContext }) {
     const visibleItems = row.items.filter(item => itemIsVisible(item, ctx.computed.activeRoles));
     if (visibleItems.length === 0) return null;
 
@@ -890,7 +1036,7 @@ function RowRenderer({ row, ctx }) {
     return (
         <div className={'grid ' + gridClass + ' gap-8'}>
             {visibleItems.map((item, idx) => (
-                <ItemRenderer key={idx} item={item} ctx={ctx} />
+                <ItemRenderer key={idx} item={item} ctx={ctx} tabContext={tabContext} />
             ))}
         </div>
     );
@@ -920,6 +1066,13 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
     const [activeTab, setActiveTab] = useState(0);
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
+
+    // S2.6: limpiar filtros scoped (curso / subprueba) al cambiar de tab.
+    // Los filtros item-level (filter) son estáticos por item, no se tocan.
+    useEffect(() => {
+        setCursoActivo?.(null);
+        setSubpruebaActiva?.(null);
+    }, [activeTab]);
 
     // Aplicar columnas derivadas del indicador sobre los records
     const enrichedEstudiantes = useMemo(
@@ -970,10 +1123,16 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-b-3xl rounded-tr-3xl border border-t-0 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                {resolvedLayout.tabs[activeTab] && (
+                {resolvedLayout.tabs[activeTab] && (() => {
+                    const tabContext = {
+                        hasSubpruebaSelector: resolvedLayout.tabs[activeTab].rows.some(
+                            r => r.items.some(i => i.type === 'subprueba_selector')
+                        ),
+                    };
+                    return (
                     <div className="space-y-8">
                         {resolvedLayout.tabs[activeTab].rows.map((row, rowIdx) => (
-                            <RowRenderer key={rowIdx} row={row} ctx={ctxWithCursoClick} />
+                            <RowRenderer key={rowIdx} row={row} ctx={ctxWithCursoClick} tabContext={tabContext} />
                         ))}
                         {resolvedLayout.tabs[activeTab].rows.some(r => r.items.some(i => i.type === 'course_selector')) && !cursoActivo && (
                             <div className="text-center py-8 text-slate-400 text-sm">
@@ -981,7 +1140,8 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
                             </div>
                         )}
                     </div>
-                )}
+                    );
+                })()}
             </div>
         </div>
     );

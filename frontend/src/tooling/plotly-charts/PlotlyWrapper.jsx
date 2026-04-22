@@ -48,9 +48,14 @@ export default function PlotlyWrapper({ data = [], layout = {}, height, config =
         dragmode: false,
     };
 
+    // S2.8 — modebar visible al hover, con PNG de alta resolución.
+    // Se puede desactivar pasando displayModeBar: false en `config`.
     const mergedConfig = {
         responsive: true,
-        displayModeBar: false,
+        displayModeBar: 'hover',
+        displaylogo: false,
+        modeBarButtonsToRemove: ['lasso2d', 'select2d', 'autoScale2d'],
+        toImageButtonOptions: { format: 'png', scale: 2, filename: 'chart' },
         scrollZoom: false,
         staticPlot: false,
         ...config,

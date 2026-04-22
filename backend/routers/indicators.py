@@ -23,7 +23,7 @@ class IndicatorBase(BaseModel):
     role_formats: Optional[Dict[str, str]] = None
     filter_dimensions: Optional[List[int]] = None
     temporal_config: Optional[Dict[str, Any]] = None
-    achievement_levels: Optional[List[str]] = None
+    achievement_levels: Optional[List[Any]] = None
     dashboard_layout: Optional[Dict[str, Any]] = None
     derived_columns: Optional[List[Dict[str, Any]]] = None
     pdf_layout: Optional[Dict[str, Any]] = None

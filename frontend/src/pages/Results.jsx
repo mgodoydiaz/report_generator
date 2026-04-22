@@ -24,6 +24,7 @@ export default function Results() {
     const [indicatorLayout, setIndicatorLayout] = useState(null);
     const [indicatorDerivedCols, setIndicatorDerivedCols] = useState([]);
     const [cursoActivo, setCursoActivo] = useState(null);
+    const [subpruebaActiva, setSubpruebaActiva] = useState(null);
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -59,6 +60,7 @@ export default function Results() {
             setIndicatorDerivedCols([]);
             setDashboardData(null);
             setCursoActivo(null);
+            setSubpruebaActiva(null);
             return;
         }
 
@@ -75,6 +77,7 @@ export default function Results() {
                 setFilterDimensionIds(result.filter_dimensions || []);
                 setSelectedFilters({});
                 setCursoActivo(null);
+                setSubpruebaActiva(null);
 
                 // Usar los indicadores frescos del servidor para obtener el layout actualizado
                 // SIN llamar a setIndicators (evita re-disparar este useEffect)
@@ -134,6 +137,7 @@ export default function Results() {
             const processed = processDataForDashboard(result);
             setDashboardData(processed);
             setCursoActivo(null);
+            setSubpruebaActiva(null);
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
                 toast("No se encontraron datos con los filtros seleccionados", { icon: "ℹ️" });
             }
@@ -249,7 +253,11 @@ export default function Results() {
                                     }}
                                 >
                                     <option value="">Todos</option>
-                                    {dim.values.map(v => (
+                                    {dim.values.filter(v => {
+                                        if (v === null || v === undefined) return false;
+                                        const s = String(v).trim().toLowerCase();
+                                        return s && s !== 'nan' && s !== 'nat' && s !== 'none' && s !== 'null';
+                                    }).map(v => (
                                         <option key={v} value={v}>{v}</option>
                                     ))}
                                 </select>
@@ -287,6 +295,8 @@ export default function Results() {
                     datosCurso={datosCurso}
                     cursoActivo={cursoActivo}
                     setCursoActivo={setCursoActivo}
+                    subpruebaActiva={subpruebaActiva}
+                    setSubpruebaActiva={setSubpruebaActiva}
                     derivedColumns={indicatorDerivedCols}
                 />
             )}

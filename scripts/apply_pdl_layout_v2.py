@@ -102,6 +102,25 @@ LAYOUT_V2 = {
             "label": "Por Subprueba",
             "rows": [
                 {"cols": 1, "items": [{"type": "subprueba_selector"}]},
+                {
+                    "cols": 2,
+                    "items": [
+                        {"type": "BarByGroup",   "title": "Logro promedio por curso (subprueba activa)", "groupField": "_curso", "valueField": "_rend"},
+                        {"type": "BoxPlotByGroup","title": "Distribución por curso",                      "groupField": "_curso", "valueField": "_rend"},
+                    ],
+                },
+                {
+                    "cols": 1,
+                    "items": [
+                        {"type": "StackedCountByGroup", "title": "Niveles por curso (subprueba activa)", "groupField": "_curso", "levelField": "_logro"},
+                    ],
+                },
+                {
+                    "cols": 1,
+                    "items": [
+                        {"type": "TrendLine", "title": "Tendencia por curso (subprueba activa)", "groupField": "_curso", "periodField": "_evaluacion_num", "valueField": "_rend"},
+                    ],
+                },
             ],
         },
         {
