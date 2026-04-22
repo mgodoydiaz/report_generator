@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChartColumn, RefreshCcw, X } from 'lucide-react';
+import { ChartColumn, Download, RefreshCcw, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
+import GenerateReportModal from '../components/GenerateReportModal';
 
 export default function Results() {
     const { fetchAuth } = useAuth();
@@ -25,6 +26,9 @@ export default function Results() {
     const [indicatorDerivedCols, setIndicatorDerivedCols] = useState([]);
     const [cursoActivo, setCursoActivo] = useState(null);
     const [subpruebaActiva, setSubpruebaActiva] = useState(null);
+
+    // ── Estado: modal de generación de PDF ──
+    const [showReportModal, setShowReportModal] = useState(false);
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -158,6 +162,21 @@ export default function Results() {
 
     const hasActiveFilters = Object.keys(selectedFilters).length > 0;
 
+    // ── Indicador actualmente seleccionado + disponibilidad de informe PDF ──
+    const currentIndicator = useMemo(() => {
+        if (!selectedIndicator) return null;
+        return indicators.find(i => String(i.id_indicator) === String(selectedIndicator)) || null;
+    }, [indicators, selectedIndicator]);
+
+    const pdfLayout = currentIndicator?.pdf_layout;
+    const pdfEngine = (pdfLayout && typeof pdfLayout === 'object' ? pdfLayout.engine : null) || 'weasyprint';
+    const pdfConfigured = !!(
+        pdfLayout && typeof pdfLayout === 'object' &&
+        // Para WeasyPrint, el layout debe tener sections configuradas.
+        // Para otros engines (ej. pdl_idel en Fase B), basta con declarar el engine.
+        (pdfEngine !== 'weasyprint' || (Array.isArray(pdfLayout.sections) && pdfLayout.sections.length > 0))
+    );
+
     // ── Datos computados del dashboard ──
     const dashboardComputed = useMemo(() => computeDashboardKPIs(dashboardData), [dashboardData]);
 
@@ -278,6 +297,25 @@ export default function Results() {
                         </div>
                     )}
 
+                    {/* Botón generar informe PDF */}
+                    {selectedIndicator && (
+                        <div className="flex items-end">
+                            <button
+                                onClick={() => setShowReportModal(true)}
+                                disabled={!pdfConfigured || loadingDashboard}
+                                title={
+                                    !pdfConfigured
+                                        ? 'Configura el informe PDF en el Editor de Layout → pestaña Informe PDF'
+                                        : 'Abrir el modal de generación de informe'
+                                }
+                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
+                            >
+                                <Download size={14} />
+                                Generar Reporte
+                            </button>
+                        </div>
+                    )}
+
                     {/* Spinner de actualización reactiva */}
                     {loadingDashboard && selectedIndicator && (
                         <div className="flex items-end pb-2.5">
@@ -321,6 +359,17 @@ export default function Results() {
                     <p className="text-slate-500 font-semibold">Cargando dashboard...</p>
                 </div>
             )}
+
+            {/* Modal de generación de informe PDF */}
+            <GenerateReportModal
+                open={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                indicator={currentIndicator}
+                indicatorDims={indicatorDims}
+                initialFilters={selectedFilters}
+                sortedDimKeys={sortedDimKeys}
+                onSaved={fetchInitialData}
+            />
         </div>
     );
 }

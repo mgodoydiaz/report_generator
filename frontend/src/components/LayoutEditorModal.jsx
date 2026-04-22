@@ -676,8 +676,9 @@ function PdfSectionCard({ sec, idx, total, onChange, onRemove, onMove, dashboard
 }
 
 // ── Branding Editor ───────────────────────────────────────────────────────────
+// Exportado para ser reusado desde GenerateReportModal.
 
-function BrandingEditor({ branding = {}, onChange, orgId, fetchAuth }) {
+export function BrandingEditor({ branding = {}, onChange, orgId, fetchAuth }) {
     const [assets, setAssets] = useState([]);
     const [uploading, setUploading] = useState(false);
     const uploadRef = useRef(null);
