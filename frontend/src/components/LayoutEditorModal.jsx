@@ -80,10 +80,11 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
     const [editModalOpen, setEditModalOpen] = useState(false);
 
     const typeColor = {
-        kpis:            'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400',
-        course_selector: 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400',
-        table:           'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400',
-        chart:           'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-400',
+        kpis:               'bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400',
+        course_selector:    'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400',
+        subprueba_selector: 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400',
+        table:              'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400',
+        chart:              'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-400',
     }[meta?.type || item.type] || 'bg-slate-50 border-slate-200 text-slate-600';
 
     const configFields = meta?.axisConfig?.map(a => item[a.key]).filter(Boolean) || [];
@@ -99,7 +100,7 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
                 draggable
                 onDragStart={onDragStart}
                 onDragOver={onDragOver}
-                onDrop={onDrop}
+                onDrop={(e) => { e.stopPropagation(); onDrop?.(e); }}
                 onDragEnd={onDragEnd}
                 onContextMenu={handleContextMenu}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-semibold transition-all ${typeColor} ${isDragOver ? 'ring-2 ring-indigo-400 ring-offset-1 scale-105' : ''}`}
@@ -131,7 +132,7 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
                 onClose={() => setEditModalOpen(false)}
                 onConfirm={(compMeta, fields) => {
                     let updated;
-                    if (compMeta.type === 'kpis' || compMeta.type === 'course_selector') {
+                    if (compMeta.type === 'kpis' || compMeta.type === 'course_selector' || compMeta.type === 'subprueba_selector') {
                         updated = { type: compMeta.type };
                     } else {
                         updated = { type: compMeta.type, component: compMeta.id, ...fields };
@@ -148,10 +149,10 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
 
 // ── Editor de fila ───────────────────────────────────────────────────────────
 
-function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, indicator }) {
+function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, indicator, onItemDragStart, onItemDragEnd, onItemDrop }) {
     const [showAddModal, setShowAddModal] = useState(false);
-    const [dragOverIdx, setDragOverIdx] = useState(null);
-    const dragSrcIdx = useRef(null);
+    const [dragOverIdx, setDragOverIdx] = useState(null);        // hover sobre item → insertar antes
+    const [dragOverRow, setDragOverRow] = useState(false);       // hover sobre el container de la fila → append
 
     const columnRoles = indicator?.column_roles || {};
     const roleLabels  = indicator?.role_labels  || {};
@@ -162,7 +163,7 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
 
     const commitAddItem = (compMeta, axisSelections) => {
         let newItem;
-        if (compMeta.type === 'kpis' || compMeta.type === 'course_selector') {
+        if (compMeta.type === 'kpis' || compMeta.type === 'course_selector' || compMeta.type === 'subprueba_selector') {
             newItem = { type: compMeta.type };
         } else {
             newItem = {
@@ -187,33 +188,66 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
         onUpdate({ ...row, cols: parseInt(cols) });
     };
 
-    const handleDragStart = (idx) => {
-        dragSrcIdx.current = idx;
+    // Delegar el drag state al TabEditor (permite cross-row drops)
+    const handleDragStart = (idx, e) => {
+        // Firefox requiere setData para iniciar el drag
+        try { e?.dataTransfer?.setData('text/plain', `${rowIndex}:${idx}`); } catch { /* ignore */ }
+        if (e?.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+        onItemDragStart?.(rowIndex, idx);
     };
 
     const handleDragOver = (e, idx) => {
         e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
         setDragOverIdx(idx);
+        setDragOverRow(false);
     };
 
-    const handleDrop = (idx) => {
-        const src = dragSrcIdx.current;
-        if (src === null || src === idx) return;
-        const items = [...row.items];
-        const [moved] = items.splice(src, 1);
-        items.splice(idx, 0, moved);
-        onUpdate({ ...row, items });
-        dragSrcIdx.current = null;
+    const handleDrop = (idx, e) => {
+        e?.preventDefault?.();
+        e?.stopPropagation?.();
+        onItemDrop?.(rowIndex, idx);
         setDragOverIdx(null);
+        setDragOverRow(false);
     };
 
     const handleDragEnd = () => {
-        dragSrcIdx.current = null;
+        onItemDragEnd?.();
         setDragOverIdx(null);
+        setDragOverRow(false);
+    };
+
+    // Drop sobre la fila (no sobre un item específico) → append al final
+    const handleRowDragOver = (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverRow(true);
+    };
+
+    const handleRowDragLeave = (e) => {
+        // Sólo limpiar si el leave es del contenedor en sí, no de un hijo
+        if (e.currentTarget === e.target) setDragOverRow(false);
+    };
+
+    const handleRowDrop = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onItemDrop?.(rowIndex, null); // null = append
+        setDragOverIdx(null);
+        setDragOverRow(false);
     };
 
     return (
-        <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/30 space-y-2">
+        <div
+            className={`border rounded-xl p-3 bg-slate-50/50 dark:bg-slate-800/30 space-y-2 transition-all ${
+                dragOverRow
+                    ? 'border-indigo-400 dark:border-indigo-500 ring-2 ring-indigo-200 dark:ring-indigo-900/40'
+                    : 'border-slate-200 dark:border-slate-700'
+            }`}
+            onDragOver={handleRowDragOver}
+            onDragLeave={handleRowDragLeave}
+            onDrop={handleRowDrop}
+        >
             {/* Row header */}
             <div className="flex items-center gap-2">
                 <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 w-14">Fila {rowIndex + 1}</span>
@@ -256,9 +290,9 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                         item={item}
                         onRemove={() => handleRemoveItem(idx)}
                         onUpdate={(updated) => handleUpdateItem(idx, updated)}
-                        onDragStart={() => handleDragStart(idx)}
+                        onDragStart={(e) => handleDragStart(idx, e)}
                         onDragOver={(e) => handleDragOver(e, idx)}
-                        onDrop={() => handleDrop(idx)}
+                        onDrop={(e) => handleDrop(idx, e)}
                         onDragEnd={handleDragEnd}
                         isDragOver={dragOverIdx === idx}
                         columnRoles={columnRoles}
@@ -290,6 +324,61 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
 // ── Editor de tab ─────────────────────────────────────────────────────────────
 
 function TabEditor({ tab, tabIndex, onUpdate, onDelete, isOnly, indicator }) {
+    // Drag & drop de items entre filas. El source guarda (rowIdx, itemIdx).
+    // El drop resuelve tanto reorder interno como movimiento cross-row.
+    const dragSrcRef = useRef(null);
+
+    const handleItemDragStart = (rowIdx, itemIdx) => {
+        dragSrcRef.current = { rowIdx, itemIdx };
+    };
+
+    const handleItemDragEnd = () => {
+        dragSrcRef.current = null;
+    };
+
+    // insertBefore = null → append al final de la fila target
+    const handleItemDrop = (targetRowIdx, insertBefore) => {
+        const src = dragSrcRef.current;
+        dragSrcRef.current = null;
+        if (!src) return;
+
+        const srcRow = tab.rows[src.rowIdx];
+        if (!srcRow || src.itemIdx >= srcRow.items.length) return;
+
+        // Clonar filas involucradas
+        const rows = tab.rows.map((r, i) => (i === src.rowIdx || i === targetRowIdx) ? { ...r, items: [...r.items] } : r);
+        const [moved] = rows[src.rowIdx].items.splice(src.itemIdx, 1);
+
+        // Ajustar índice cuando el movimiento es dentro de la misma fila y
+        // el target estaba después del source (el splice ya corrió los índices).
+        let insertIdx = insertBefore == null ? rows[targetRowIdx].items.length : insertBefore;
+        if (src.rowIdx === targetRowIdx && insertBefore != null && insertBefore > src.itemIdx) {
+            insertIdx = insertBefore - 1;
+        }
+
+        rows[targetRowIdx].items.splice(insertIdx, 0, moved);
+        onUpdate({ ...tab, rows });
+    };
+
+    const singleMetricWarnings = React.useMemo(() => {
+        const warns = [];
+        const hasSubpruebaSelector = (tab.rows || []).some(r => r.items.some(i => i.type === 'subprueba_selector'));
+        for (const row of (tab.rows || [])) {
+            for (const item of (row.items || [])) {
+                const compId = item.component || item.type;
+                const def = ALL_COMPONENTS.find(c => c.id === compId);
+                if (!def?.requiresSingleMetricContext) continue;
+                const filterHasHabilidad = item.filter && (
+                    Object.prototype.hasOwnProperty.call(item.filter, '_habilidad') ||
+                    Object.prototype.hasOwnProperty.call(item.filter, '_habilidad_2')
+                );
+                if (filterHasHabilidad || hasSubpruebaSelector) continue;
+                warns.push(compId);
+            }
+        }
+        return warns;
+    }, [tab]);
+
     const handleAddRow = () => {
         onUpdate({ ...tab, rows: [...tab.rows, { cols: 1, items: [] }] });
     };
@@ -332,6 +421,13 @@ function TabEditor({ tab, tabIndex, onUpdate, onDelete, isOnly, indicator }) {
                 </button>
             </div>
 
+            {singleMetricWarnings.length > 0 && (
+                <div className="px-3 py-2 rounded-lg bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-900/40 text-[11px] text-orange-700 dark:text-orange-300">
+                    <span className="font-bold">Atención:</span> este tab contiene {singleMetricWarnings.length} gráfico{singleMetricWarnings.length === 1 ? '' : 's'} que mezclan escalas de distintas subpruebas ({[...new Set(singleMetricWarnings)].join(', ')}).
+                    Agrega un <span className="font-mono">subprueba_selector</span> o un filtro <span className="font-mono">_habilidad</span> en los items.
+                </div>
+            )}
+
             <div className="space-y-2 pl-2 border-l-2 border-slate-100 dark:border-slate-800">
                 {tab.rows.map((row, rowIdx) => (
                     <RowEditor
@@ -345,6 +441,9 @@ function TabEditor({ tab, tabIndex, onUpdate, onDelete, isOnly, indicator }) {
                         onMoveDown={() => handleMoveRow(rowIdx, 1)}
                         isFirst={rowIdx === 0}
                         isLast={rowIdx === tab.rows.length - 1}
+                        onItemDragStart={handleItemDragStart}
+                        onItemDragEnd={handleItemDragEnd}
+                        onItemDrop={handleItemDrop}
                     />
                 ))}
                 <button
@@ -465,6 +564,8 @@ function DerivedColumnsEditor({ derivedColumns, onChange }) {
                 <p>Operadores: <code className="font-mono">+ − × ÷ ( )</code></p>
                 <p>Campos: escribe el nombre sin <code className="font-mono">_</code> (ej. <code className="font-mono">correctas</code>)</p>
                 <p>Funciones: <code className="font-mono">round(x)</code> · <code className="font-mono">abs(x)</code> · <code className="font-mono">min(x,y)</code> · <code className="font-mono">max(x,y)</code> · <code className="font-mono">sqrt(x)</code></p>
+                <p>Igualdad: <code className="font-mono">eq(campo, "texto")</code> → 1 si coincide, 0 si no</p>
+                <p>Ej. % Crítico+Alto: <code className="font-mono">eq(nivel_de_riesgo, "Crítico") + eq(nivel_de_riesgo, "Alto Riesgo")</code></p>
                 <p>División por cero → muestra <code className="font-mono">—</code></p>
             </div>
         </div>

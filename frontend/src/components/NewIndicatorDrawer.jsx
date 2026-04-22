@@ -3,6 +3,44 @@ import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen,
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { getLevelPalette } from '../tooling/plotly-charts/constants';
+
+// Color por defecto para un nivel dado (hex).
+// 1) si el nombre está en la paleta central (PDL/SIMCE), usa ese color
+// 2) si no, genera un hex degradado rojo→verde según posición
+function toLevelObj(val, i, total) {
+    if (val && typeof val === 'object') {
+        const name = val.name || '';
+        const color = val.color && /^#[0-9a-f]{6}$/i.test(val.color)
+            ? val.color
+            : defaultLevelColor(name, i, total);
+        return { name, color, order: val.order ?? (i + 1) };
+    }
+    const name = val || '';
+    return { name, color: defaultLevelColor(name, i, total), order: i + 1 };
+}
+
+function defaultLevelColor(name, i, total) {
+    // La paleta central cubre nombres conocidos (Insuficiente, Elemental, Adecuado,
+    // Crítico, Alto Riesgo, Cierto Riesgo, Bajo Riesgo, etc.).
+    const palette = getLevelPalette([]);
+    if (name && palette.colorByName[name]) return palette.colorByName[name];
+
+    // Gradiente HSL → hex (rojo=0° … verde=120°), para niveles custom.
+    const hue = Math.round((i / Math.max(1, total - 1)) * 120);
+    const s = 0.65, l = 0.5;
+    const c = (1 - Math.abs(2 * l - 1)) * s;
+    const h6 = hue / 60;
+    const x = c * (1 - Math.abs((h6 % 2) - 1));
+    let r = 0, g = 0, b = 0;
+    if (h6 < 1)      { r = c; g = x; b = 0; }
+    else if (h6 < 2) { r = x; g = c; b = 0; }
+    else if (h6 < 3) { r = 0; g = c; b = x; }
+    else             { r = 0; g = x; b = c; }
+    const m = l - c / 2;
+    const hex = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+    return `#${hex(r)}${hex(g)}${hex(b)}`;
+}
 
 const COLUMN_ROLES = [
     { key: "logro_1", label: "Logro 1 (numérico)", description: "Porcentaje de logro / rendimiento (0-1)", multi: true },
@@ -41,6 +79,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
 
     useEffect(() => {
         if (initialData) {
+            const rawLevels = Array.isArray(initialData.achievement_levels) ? initialData.achievement_levels : [];
+            const normLevels = rawLevels.map((l, i) => toLevelObj(l, i, rawLevels.length));
             setFormData({
                 name: initialData.name || '',
                 description: initialData.description || '',
@@ -51,7 +91,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 role_formats: initialData.role_formats || {},
                 filter_dimensions: initialData.filter_dimensions || [],
                 temporal_config: initialData.temporal_config || { levels: [] },
-                achievement_levels: Array.isArray(initialData.achievement_levels) ? initialData.achievement_levels : []
+                achievement_levels: normLevels,
             });
         } else {
             setFormData({
@@ -329,34 +369,46 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         });
     };
 
-    // Achievement levels handlers
-    const handleAddAchievementLevel = () => {
-        setFormData(prev => ({ ...prev, achievement_levels: [...(prev.achievement_levels || []), ""] }));
-    };
+    // Achievement levels handlers — ver toLevelObj + defaultLevelColor arriba.
 
-    const handleUpdateAchievementLevel = (index, newVal) => {
+    const handleAddAchievementLevel = () => {
         setFormData(prev => {
             const levels = [...(prev.achievement_levels || [])];
-            levels[index] = newVal;
+            const nextOrder = levels.length + 1;
+            levels.push({ name: '', color: defaultLevelColor('', levels.length, nextOrder), order: nextOrder });
+            return { ...prev, achievement_levels: levels };
+        });
+    };
+
+    const handleUpdateAchievementLevel = (index, patch) => {
+        setFormData(prev => {
+            const total = (prev.achievement_levels || []).length;
+            const levels = (prev.achievement_levels || []).map((l, i) => toLevelObj(l, i, total));
+            levels[index] = { ...levels[index], ...patch };
+            // Si cambió el nombre y el color era el default del nombre anterior,
+            // refresca el color para reflejar el mapeo de paleta central.
+            if (patch.name !== undefined && patch.color === undefined) {
+                levels[index].color = defaultLevelColor(levels[index].name, index, total);
+            }
             return { ...prev, achievement_levels: levels };
         });
     };
 
     const handleRemoveAchievementLevel = (index) => {
         setFormData(prev => {
-            const levels = [...(prev.achievement_levels || [])];
-            levels.splice(index, 1);
-            return { ...prev, achievement_levels: levels };
+            const levels = (prev.achievement_levels || []).filter((_, i) => i !== index);
+            return { ...prev, achievement_levels: levels.map((l, i) => ({ ...toLevelObj(l, i, levels.length), order: i + 1 })) };
         });
     };
 
     const handleMoveAchievementLevel = (index, direction) => {
         setFormData(prev => {
-            const levels = [...(prev.achievement_levels || [])];
+            const total = (prev.achievement_levels || []).length;
+            const levels = (prev.achievement_levels || []).map((l, i) => toLevelObj(l, i, total));
             const newIdx = index + direction;
             if (newIdx < 0 || newIdx >= levels.length) return prev;
             [levels[index], levels[newIdx]] = [levels[newIdx], levels[index]];
-            return { ...prev, achievement_levels: levels };
+            return { ...prev, achievement_levels: levels.map((l, i) => ({ ...l, order: i + 1 })) };
         });
     };
 
@@ -374,9 +426,15 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
             const data = await res.json();
             
             if (data.values && data.values.length > 0) {
-                const currentOrder = new Set(formData.achievement_levels || []);
-                data.values.forEach(v => currentOrder.add(v));
-                setFormData(prev => ({ ...prev, achievement_levels: Array.from(currentOrder) }));
+                // Preservar niveles ya configurados (con su color) y agregar nombres nuevos al final
+                const existing = (formData.achievement_levels || []).map((l, i, arr) => toLevelObj(l, i, arr.length));
+                const existingNames = new Set(existing.map(l => l.name));
+                const toAdd = data.values.filter(v => !existingNames.has(v));
+                const total = existing.length + toAdd.length;
+                for (const v of toAdd) {
+                    existing.push({ name: v, color: defaultLevelColor(v, existing.length, total), order: existing.length + 1 });
+                }
+                setFormData(prev => ({ ...prev, achievement_levels: existing }));
                 toast.success(`Se recuperaron ${data.values.length} valores distintos`);
             } else {
                 toast.error("No hay datos cargados para esta columna");
@@ -850,23 +908,27 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                     Define y ordena los niveles de logro (de menor a mayor o viceversa) para la paleta de colores.
                                 </p>
                                 <div className="bg-slate-50 dark:bg-slate-900/50 rounded-2xl p-4 border border-slate-200 dark:border-slate-800 space-y-2">
-                                    {(formData.achievement_levels || []).map((level, i) => {
+                                    {(formData.achievement_levels || []).map((raw, i) => {
                                         const count = (formData.achievement_levels || []).length;
-                                        // Generar color indicativo (de rojo a verde si asume menor-mayor) o azulado
-                                        const hue = Math.round((i / Math.max(1, count - 1)) * 120); // 0 (rojo) a 120 (verde)
+                                        const level = toLevelObj(raw, i, count);
+                                        const colorForPicker = level.color;  // siempre hex tras toLevelObj
                                         return (
                                             <div key={i} className="flex items-center gap-2 bg-white dark:bg-slate-800 p-2 rounded-xl border border-slate-200 dark:border-slate-700">
-                                                <div 
-                                                    className="w-4 h-4 rounded-full shadow-inner border border-black/10 shrink-0" 
-                                                    style={{ backgroundColor: `hsl(${hue}, 70%, 50%)` }}
+                                                <input
+                                                    type="color"
+                                                    value={colorForPicker}
+                                                    onChange={(e) => handleUpdateAchievementLevel(i, { color: e.target.value })}
+                                                    className="w-8 h-8 rounded cursor-pointer border border-slate-200 dark:border-slate-700"
+                                                    title="Color del nivel"
                                                 />
                                                 <input
                                                     type="text"
-                                                    value={level}
-                                                    onChange={(e) => handleUpdateAchievementLevel(i, e.target.value)}
+                                                    value={level.name}
+                                                    onChange={(e) => handleUpdateAchievementLevel(i, { name: e.target.value })}
                                                     className="flex-1 bg-transparent border-none focus:ring-0 text-sm font-semibold text-slate-700 dark:text-slate-200"
                                                     placeholder="Ej: Adecuado, Insuficiente..."
                                                 />
+                                                <span className="text-[10px] font-mono text-slate-400 mr-1">#{i + 1}</span>
                                                 <div className="flex gap-1 shrink-0">
                                                     <button type="button" onClick={() => handleMoveAchievementLevel(i, -1)} disabled={i === 0}
                                                         className="p-1.5 text-slate-300 hover:text-indigo-500 rounded disabled:opacity-30 transition-colors">
