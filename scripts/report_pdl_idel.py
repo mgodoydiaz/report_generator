@@ -34,21 +34,32 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import psycopg2
-from dotenv import load_dotenv
 from matplotlib.backends.backend_pdf import PdfPages
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
 
-load_dotenv()
-
 # ── Configuración del dominio ────────────────────────────────────────────────
+# NOTA: las side effects (DATABASE_URL, dotenv, creación de OUTPUT_DIR) se
+# difieren a funciones específicas para que este módulo sea importable desde
+# el backend (ver backend/rgenerator/tooling/report_pdl_idel_tools.py) sin
+# crashear ante ausencia de DATABASE_URL ni tocar el filesystem en import.
 
-DATABASE_URL = os.environ["DATABASE_URL"]
 DEFAULT_METRIC_ID = 8
 
 OUTPUT_DIR = Path("data/output")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _get_database_url() -> str:
+    """Lee DATABASE_URL, cargando .env sólo al invocarse (no en import)."""
+    from dotenv import load_dotenv
+    load_dotenv()
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise RuntimeError(
+            "DATABASE_URL no configurada. Este script CLI requiere la variable "
+            "de entorno para cargar datos de la base."
+        )
+    return url
 
 ACHIEVEMENT_LEVELS = ["Crítico", "Alto Riesgo", "Cierto Riesgo", "Bajo Riesgo"]
 LEVEL_SHORT = {
@@ -140,12 +151,13 @@ def load_data(metric_id: int = DEFAULT_METRIC_ID,
               anio: int | None = None,
               versiones: list[int] | None = None,
               cursos: list[str] | None = None) -> pd.DataFrame:
+    import psycopg2
     sql = """
         SELECT id_data, value::text AS value, dimensions_json::text AS dims
         FROM metric_data
         WHERE id_metric = %s
     """
-    conn = psycopg2.connect(DATABASE_URL)
+    conn = psycopg2.connect(_get_database_url())
     try:
         df = pd.read_sql(sql, conn, params=(metric_id,))
     finally:
@@ -867,6 +879,7 @@ def build_output_path(args: argparse.Namespace) -> Path:
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         return args.out
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     parts = ["informe_pdl_idel"]
     if args.establecimiento:
         parts.append(args.establecimiento.lower().replace(" ", "_"))
@@ -898,21 +911,32 @@ def main(argv: list[str] | None = None) -> None:
 
     out_path = build_output_path(args)
     print(f"Generando PDF: {out_path}")
-    pc = PageCounter()
     with PdfPages(out_path) as pdf:
-        render_panorama(pdf, df, pc)
-        for curso in CURSOS_ORDER:
-            cdf = df[df["curso"] == curso]
-            if cdf.empty:
-                continue
-            render_course_page_a(pdf, cdf, curso, pc)
-            render_course_page_b(pdf, cdf, curso, pc)
-            render_course_page_transitions(pdf, cdf, curso, pc)
-            render_course_page_persistent(pdf, cdf, curso, pc)
-            render_course_roster(pdf, cdf, curso, pc)
-        render_closing(pdf, df, pc)
+        pc = render_all_pages(pdf, df)
 
     print(f"OK — PDF generado en {out_path} ({pc.n} páginas)")
+
+
+def render_all_pages(pdf: "PdfPages", df: pd.DataFrame) -> PageCounter:
+    """Orquestador de renderizado: panorama + páginas por curso + cierre.
+
+    Función pública reutilizable desde el CLI y desde el backend (Fase B).
+    Recibe un PdfPages ya abierto y escribe todas las páginas en él.
+    Retorna el PageCounter final (útil para saber total de páginas).
+    """
+    pc = PageCounter()
+    render_panorama(pdf, df, pc)
+    for curso in CURSOS_ORDER:
+        cdf = df[df["curso"] == curso]
+        if cdf.empty:
+            continue
+        render_course_page_a(pdf, cdf, curso, pc)
+        render_course_page_b(pdf, cdf, curso, pc)
+        render_course_page_transitions(pdf, cdf, curso, pc)
+        render_course_page_persistent(pdf, cdf, curso, pc)
+        render_course_roster(pdf, cdf, curso, pc)
+    render_closing(pdf, df, pc)
+    return pc
 
 
 if __name__ == "__main__":
