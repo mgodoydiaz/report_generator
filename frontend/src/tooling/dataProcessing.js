@@ -318,44 +318,11 @@ export function processDataForDashboard(result) {
         }
     }
 
-    // Filtrar records sin RUT cuando la dimensión está configurada
-    if (rutDimId) {
-        const beforeCount = estudiantes.length;
-        const validEstudiantes = estudiantes.filter(e => e._rut);
-        const discarded = beforeCount - validEstudiantes.length;
-        estudiantes.splice(0, estudiantes.length, ...validEstudiantes);
-
-        const validPreguntas = preguntas.filter(e => e._rut);
-        preguntas.splice(0, preguntas.length, ...validPreguntas);
-
-        if (discarded > 0) {
-            console.log(`[processDataForDashboard] Descartados ${discarded} records sin RUT`);
-        }
-    }
-
-    // S1.2: Deduplicación por (_rut, _habilidad, _evaluacion_num) — solo cuando hay RUT como clave
-    if (rutDimId) {
-        const habField = roleFieldMap.habilidad || '_habilidad';
-        const bestByKey = new Map();
-        for (const e of estudiantes) {
-            const key = `${e._rut}||${e[habField] ?? ''}||${e._evaluacion_num ?? ''}`;
-            const existing = bestByKey.get(key);
-            if (!existing) {
-                bestByKey.set(key, e);
-            } else {
-                // Tie-breaking: conservar el record con mayor temporal_label
-                if ((e._temporal_label ?? '') > (existing._temporal_label ?? '')) {
-                    bestByKey.set(key, e);
-                }
-            }
-        }
-        const deduped = [...bestByKey.values()];
-        const collapsed = estudiantes.length - deduped.length;
-        estudiantes.splice(0, estudiantes.length, ...deduped);
-        if (collapsed > 0) {
-            console.log(`[processDataForDashboard] Colapsados ${collapsed} duplicados`);
-        }
-    }
+    // Nota: dedup por (_rut, _habilidad, _evaluacion_num) y el filtro
+    // de records sin RUT fueron removidos — se asume que el pipeline ETL
+    // entrega registros únicos y con RUT válido. Si vuelven a aparecer
+    // inconsistencias, corregir en el ETL, no acá.
+    // Histórico: ver Sprint 1 (S1.1, S1.2) en sprints/MASTER_PLAN.md.
 
     // Si hay temporal_config, reemplazar _evaluacion_num (y el campo canónico) por el índice ordinal
     // del _temporal_label ordenado según la config.
@@ -461,9 +428,17 @@ export function computeDashboardKPIs(dashboardData) {
     if (!dashboardData) return null;
     const { estudiantes, preguntas, cursos, activeRoles, roleLabels, roleFormats, temporalConfig, roleFieldMap, fieldToRole } = dashboardData;
 
-    // Contar alumnos únicos por nombre (si existe) para evitar duplicados en desgloses
-    const studentNames = estudiantes.map(e => e._nombre).filter(Boolean);
-    const totalAlumnos = studentNames.length > 0 ? new Set(studentNames).size : estudiantes.length;
+    // Contar alumnos únicos: preferimos _rut (clave sin colisiones). Si no hay
+    // dimensión RUT configurada, caemos a _nombre; si tampoco hay nombre, al
+    // número de filas (caso degenerado, probablemente no es un dataset por alumno).
+    const ruts = estudiantes.map(e => e._rut).filter(Boolean);
+    let totalAlumnos;
+    if (ruts.length > 0) {
+        totalAlumnos = new Set(ruts).size;
+    } else {
+        const studentNames = estudiantes.map(e => e._nombre).filter(Boolean);
+        totalAlumnos = studentNames.length > 0 ? new Set(studentNames).size : estudiantes.length;
+    }
 
     const rendField  = roleFieldMap?.logro_1        || '_rend';
     const simceField = roleFieldMap?.logro_2        || '_simce';

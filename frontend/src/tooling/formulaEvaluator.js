@@ -2,7 +2,8 @@
  * formulaEvaluator.js — Evaluador seguro de expresiones aritméticas
  *
  * Soporta: + - * / ( ) números decimales, referencias a campos (_nombre),
- * y funciones whitelisted: round(x), round(x,d), abs(x), min(x,y), max(x,y), sqrt(x)
+ * y funciones whitelisted: round(x), round(x,d), abs(x), min(x,y), max(x,y), sqrt(x),
+ * eq(campo, "literal"|numero) → 1 si coincide, 0 si no.
  *
  * No usa eval(). Parser recursivo descendente.
  * División por cero → null. Campo inexistente → null.
@@ -12,6 +13,7 @@
 
 const TOKEN = {
     NUM:    'NUM',
+    STR:    'STR',
     IDENT:  'IDENT',
     PLUS:   '+',
     MINUS:  '-',
@@ -35,6 +37,15 @@ function tokenize(src) {
             tokens.push({ type: TOKEN.NUM, value: parseFloat(num) });
             continue;
         }
+        if (ch === '"' || ch === "'") {
+            const quote = ch; i++;
+            let str = '';
+            while (i < src.length && src[i] !== quote) str += src[i++];
+            if (i >= src.length) throw new Error('String sin cerrar');
+            i++;
+            tokens.push({ type: TOKEN.STR, value: str });
+            continue;
+        }
         if (/[a-zA-Z_]/.test(ch)) {
             let id = '';
             while (i < src.length && /[a-zA-Z0-9_]/.test(src[i])) id += src[i++];
@@ -56,7 +67,7 @@ function tokenize(src) {
 
 // ── Parser recursivo ──────────────────────────────────────────────────────────
 
-const WHITELIST_FNS = new Set(['round', 'abs', 'min', 'max', 'sqrt']);
+const WHITELIST_FNS = new Set(['round', 'abs', 'min', 'max', 'sqrt', 'eq']);
 
 function parse(tokens, record) {
     let pos = 0;
@@ -122,6 +133,25 @@ function parse(tokens, record) {
             if (peek().type === TOKEN.LPAREN) {
                 if (!WHITELIST_FNS.has(name)) throw new Error(`Función no permitida: ${name}`);
                 eat(TOKEN.LPAREN);
+
+                // eq(campo, "literal"|numero) — comparación igualdad, devuelve 1|0
+                // Parseo especial porque los args no son numéricos en el sentido aritmético.
+                if (name === 'eq') {
+                    if (peek().type !== TOKEN.IDENT) throw new Error('eq: primer argumento debe ser un campo');
+                    const fieldTok = tokens[pos++];
+                    eat(TOKEN.COMMA);
+                    const litTok = tokens[pos++];
+                    if (litTok.type !== TOKEN.STR && litTok.type !== TOKEN.NUM) {
+                        throw new Error('eq: segundo argumento debe ser string o número');
+                    }
+                    eat(TOKEN.RPAREN);
+                    const field = fieldTok.value.startsWith('_') ? fieldTok.value : `_${fieldTok.value}`;
+                    const raw = record[field] ?? record[fieldTok.value];
+                    if (raw === undefined || raw === null) return 0;
+                    const cmp = litTok.type === TOKEN.STR ? String(raw) === litTok.value : Number(raw) === litTok.value;
+                    return cmp ? 1 : 0;
+                }
+
                 const args = [];
                 if (peek().type !== TOKEN.RPAREN) {
                     args.push(expr());

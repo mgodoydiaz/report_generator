@@ -8,8 +8,8 @@ import { LOGRO_COLORS } from './constants';
 
 export default function GraficoNivelesPorCursoYMes({ data, cursos, achievement_levels = [], temporalConfig = null }) {
     const levelsToUse = achievement_levels?.length > 0
-        ? achievement_levels
-        : ['Insuficiente', 'Elemental', 'Adecuado'];
+        ? achievement_levels.map(l => typeof l === 'string' ? l : l.name).filter(Boolean)
+        : [...new Set(data.map(r => r._logro).filter(Boolean))];
 
     // ── Construir datos: una entrada por (curso, evaluacion_num) ─────────────
 

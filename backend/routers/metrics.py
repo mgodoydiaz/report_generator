@@ -601,12 +601,25 @@ async def import_metric_data(
             else:
                 df = pd.read_excel(io.BytesIO(contents))
 
+            def _is_empty_like(v):
+                if v is None:
+                    return True
+                try:
+                    if pd.isna(v):
+                        return True
+                except Exception:
+                    pass
+                if isinstance(v, str):
+                    s = v.strip().lower()
+                    return s in ("", "nan", "nat", "none", "null")
+                return False
+
             for _, row in df.iterrows():
                 dims_json = {}
                 for dim_name, dim_id in dim_name_to_id.items():
                     if dim_name in df.columns:
                         val = row[dim_name]
-                        if pd.notna(val):
+                        if not _is_empty_like(val):
                             dims_json[str(dim_id)] = str(val)
 
                 final_value = None
@@ -617,7 +630,7 @@ async def import_metric_data(
                         fname = f["name"]
                         if fname in df.columns:
                             val = row[fname]
-                            if pd.notna(val):
+                            if not _is_empty_like(val):
                                 if f["type"] == "int":
                                     try: val = int(val)
                                     except Exception: pass
@@ -630,7 +643,7 @@ async def import_metric_data(
                     value_col = metric.name
                     if value_col in df.columns:
                         v = row[value_col]
-                        if pd.notna(v):
+                        if not _is_empty_like(v):
                             if metric.data_type == "int":
                                 final_value = str(int(v))
                             elif metric.data_type == "float":

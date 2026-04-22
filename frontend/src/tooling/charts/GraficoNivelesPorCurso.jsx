@@ -6,9 +6,9 @@ import {
 import { LOGRO_COLORS } from './constants';
 
 export default function GraficoNivelesPorCurso({ data, cursos, achievement_levels=[] }) {
-    const levelsToUse = achievement_levels && achievement_levels.length > 0 
-        ? achievement_levels 
-        : ["Insuficiente", "Elemental", "Adecuado"];
+    const levelsToUse = achievement_levels?.length > 0
+        ? achievement_levels.map(l => typeof l === 'string' ? l : l.name).filter(Boolean)
+        : [...new Set(data.map(r => r._logro).filter(Boolean))];
 
     const resumen = cursos.map((c) => {
         const alumnos = data.filter(r => r._curso === c);

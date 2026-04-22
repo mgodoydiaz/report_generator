@@ -8,9 +8,9 @@ export default function TablaResumenCursos({ data, cursos, onCursoClick, cursoAc
     const fmt1 = (v) => formatValue(v, roleFormats.logro_1);
     const fmt2 = (v) => formatValue(v, roleFormats.logro_2);
 
-    const levelsToUse = achievement_levels && achievement_levels.length > 0 
-        ? achievement_levels 
-        : ["Insuficiente", "Elemental", "Adecuado"];
+    const levelsToUse = achievement_levels?.length > 0
+        ? achievement_levels.map(l => typeof l === 'string' ? l : l.name).filter(Boolean)
+        : [...new Set(data.map(r => r._logro).filter(Boolean))];
 
     const headers = ["Curso", "Alumnos", l1];
     if (hasLogro2) headers.push(l2);

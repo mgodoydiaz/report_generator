@@ -10,7 +10,7 @@
 
 import React from 'react';
 import PlotlyWrapper from './PlotlyWrapper';
-import { CATEGORY_COLORS, LOGRO_COLORS, levelColors, formatRange, getLevelPalette } from './constants';
+import { CATEGORY_COLORS, LOGRO_COLORS, levelColors, formatRange, getLevelPalette, levelLabelWithEmoji } from './constants';
 
 // ── BoxPlotByGroup ────────────────────────────────────────────────────────────
 /**
@@ -251,7 +251,7 @@ export function StackedCountByGroup({
     const displayValues = showValues !== false;
     const traces = levels.map((level, i) => ({
         type: 'bar',
-        name: String(level),
+        name: levelLabelWithEmoji(level),
         x: groupList,
         y: groupList.map(g => records.filter(r => r[groupField] === g && r[categoryField] === level).length),
         marker: { color: getColor(level, i) },
@@ -340,7 +340,7 @@ export function StackedCountByGroupAndPeriod({
     // Build traces per level
     const traces = levels.map((level, i) => ({
         type: 'bar',
-        name: String(level),
+        name: levelLabelWithEmoji(level),
         x: pairs.map((_, idx) => idx),
         y: pairs.map(({ group, period }) =>
             records.filter(r => r[groupField] === group && r[periodField] === period && r[categoryField] === level).length

@@ -7,6 +7,7 @@ import NewValueDrawer from '../components/NewValueDrawer';
 import ExportModal from '../components/ExportModal';
 import ImportModal from '../components/ImportModal';
 import ConfirmModal from '../components/ConfirmModal';
+import { sanitizeDisplayValue } from '../tooling/dataProcessing';
 
 export default function Values() {
     const { fetchAuth } = useAuth();
@@ -517,15 +518,18 @@ export default function Values() {
                                                     let cellContent = '-';
                                                     if (col.isDim) {
                                                         // Extraer valor del JSON de dimensiones
-                                                        cellContent = row.dimensions_json?.[String(col.dimId)] || '-';
+                                                        const raw = row.dimensions_json?.[String(col.dimId)];
+                                                        const cleaned = sanitizeDisplayValue(raw);
+                                                        cellContent = cleaned === '' || cleaned == null ? '-' : cleaned;
                                                     } else if (col.isObjField) {
                                                         // Extraer campo específico del Objeto valor
                                                         try {
                                                             const valObj = typeof row.value === 'string' ? JSON.parse(row.value) : row.value;
-                                                            const rawVal = valObj?.[col.fieldKey] ?? '-';
+                                                            const rawVal = sanitizeDisplayValue(valObj?.[col.fieldKey]);
+                                                            const shown = rawVal === '' || rawVal == null ? '-' : rawVal;
 
                                                             // Formato básico según tipo (opcional)
-                                                            const displayVal = (col.fieldType === 'bool') ? (rawVal ? 'Sí' : 'No') : rawVal;
+                                                            const displayVal = (col.fieldType === 'bool') ? (shown === '-' ? '-' : (shown ? 'Sí' : 'No')) : shown;
 
                                                             cellContent = <span className="font-bold text-slate-700 dark:text-slate-200">{displayVal}</span>;
                                                         } catch {
@@ -533,7 +537,7 @@ export default function Values() {
                                                         }
                                                     } else if (col.isValue) {
                                                         // Valor Simple con Formato
-                                                        let displayVal = row.value;
+                                                        let displayVal = sanitizeDisplayValue(row.value);
 
                                                         try {
                                                             if (selectedMetric.data_type === 'date' && displayVal) {
