@@ -9,13 +9,13 @@ Módulos especializados:
     - init_steps.py   : InitRun, LoadConfigFromSpec  (LoadConfig DEPRECADO)
     - io_steps.py     : DiscoverInputs, RequestUserFiles, ExportConsolidatedExcel, DeleteTempFiles
     - etl_steps.py    : RunExcelETL, EnrichWithUserInput, EnrichWithContext, ModifyColumnValues
-    - report_steps.py : GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport
+    - report_steps.py : GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport, RenderPDFReport
 """
 
 from .init_steps import InitRun, LoadConfigFromSpec  # LoadConfig DEPRECADO
 from .io_steps import DiscoverInputs, RequestUserFiles, ExportConsolidatedExcel, DeleteTempFiles
 from .etl_steps import RunExcelETL, EnrichWithUserInput, EnrichWithContext, EnrichWithLookup, ModifyColumnValues
-from .report_steps import GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport
+from .report_steps import GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport, RenderPDFReport
 
 __all__ = [
     # Init
@@ -38,4 +38,5 @@ __all__ = [
     "GenerateTables",
     "RenderReport",
     "GenerateDocxReport",
+    "RenderPDFReport",
 ]
