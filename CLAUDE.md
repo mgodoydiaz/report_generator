@@ -15,16 +15,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Rama | Rol |
 |---|---|
-| `main` | Producción. Solo se mergea contra `dev` cuando todo está validado en staging |
+| `main` | Producción. Se promociona desde `devtest` una vez validado en staging |
 | `dev` | Rama activa de desarrollo. Trabajar aquí por defecto |
-| `devtest` | Legacy — será eliminada. No usar |
+| `devtest` | **Staging**. Render auto-deploya esta rama en `rgenerator-staging`. Mergear `dev` → `devtest` para disparar un deploy |
 
 ### Entornos
 
 | Entorno | Backend | DB | Frontend |
 |---|---|---|---|
 | **Local (WSL)** | `python backend/api.py` en conda env `rgenerator` | Docker PostgreSQL (`report_generator-db-1`) | `npm run dev` en `frontend/` |
-| **Staging (Render)** | `rgenerator-staging.onrender.com` (Docker, rama `dev`) | `rgenerator-staging-db` PG16 Oregon (Free) | Static Site en Render con `.env.staging` |
+| **Staging (Render)** | `rgenerator-staging.onrender.com` (Docker, rama `devtest`) | `rgenerator-staging-db` PG16 Oregon (Free) | Static Site en Render con `.env.staging` |
 | **Producción** | Pendiente — rama `main`, en Render | Probable **Neon** (São Paulo) por latencia desde Chile | Pendiente |
 
 Detalle vivo del deploy en `memory/project_deploy_status.md`.
