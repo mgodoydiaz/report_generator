@@ -59,6 +59,10 @@ FROM base AS prod
 COPY . .
 RUN pip install --no-cache-dir .
 
+# El entrypoint aplica migraciones Alembic antes de levantar uvicorn.
+# Así cada deploy se auto-migra — no hace falta correr alembic a mano.
+RUN chmod +x scripts/start.sh
+
 EXPOSE 8000
 
-CMD ["uvicorn", "backend.api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["scripts/start.sh"]
