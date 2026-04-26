@@ -43,6 +43,8 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 - [ ] Crear base de datos en la nube (AWS RDS u equivalente — staging usa Render Postgres; prod pendiente, probable Neon São Paulo)
 - [ ] Publicar el servicio en línea (staging disponible en `rgenerator-staging.onrender.com`)
 - [ ] **TODO: eliminar `render.yaml` y servicios Render** (backend + DB en Oregon, latencia alta desde Chile) una vez que Railway + Supabase São Paulo estén estables en producción. El `render.yaml` además apunta al repo viejo `migodoy/website-ui` y a una DB Free sin backups automáticos.
+- [ ] **TODO: registrar Task Scheduler para `scripts/backup_supabase.py`** (lunes y viernes 03:00). El script y el helper `scripts/run_supabase_backup.bat` ya están listos. Falta sólo registrar la tarea con `schtasks` (ver docstring del script). Definir antes la carpeta de destino definitiva (default `backups/` dentro del repo, gitignored — alternativa: ruta fuera del repo o OneDrive).
+- [ ] **TODO: configurar ping anti-pausa de Supabase Free** (cron-job.org apuntando a un endpoint del backend en Railway que toque la DB, ej. `/api/health/db`, cada ≤6 días). Pendiente hasta tener Railway desplegado y el endpoint expuesto.
 
 ### Base de datos
 - [x] Configurar PostgreSQL como motor principal
