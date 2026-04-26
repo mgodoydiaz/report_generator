@@ -33,6 +33,8 @@ aux_files/credentials.json
 .env
 .env.local
 .env.prod
+.env.staging
+.env.supabase
 
 # egg
 *.egg
