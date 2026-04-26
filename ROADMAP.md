@@ -42,6 +42,7 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 - [ ] Evaluar Free Tier en AWS o GCP para hosting (staging actual en Render Free)
 - [ ] Crear base de datos en la nube (AWS RDS u equivalente — staging usa Render Postgres; prod pendiente, probable Neon São Paulo)
 - [ ] Publicar el servicio en línea (staging disponible en `rgenerator-staging.onrender.com`)
+- [ ] **TODO: eliminar `render.yaml` y servicios Render** (backend + DB en Oregon, latencia alta desde Chile) una vez que Railway + Supabase São Paulo estén estables en producción. El `render.yaml` además apunta al repo viejo `migodoy/website-ui` y a una DB Free sin backups automáticos.
 
 ### Base de datos
 - [x] Configurar PostgreSQL como motor principal
