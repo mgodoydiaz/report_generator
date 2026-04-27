@@ -132,6 +132,15 @@ psql -h localhost -U mgodoy -d rgenerator_dev -c "\dt"
 - `scripts/` : Scripts de terminal para ejecutar procesos ETL aislados o tareas de mantención.
 - `.agents/workflows/` : Recetario e instrucciones para que Agentes de IA asistan en el desarrollo y administración del sistema.
 
+## ☁️ Deployment (producción)
+
+Producción corre en:
+
+- **Backend FastAPI**: Railway Hobby, región `us-east4` (Virginia) — `https://rgenerator-backend-production.up.railway.app`
+- **PostgreSQL**: Supabase Free, región `sa-east-1` (São Paulo)
+
+Para el runbook completo (cómo redeployear, restaurar un backup, rotar credenciales, configurar el Task Scheduler de Windows para los `pg_dump` semanales, troubleshooting de latencia, etc.), ver **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
+
 ## 🎯 Futuro y Roadmap
 
 El proyecto se encuentra en constante evolución hacia una arquitectura SaaS más robusta. 
