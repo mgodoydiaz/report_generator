@@ -35,6 +35,7 @@ aux_files/credentials.json
 .env.prod
 .env.staging
 .env.supabase
+.env.railway
 
 # egg
 *.egg
