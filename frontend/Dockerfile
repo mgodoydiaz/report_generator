@@ -19,9 +19,12 @@ FROM node:20-alpine AS base
 
 WORKDIR /app
 
-# Instalar deps antes de copiar el código fuente (capa cacheada)
+# Instalar deps antes de copiar el código fuente (capa cacheada).
+# Usamos `npm install` y no `npm ci` porque package-lock.json esta gitignored
+# (decision de Miguel para evitar conflictos en git). Si en el futuro se decide
+# trackear el lock file, cambiar a `npm ci` para builds reproducibles y mas rapidos.
 COPY package*.json ./
-RUN npm ci
+RUN npm install
 
 # --------------------------------------------------------------
 # Stage dev: Vite dev server con hot-module replacement
