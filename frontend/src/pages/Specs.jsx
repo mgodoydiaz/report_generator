@@ -3,6 +3,7 @@ import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, Re
 import toast from 'react-hot-toast';
 import NewSpecDrawer from '../components/NewSpecDrawer';
 import { useAuth } from '../context/AuthContext';
+import { API_BASE_URL } from '../constants';
 
 export default function Specs() {
     const { fetchAuth } = useAuth();
@@ -24,7 +25,7 @@ export default function Specs() {
     const fetchSpecs = async () => {
         setLoading(true);
         try {
-            const response = await fetchAuth('http://localhost:8000/api/specs');
+            const response = await fetchAuth(`${API_BASE_URL}/specs`);
             if (!response.ok) throw new Error('Error al conectar con el servidor');
             const data = await response.json();
             if (data.error) throw new Error(data.error);
@@ -43,7 +44,7 @@ export default function Specs() {
         setDrawerTitle(`Editar Especificación #${specId}`);
         setLoading(true);
         try {
-            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}/config`);
+            const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}/config`);
             const data = await response.json();
             if (data.error) throw new Error(data.error);
 
@@ -62,7 +63,7 @@ export default function Specs() {
 
         setLoading(true);
         try {
-            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}`, {
+            const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}`, {
                 method: 'DELETE'
             });
             const data = await response.json();
@@ -85,7 +86,7 @@ export default function Specs() {
 
         setLoading(true);
         try {
-            const response = await fetchAuth(`http://localhost:8000/api/specs/${specId}/duplicate`, {
+            const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}/duplicate`, {
                 method: 'POST'
             });
             const data = await response.json();
@@ -113,8 +114,8 @@ export default function Specs() {
     const handleSaveSpec = async (config) => {
         const isNew = !editingSpecId;
         const url = isNew
-            ? `http://localhost:8000/api/specs/config`
-            : `http://localhost:8000/api/specs/${editingSpecId}/config`;
+            ? `${API_BASE_URL}/specs/config`
+            : `${API_BASE_URL}/specs/${editingSpecId}/config`;
 
         try {
             const response = await fetchAuth(url, {
