@@ -12,8 +12,10 @@ import backend.models  # noqa: F401 — register all models with Base.metadata
 # access to the values within the .ini file in use.
 config = context.config
 
-# Override sqlalchemy.url from database.py
-config.set_main_option("sqlalchemy.url", DATABASE_URL)
+# Override sqlalchemy.url from database.py.
+# Doblar los % porque configparser de Alembic interpreta % como interpolation
+# y URL-encoded chars (%2B, %40, %2F) en passwords le explotan.
+config.set_main_option("sqlalchemy.url", DATABASE_URL.replace("%", "%%"))
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
