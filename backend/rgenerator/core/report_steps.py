@@ -134,6 +134,32 @@ def _to_field_name(name: str) -> str:
     return f'_{s}'
 
 
+_KNOWN_ROLES = {
+    'logro_1', 'logro_2', 'nivel_de_logro', 'habilidad', 'habilidad_2',
+    'evaluacion_num', 'calidad_lectora',
+}
+
+
+def _resolve_field(field, column_roles: dict):
+    """Si field es '_<role>' donde role está en column_roles, devuelve la columna real
+    (ej '_logro_1' → '_cantidad'). Si es lista, mapea cada elemento. Si no aplica,
+    devuelve el valor original."""
+    if isinstance(field, list):
+        return [_resolve_field(f, column_roles) for f in field]
+    if not isinstance(field, str) or not field.startswith('_'):
+        return field
+    role = field[1:]
+    if role not in _KNOWN_ROLES:
+        return field
+    entries = (column_roles or {}).get(role)
+    if isinstance(entries, list) and entries:
+        first = entries[0]
+        col = first.get('column') if isinstance(first, dict) else None
+        if col:
+            return _to_field_name(col)
+    return field
+
+
 def _build_records(
     db,
     indicator,
@@ -233,7 +259,25 @@ def _build_records(
     return records
 
 
-def _chart_to_png_b64(item: dict, records: list[dict]) -> str:
+def _achievement_levels(indicator) -> list[dict]:
+    """Devuelve lista [{name, color, order}] desde indicator.achievement_levels."""
+    raw = getattr(indicator, 'achievement_levels', None) or '[]'
+    try:
+        levels = json.loads(raw) if isinstance(raw, str) else raw
+    except Exception:
+        levels = []
+    return levels if isinstance(levels, list) else []
+
+
+def _natural_sort_key(s):
+    """Orden alfanumérico natural: '1° MEDIO A' < '1° MEDIO B' < '2° MEDIO A'."""
+    import re
+    s = str(s)
+    return [int(p) if p.isdigit() else p.lower()
+            for p in re.split(r'(\d+)', s)]
+
+
+def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
     """Renderiza un componente del dashboard como PNG base64 usando matplotlib."""
     import io, base64
     import matplotlib
@@ -241,15 +285,151 @@ def _chart_to_png_b64(item: dict, records: list[dict]) -> str:
     import matplotlib.pyplot as plt
     import collections
 
+    column_roles = {}
+    if indicator is not None:
+        try:
+            column_roles = json.loads(indicator.column_roles) if isinstance(indicator.column_roles, str) else (indicator.column_roles or {})
+        except Exception:
+            column_roles = {}
+
     comp = item.get('component', '')
-    x_field = item.get('xField') or item.get('valueField', '')
-    y_field = item.get('yField', '')
-    group_field = item.get('groupField', '')
+    x_field = _resolve_field(item.get('xField') or item.get('valueField', ''), column_roles)
+    y_field = _resolve_field(item.get('yField', ''), column_roles)
+    group_field = _resolve_field(item.get('groupField', ''), column_roles)
+    period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
+    level_field = _resolve_field(item.get('levelField', '_logro') if comp != 'StackedCountByGroup'
+                                 else item.get('levelField') or '_' + (column_roles.get('nivel_de_logro', [{}])[0].get('column', '') or '').lower().replace(' ', '_'),
+                                 column_roles)
 
     fig, ax = plt.subplots(figsize=(7, 3.5))
 
     try:
-        if comp in ('HeatmapMatrix',):
+        if comp in ('StackedCountByGroup', 'DistribucionNiveles'):
+            # Cuenta valores categóricos (level_field) agrupados por group_field.
+            # Usa achievement_levels del indicator para orden y color.
+            gf = group_field or '_curso'
+            # Resolver levelField si no fue pasado: usar nivel_de_logro del indicator
+            lf = level_field
+            if not lf or lf == '_logro':
+                role_entries = column_roles.get('nivel_de_logro') or []
+                if role_entries:
+                    col = role_entries[0].get('column', '')
+                    if col:
+                        lf = _to_field_name(col)
+                if not lf or lf == '_logro':
+                    lf = '_categoria'  # fallback razonable
+            levels_cfg = _achievement_levels(indicator)
+            level_order = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
+            level_colors = {l.get('name', ''): l.get('color', '#94a3b8') for l in levels_cfg}
+
+            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+                            key=_natural_sort_key)
+            if not level_order:
+                level_order = sorted({str(r.get(lf, '')) for r in records if r.get(lf) is not None})
+
+            counts = {g: {l: 0 for l in level_order} for g in groups}
+            for r in records:
+                g = str(r.get(gf, ''))
+                l = str(r.get(lf, ''))
+                if g in counts and l in counts[g]:
+                    counts[g][l] += 1
+
+            bottom = [0] * len(groups)
+            default_colors = ['#dc2626', '#ea580c', '#eab308', '#16a34a', '#2563eb', '#7c3aed']
+            for i, level in enumerate(level_order):
+                vals = [counts[g][level] for g in groups]
+                col = level_colors.get(level) or default_colors[i % len(default_colors)]
+                bars = ax.bar(groups, vals, label=level, color=col, bottom=bottom, zorder=2,
+                              edgecolor='white', linewidth=0.6)
+                for b, v, btm in zip(bars, vals, bottom):
+                    if v > 0:
+                        ax.text(b.get_x() + b.get_width() / 2, btm + v / 2, str(v),
+                                ha='center', va='center', fontsize=8, color='white', fontweight='bold')
+                bottom = [a + b for a, b in zip(bottom, vals)]
+
+            ax.set_ylabel(item.get('labelY', 'Cantidad de alumnos'), fontsize=9)
+            ax.spines[['top', 'right']].set_visible(False)
+            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            if level_order:
+                ax.legend(fontsize=8, loc='upper right')
+            plt.xticks(rotation=20, ha='right', fontsize=8)
+
+        elif comp == 'GroupedBarByPeriod':
+            # Barras agrupadas: una serie por groupField, eje X por periodField.
+            gf = group_field or '_curso'
+            pf = period_field or '_mes'
+            vf = x_field if isinstance(x_field, str) else (x_field[0] if x_field else '_logro_1')
+            vf = _resolve_field(vf, column_roles)
+
+            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+                            key=_natural_sort_key)
+            periods = sorted({str(r.get(pf, '')) for r in records if r.get(pf) is not None},
+                             key=_natural_sort_key)
+
+            import numpy as np
+            x = np.arange(len(periods))
+            width = 0.8 / max(1, len(groups))
+            colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
+                      '#f43f5e', '#3b82f6', '#a855f7']
+            for i, g in enumerate(groups):
+                vals = []
+                for p in periods:
+                    nums = []
+                    for r in records:
+                        if str(r.get(gf, '')) == g and str(r.get(pf, '')) == p:
+                            try: nums.append(float(r.get(vf, 0)))
+                            except (TypeError, ValueError): pass
+                    vals.append(sum(nums) / len(nums) if nums else 0)
+                offset = (i - (len(groups) - 1) / 2) * width
+                ax.bar(x + offset, vals, width, label=g, color=colors[i % len(colors)],
+                       edgecolor='white', linewidth=0.5, zorder=2)
+            ax.set_xticks(x); ax.set_xticklabels(periods, fontsize=8)
+            ax.set_ylabel(item.get('labelY', vf.lstrip('_').title()), fontsize=9)
+            ax.spines[['top', 'right']].set_visible(False)
+            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.legend(fontsize=7, loc='upper left', ncol=2)
+
+        elif comp == 'BarByGroup':
+            # Si valueField es lista → barras agrupadas (una por valueField).
+            # Si es string → barras simples por groupField.
+            gf = group_field or '_curso'
+            vfs = item.get('valueField', x_field)
+            if isinstance(vfs, str):
+                vfs = [vfs]
+            vfs = [_resolve_field(v, column_roles) for v in vfs]
+
+            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+                            key=_natural_sort_key)
+
+            import numpy as np
+            x = np.arange(len(groups))
+            width = 0.8 / max(1, len(vfs))
+            colors = ['#6366f1', '#06b6d4', '#f59e0b', '#10b981', '#f43f5e']
+            for i, vf in enumerate(vfs):
+                vals = []
+                for g in groups:
+                    nums = []
+                    for r in records:
+                        if str(r.get(gf, '')) == g:
+                            try: nums.append(float(r.get(vf, 0)))
+                            except (TypeError, ValueError): pass
+                    vals.append(sum(nums) / len(nums) if nums else 0)
+                offset = (i - (len(vfs) - 1) / 2) * width
+                bars = ax.bar(x + offset, vals, width,
+                              label=vf.lstrip('_').replace('_', ' ').title(),
+                              color=colors[i % len(colors)], zorder=2,
+                              edgecolor='white', linewidth=0.5)
+                if item.get('showValues', False):
+                    for b, v in zip(bars, vals):
+                        ax.text(b.get_x() + b.get_width() / 2, v + max(vals + [1]) * 0.01,
+                                f'{v:.1f}', ha='center', va='bottom', fontsize=7)
+            ax.set_xticks(x); ax.set_xticklabels(groups, rotation=20, ha='right', fontsize=8)
+            ax.spines[['top', 'right']].set_visible(False)
+            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            if len(vfs) > 1 and item.get('showLegend', True):
+                ax.legend(fontsize=8)
+
+        elif comp in ('HeatmapMatrix',):
             x_f = item.get('xField', '')
             y_f = item.get('yField', '')
             v_f = item.get('valueField', '')
@@ -329,9 +509,83 @@ def _chart_to_png_b64(item: dict, records: list[dict]) -> str:
     return base64.b64encode(buf.read()).decode()
 
 
-def _table_section(item: dict, records: list[dict]) -> dict:
+def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
     """Convierte un componente tabla en columnas + filas para el template HTML."""
     comp = item.get('component', '')
+
+    column_roles = {}
+    if indicator is not None:
+        try:
+            column_roles = json.loads(indicator.column_roles) if isinstance(indicator.column_roles, str) else (indicator.column_roles or {})
+        except Exception:
+            column_roles = {}
+
+    if comp in ('SummaryTable', 'TablaResumenCursos'):
+        # Tabla resumen por curso: Alumnos, Promedio, Min, Max, + count por nivel.
+        # valueField: campo numérico (default _logro_1 → resuelto)
+        # groupField: campo de agrupación (default _curso)
+        gf = _resolve_field(item.get('groupField', '_curso'), column_roles)
+        vfs = item.get('valueField')
+        if isinstance(vfs, str): vfs = [vfs]
+        if not vfs: vfs = ['_logro_1']
+        vfs = [_resolve_field(v, column_roles) for v in vfs]
+
+        # Resolver nivel_de_logro
+        level_field = None
+        role_entries = column_roles.get('nivel_de_logro') or []
+        if role_entries:
+            col = role_entries[0].get('column', '')
+            if col: level_field = _to_field_name(col)
+
+        levels_cfg = _achievement_levels(indicator)
+        level_names = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
+
+        # Recolectar grupos y agregaciones
+        from collections import defaultdict
+        buckets = defaultdict(list)
+        for r in records:
+            g = str(r.get(gf, ''))
+            if not g: continue
+            for vf in vfs:
+                try:
+                    buckets[(g, vf)].append(float(r.get(vf)))
+                except (TypeError, ValueError):
+                    pass
+
+        groups = sorted({k[0] for k in buckets.keys()}, key=_natural_sort_key)
+
+        # Headers: Curso | Alumnos | (por cada vf: Promedio, Mín, Máx) | (por nivel: count)
+        header = [item.get('groupLabel', 'Curso'), 'Alumnos']
+        for vf in vfs:
+            label = vf.lstrip('_').replace('_', ' ').title()
+            header.extend([f'{label} prom.', f'{label} mín.', f'{label} máx.'])
+        for lname in level_names:
+            header.append(lname)
+
+        rows_out = []
+        for g in groups:
+            n_alumnos = len({r.get('_rut') or r.get('_nombre') for r in records
+                             if str(r.get(gf, '')) == g}) or len([r for r in records if str(r.get(gf, '')) == g])
+            row = [g, str(n_alumnos)]
+            for vf in vfs:
+                vals = buckets.get((g, vf), [])
+                if vals:
+                    row.extend([
+                        f'{sum(vals)/len(vals):.1f}',
+                        f'{min(vals):.1f}',
+                        f'{max(vals):.1f}',
+                    ])
+                else:
+                    row.extend(['—', '—', '—'])
+            # Counts por nivel
+            if level_field and level_names:
+                for lname in level_names:
+                    cnt = sum(1 for r in records
+                              if str(r.get(gf, '')) == g and str(r.get(level_field, '')) == lname)
+                    row.append(str(cnt))
+            rows_out.append(row)
+
+        return {'columns': header, 'rows': rows_out}
 
     if comp == 'PivotTable':
         cfg = item.get('pivotConfig', {})
@@ -515,12 +769,12 @@ def build_pdf_bytes(
                              'body': sec.get('body', '')})
         elif t == 'chart':
             item = sec.get('item', {})
-            b64 = _chart_to_png_b64(item, records)
+            b64 = _chart_to_png_b64(item, records, indicator=indicator)
             rendered.append({'type': 'chart', 'heading': sec.get('heading', ''),
                              'image_b64': b64, 'caption': sec.get('caption', '')})
         elif t == 'table':
             item = sec.get('item', {})
-            tdata = _table_section(item, records)
+            tdata = _table_section(item, records, indicator=indicator)
             rendered.append({'type': 'table', 'heading': sec.get('heading', ''),
                              'columns': tdata['columns'], 'rows': tdata['rows']})
 
