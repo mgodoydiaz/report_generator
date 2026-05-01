@@ -712,6 +712,7 @@ def build_pdf_bytes(
     org_id: int,
     filters: Optional[Dict[str, object]] = None,
     branding_override: Optional[Dict[str, object]] = None,
+    pdf_layout_override: Optional[Dict[str, object]] = None,
 ) -> bytes:
     """
     Genera el PDF como bytes para un indicador dado.
@@ -724,6 +725,10 @@ def build_pdf_bytes(
         antes de resolver assets y renderizar. Claves soportadas:
         left_image_id, right_image_id, center_header (list[str]),
         left_footer (str), show_page_number (bool).
+    pdf_layout_override: dict opcional para usar un layout distinto al
+        `indicator.pdf_layout` (ej: `pdf_layout_historico`). Si se pasa,
+        este reemplaza completamente al layout persistido para esta
+        generación (no se muta el indicator).
     """
     import locale
     from datetime import date
@@ -731,7 +736,10 @@ def build_pdf_bytes(
     from weasyprint import HTML as WeasyprintHTML
     from backend.models import Organization
 
-    pdf_layout = indicator.pdf_layout
+    if pdf_layout_override is not None:
+        pdf_layout = pdf_layout_override
+    else:
+        pdf_layout = indicator.pdf_layout
     if isinstance(pdf_layout, str):
         try:
             pdf_layout = json.loads(pdf_layout)

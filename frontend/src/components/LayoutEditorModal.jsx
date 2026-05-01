@@ -945,6 +945,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
     const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'derived' | 'pdf'
     const [derivedColumns, setDerivedColumns] = useState([]);
     const [pdfLayout, setPdfLayout] = useState({ sections: [] });
+    const [pdfLayoutHistorico, setPdfLayoutHistorico] = useState({ sections: [] });
+    const [pdfTipo, setPdfTipo] = useState('evaluacion'); // 'evaluacion' | 'historico'
 
     useEffect(() => {
         if (!isOpen) return;
@@ -958,6 +960,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
         setMode('dashboard');
         setDerivedColumns(indicator?.derived_columns || []);
         setPdfLayout(indicator?.pdf_layout?.sections ? indicator.pdf_layout : { sections: [] });
+        setPdfLayoutHistorico(indicator?.pdf_layout_historico?.sections ? indicator.pdf_layout_historico : { sections: [] });
+        setPdfTipo('evaluacion');
     }, [isOpen, indicator]);
 
     const handleAddTab = () => {
@@ -1003,11 +1007,18 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     dashboard_layout: layout,
                     derived_columns: derivedColumns,
                     pdf_layout: pdfLayout,
+                    pdf_layout_historico: pdfLayoutHistorico,
                 }),
             });
             if (!res.ok) throw new Error('Error al guardar el layout');
             toast.success('Layout guardado');
-            onSave?.({ ...indicator, dashboard_layout: layout, derived_columns: derivedColumns, pdf_layout: pdfLayout });
+            onSave?.({
+                ...indicator,
+                dashboard_layout: layout,
+                derived_columns: derivedColumns,
+                pdf_layout: pdfLayout,
+                pdf_layout_historico: pdfLayoutHistorico,
+            });
             onClose();
         } catch (err) {
             toast.error(err.message);
@@ -1073,13 +1084,47 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     >
                         <FileText size={13} />
                         Informe PDF
-                        {(pdfLayout?.sections?.length > 0) && (
+                        {((pdfLayout?.sections?.length || 0) + (pdfLayoutHistorico?.sections?.length || 0)) > 0 && (
                             <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
-                                {pdfLayout.sections.length}
+                                {(pdfLayout?.sections?.length || 0) + (pdfLayoutHistorico?.sections?.length || 0)}
                             </span>
                         )}
                     </button>
                 </div>
+
+                {/* Sub-pestañas Por evaluación / Histórico (solo en mode='pdf') */}
+                {mode === 'pdf' && (
+                    <div className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0 border-b border-slate-100 dark:border-slate-800">
+                        <button
+                            onClick={() => setPdfTipo('evaluacion')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${pdfTipo === 'evaluacion'
+                                ? 'text-rose-600 dark:text-rose-400 border-rose-500 bg-white dark:bg-slate-900'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-transparent'
+                            }`}
+                        >
+                            Por evaluación
+                            {pdfLayout?.sections?.length > 0 && (
+                                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                                    {pdfLayout.sections.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setPdfTipo('historico')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${pdfTipo === 'historico'
+                                ? 'text-rose-600 dark:text-rose-400 border-rose-500 bg-white dark:bg-slate-900'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-transparent'
+                            }`}
+                        >
+                            Histórico
+                            {pdfLayoutHistorico?.sections?.length > 0 && (
+                                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                                    {pdfLayoutHistorico.sections.length}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                )}
 
                 {/* Tab bar (dashboard mode only) */}
                 {mode === 'dashboard' && (
@@ -1119,8 +1164,9 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                         />
                     ) : (
                         <PdfLayoutEditor
-                            pdfLayout={pdfLayout}
-                            onChange={setPdfLayout}
+                            key={pdfTipo /* fuerza re-mount al cambiar tipo, evita estado stale */}
+                            pdfLayout={pdfTipo === 'historico' ? pdfLayoutHistorico : pdfLayout}
+                            onChange={pdfTipo === 'historico' ? setPdfLayoutHistorico : setPdfLayout}
                             dashboardLayout={layout}
                             indicatorId={indicator?.id_indicator}
                             fetchAuth={fetchAuth}

@@ -27,6 +27,7 @@ class IndicatorBase(BaseModel):
     dashboard_layout: Optional[Dict[str, Any]] = None
     derived_columns: Optional[List[Dict[str, Any]]] = None
     pdf_layout: Optional[Dict[str, Any]] = None
+    pdf_layout_historico: Optional[Dict[str, Any]] = None
 
 
 class IndicatorCreate(IndicatorBase):
@@ -43,6 +44,7 @@ class ExportPDFRequest(BaseModel):
     engine: Optional[str] = None                    # override del motor (default: pdf_layout.engine)
     branding_override: Optional[Dict[str, Any]] = None  # overrides ad‑hoc de branding
     save_as_default: bool = False                   # si True, persiste branding en pdf_layout
+    tipo: Optional[str] = "evaluacion"              # "evaluacion" | "historico" — qué layout usar
 
 
 # Motores de informe disponibles — expuesto al frontend para poblar el modal
@@ -94,6 +96,7 @@ def _indicator_to_dict(ind: Indicator) -> dict:
         "dashboard_layout": _parse_json_field(ind.dashboard_layout, {}),
         "derived_columns": _parse_json_field(ind.derived_columns, []),
         "pdf_layout": _parse_json_field(ind.pdf_layout, {}),
+        "pdf_layout_historico": _parse_json_field(ind.pdf_layout_historico, {}),
         "updated_at": ind.updated_at.strftime("%Y-%m-%d %H:%M:%S") if ind.updated_at else "",
         "metric_ids": metric_ids,
     }
@@ -141,6 +144,7 @@ async def create_indicator(
             dashboard_layout=json.dumps(indicator.dashboard_layout or {}, ensure_ascii=False),
             derived_columns=json.dumps(indicator.derived_columns or [], ensure_ascii=False),
             pdf_layout=json.dumps(indicator.pdf_layout or {}, ensure_ascii=False),
+            pdf_layout_historico=json.dumps(indicator.pdf_layout_historico or {}, ensure_ascii=False),
             updated_at=datetime.utcnow(),
             org_id=user.org_id,
         )
@@ -196,6 +200,8 @@ async def update_indicator(
             record.derived_columns = json.dumps(indicator.derived_columns, ensure_ascii=False)
         if indicator.pdf_layout is not None:
             record.pdf_layout = json.dumps(indicator.pdf_layout, ensure_ascii=False)
+        if indicator.pdf_layout_historico is not None:
+            record.pdf_layout_historico = json.dumps(indicator.pdf_layout_historico, ensure_ascii=False)
         record.updated_at = datetime.utcnow()
 
         if indicator.metric_ids is not None:
@@ -219,6 +225,7 @@ async def update_indicator(
 class LayoutUpsert(BaseModel):
     dashboard_layout: Optional[Dict[str, Any]] = None
     pdf_layout: Optional[Dict[str, Any]] = None
+    pdf_layout_historico: Optional[Dict[str, Any]] = None
 
 
 @router.post("/{indicator_id}/layout")
@@ -228,8 +235,9 @@ async def upsert_layout(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Actualiza dashboard_layout y/o pdf_layout de un indicador en una sola request.
-    Solo actualiza los campos que se pasan (los omitidos no se tocan)."""
+    """Actualiza dashboard_layout, pdf_layout y/o pdf_layout_historico de un
+    indicador en una sola request. Solo actualiza los campos que se pasan
+    (los omitidos no se tocan)."""
     record = db.query(Indicator).filter(
         Indicator.id_indicator == indicator_id,
         Indicator.org_id == user.org_id,
@@ -243,6 +251,8 @@ async def upsert_layout(
             record.dashboard_layout = json.dumps(body.dashboard_layout, ensure_ascii=False)
         if body.pdf_layout is not None:
             record.pdf_layout = json.dumps(body.pdf_layout, ensure_ascii=False)
+        if body.pdf_layout_historico is not None:
+            record.pdf_layout_historico = json.dumps(body.pdf_layout_historico, ensure_ascii=False)
         record.updated_at = datetime.utcnow()
         db.commit()
         return {"status": "success"}
@@ -277,7 +287,20 @@ async def export_pdf(
         if not record:
             raise HTTPException(status_code=404, detail="Indicador no encontrado")
 
-        pdf_layout = _parse_json_field(record.pdf_layout, {})
+        # Tipo de informe (default "evaluacion" para retrocompat)
+        tipo = (body.tipo if body else "evaluacion") or "evaluacion"
+        if tipo not in ("evaluacion", "historico"):
+            raise HTTPException(
+                status_code=422,
+                detail=f"tipo='{tipo}' inválido. Usa 'evaluacion' o 'historico'."
+            )
+
+        # Resolver el layout según el tipo
+        if tipo == "historico":
+            pdf_layout = _parse_json_field(record.pdf_layout_historico, {})
+        else:
+            pdf_layout = _parse_json_field(record.pdf_layout, {})
+
         filters = body.filters if body else None
         branding_override = body.branding_override if body else None
         save_as_default = bool(body.save_as_default) if body else False
@@ -296,12 +319,14 @@ async def export_pdf(
                        f"Valores válidos: {', '.join(valid)}."
             )
 
-        # Persistir branding como default del indicador (opt‑in vía checkbox del modal)
+        # Persistir branding como default del indicador (opt‑in vía checkbox del modal).
+        # Se persiste en el campo correspondiente al tipo activo (evaluacion o historico).
         if save_as_default and branding_override:
             try:
                 merged = dict(pdf_layout)
                 merged['branding'] = {**(pdf_layout.get('branding') or {}), **branding_override}
-                record.pdf_layout = json.dumps(merged, ensure_ascii=False)
+                target_field = "pdf_layout_historico" if tipo == "historico" else "pdf_layout"
+                setattr(record, target_field, json.dumps(merged, ensure_ascii=False))
                 record.updated_at = datetime.utcnow()
                 db.commit()
                 # Refrescar pdf_layout local para que el render vea lo guardado
@@ -313,16 +338,19 @@ async def export_pdf(
 
         if engine == "weasyprint":
             if not pdf_layout.get("sections"):
+                modo_label = "histórico" if tipo == "historico" else "por evaluación"
                 raise HTTPException(
                     status_code=422,
-                    detail="El indicador no tiene secciones PDF configuradas. "
-                           "Agrega secciones en el Editor de Layout → pestaña Informe PDF."
+                    detail=f"El indicador no tiene secciones configuradas para el informe "
+                           f"{modo_label}. Agrega secciones en el Editor de Layout → "
+                           f"pestaña Informe PDF → {modo_label}."
                 )
             from backend.rgenerator.core.report_steps import build_pdf_bytes
             pdf_bytes = build_pdf_bytes(
                 record, db, user.org_id,
                 filters=filters,
                 branding_override=branding_override,
+                pdf_layout_override=pdf_layout,
             )
         elif engine == "pdl_idel":
             from backend.rgenerator.tooling.report_pdl_idel_tools import build_pdl_idel_pdf_bytes

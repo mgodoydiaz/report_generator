@@ -1,23 +1,41 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Download, FileText, Filter, RefreshCcw, Save } from 'lucide-react';
+import { X, Download, FileText, Filter, RefreshCcw, Save, Calendar, TrendingUp } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import { BrandingEditor } from './LayoutEditorModal';
 
+// Dimensiones consideradas "temporales" (se ocultan en modo histórico, donde
+// se quiere ver evolución a través del tiempo). Coincidencia case-insensitive
+// por substring sobre el `name` de la dimensión.
+const TEMPORAL_DIM_NAMES = [
+    'mes', 'n prueba', 'n evaluación', 'n evaluacion',
+    'numero_prueba', 'numero prueba', 'numero evaluación',
+    'evaluación', 'evaluacion', 'fecha',
+];
+
+function isTemporalDimension(dimName) {
+    if (!dimName) return false;
+    const n = String(dimName).toLowerCase();
+    return TEMPORAL_DIM_NAMES.some(k => n.includes(k));
+}
+
 /**
  * Modal para generar el informe PDF desde la página Results.
  *
  * Expone:
- *   - Filtros (pre‑cargados desde el dashboard y editables)
+ *   - **Tipo de informe**: toggle "Por evaluación" / "Histórico" — define qué
+ *     `pdf_layout` del indicator se usa (`pdf_layout` vs `pdf_layout_historico`).
+ *   - Filtros (pre‑cargados desde el dashboard y editables). En modo histórico
+ *     las dimensiones temporales se deshabilitan automáticamente.
  *   - Motor del informe (lista de engines disponibles)
  *   - Branding (logos, encabezados, pie, n° de página) reutilizando BrandingEditor
- *   - Checkbox "Guardar branding como default" para persistir en pdf_layout
+ *   - Checkbox "Guardar branding como default" para persistir en el layout activo
  */
 export default function GenerateReportModal({
     open,
     onClose,
-    indicator,           // full indicator object (incluye pdf_layout, id_indicator, name)
+    indicator,           // full indicator object (incluye pdf_layout, pdf_layout_historico, id_indicator, name)
     indicatorDims,       // {id_dimension_str: {id, name, values: []}}
     initialFilters,      // {id_dimension_str: valor}
     sortedDimKeys,       // orden preferido de dimensiones
@@ -28,22 +46,56 @@ export default function GenerateReportModal({
 
     const [engines, setEngines] = useState([]);
     const [selectedEngine, setSelectedEngine] = useState('weasyprint');
+    const [tipo, setTipo] = useState('evaluacion'); // 'evaluacion' | 'historico'
     const [filters, setFilters] = useState({});
     const [branding, setBranding] = useState({});
     const [saveAsDefault, setSaveAsDefault] = useState(false);
     const [generating, setGenerating] = useState(false);
 
+    // Layout activo según el tipo seleccionado
+    const activeLayout = useMemo(() => {
+        if (!indicator) return {};
+        const lay = tipo === 'historico'
+            ? (indicator.pdf_layout_historico && typeof indicator.pdf_layout_historico === 'object'
+                ? indicator.pdf_layout_historico : {})
+            : (indicator.pdf_layout && typeof indicator.pdf_layout === 'object'
+                ? indicator.pdf_layout : {});
+        return lay || {};
+    }, [indicator, tipo]);
+
+    const layoutHasSections = useMemo(() => {
+        const secs = activeLayout?.sections;
+        return Array.isArray(secs) && secs.length > 0;
+    }, [activeLayout]);
+
     // Reset al abrir
     useEffect(() => {
         if (!open || !indicator) return;
         setFilters({ ...(initialFilters || {}) });
-        const pdfLayout = indicator.pdf_layout && typeof indicator.pdf_layout === 'object'
-            ? indicator.pdf_layout
-            : {};
-        setBranding({ ...(pdfLayout.branding || {}) });
-        setSelectedEngine((pdfLayout.engine || 'weasyprint').toLowerCase());
         setSaveAsDefault(false);
+        setTipo('evaluacion');
     }, [open, indicator, initialFilters]);
+
+    // Refresh branding y engine cuando cambia el tipo (cada layout puede tener
+    // su propio branding configurado)
+    useEffect(() => {
+        if (!open || !indicator) return;
+        setBranding({ ...(activeLayout.branding || {}) });
+        setSelectedEngine((activeLayout.engine || 'weasyprint').toLowerCase());
+    }, [open, indicator, tipo, activeLayout]);
+
+    // Limpiar filtros temporales al cambiar a histórico (no aplican)
+    useEffect(() => {
+        if (tipo !== 'historico' || !indicatorDims) return;
+        setFilters(prev => {
+            const next = { ...prev };
+            for (const dimId of Object.keys(prev)) {
+                const dim = indicatorDims[dimId];
+                if (dim && isTemporalDimension(dim.name)) delete next[dimId];
+            }
+            return next;
+        });
+    }, [tipo, indicatorDims]);
 
     // Cargar engines disponibles
     useEffect(() => {
@@ -95,6 +147,7 @@ export default function GenerateReportModal({
                         engine: selectedEngine,
                         branding_override: branding,
                         save_as_default: saveAsDefault,
+                        tipo, // 'evaluacion' | 'historico'
                     }),
                 }
             );
@@ -113,7 +166,8 @@ export default function GenerateReportModal({
             const safeName = (indicator.name || 'informe')
                 .replace(/\s+/g, '_')
                 .replace(/\//g, '-');
-            a.download = `informe_${safeName}.pdf`;
+            const tipoSuffix = tipo === 'historico' ? '_historico' : '';
+            a.download = `informe_${safeName}${tipoSuffix}.pdf`;
             document.body.appendChild(a);
             a.click();
             a.remove();
@@ -159,6 +213,54 @@ export default function GenerateReportModal({
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+                    {/* Tipo de informe — toggle segmentado */}
+                    <section>
+                        <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
+                            Tipo de informe
+                        </label>
+                        <div className="flex bg-slate-100 dark:bg-slate-800 rounded-xl p-1">
+                            <button
+                                type="button"
+                                onClick={() => setTipo('evaluacion')}
+                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                                    tipo === 'evaluacion'
+                                        ? 'bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                <Calendar size={14} />
+                                Por evaluación
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setTipo('historico')}
+                                className={`flex-1 py-2 px-3 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                                    tipo === 'historico'
+                                        ? 'bg-white dark:bg-slate-900 shadow-sm text-indigo-600 dark:text-indigo-400'
+                                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
+                            >
+                                <TrendingUp size={14} />
+                                Histórico
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                            {tipo === 'evaluacion'
+                                ? 'Snapshot de un momento concreto. Filtra mes / N° prueba para acotarlo.'
+                                : 'Comparación a lo largo del año. Las dimensiones temporales no se filtran (se ven todas en el gráfico).'}
+                        </p>
+                        {!layoutHasSections && (
+                            <div className="mt-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50">
+                                <p className="text-[11px] text-amber-800 dark:text-amber-300">
+                                    Este indicador no tiene secciones configuradas para el modo
+                                    <strong> {tipo === 'historico' ? 'histórico' : 'por evaluación'}</strong>.
+                                    Configúralas en el Editor de Layout antes de generar.
+                                </p>
+                            </div>
+                        )}
+                    </section>
+
                     {/* Motor del informe */}
                     <section>
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
@@ -219,18 +321,26 @@ export default function GenerateReportModal({
                                         return s && s !== 'nan' && s !== 'nat' && s !== 'none' && s !== 'null';
                                     });
                                     if (values.length === 0) return null;
+                                    const isTemporal = isTemporalDimension(dim.name);
+                                    const disabledForHistorico = tipo === 'historico' && isTemporal;
                                     return (
-                                        <div key={dimId}>
-                                            <label className="block text-[10px] uppercase font-semibold text-slate-500 dark:text-slate-400 mb-1">
+                                        <div key={dimId} className={disabledForHistorico ? 'opacity-50' : ''}>
+                                            <label className="block text-[10px] uppercase font-semibold text-slate-500 dark:text-slate-400 mb-1 flex items-center gap-1">
                                                 {dim.name}
+                                                {isTemporal && (
+                                                    <Calendar size={10} className="text-slate-400" />
+                                                )}
                                             </label>
                                             <select
                                                 value={filters[dimId] || ''}
                                                 onChange={(e) => setFilter(dimId, e.target.value)}
-                                                className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2"
+                                                disabled={disabledForHistorico}
+                                                className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 disabled:cursor-not-allowed"
                                             >
-                                                <option value="">Todos</option>
-                                                {values.map(v => (
+                                                <option value="">
+                                                    {disabledForHistorico ? 'Todos (histórico)' : 'Todos'}
+                                                </option>
+                                                {!disabledForHistorico && values.map(v => (
                                                     <option key={v} value={v}>{v}</option>
                                                 ))}
                                             </select>
@@ -261,7 +371,7 @@ export default function GenerateReportModal({
                                     className="rounded"
                                 />
                                 <Save size={12} className="text-slate-400" />
-                                Guardar estos ajustes como default del indicador
+                                Guardar estos ajustes como default del layout {tipo === 'historico' ? 'histórico' : 'por evaluación'}
                             </label>
                         </section>
                     )}
@@ -278,7 +388,7 @@ export default function GenerateReportModal({
                     </button>
                     <button
                         onClick={handleGenerate}
-                        disabled={generating || !currentEngineMeta?.available}
+                        disabled={generating || !currentEngineMeta?.available || !layoutHasSections}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm"
                     >
                         {generating ? (
