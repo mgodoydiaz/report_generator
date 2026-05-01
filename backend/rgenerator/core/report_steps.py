@@ -524,11 +524,28 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         # Tabla resumen por curso: Alumnos, Promedio, Min, Max, + count por nivel.
         # valueField: campo numérico (default _logro_1 → resuelto)
         # groupField: campo de agrupación (default _curso)
+        # comparePrevious (bool, default False): si records tiene múltiples
+        #   periodos (vía periodField), calcula delta del Promedio vs el
+        #   periodo inmediatamente anterior. Si solo hay 1 periodo, no muestra
+        #   la columna Δ (caso: primera evaluación del año).
+        # periodField: campo temporal para detectar periodos (ej: '_mes',
+        #   '_n_prueba', '_evaluacion'). Default: usa column_roles.evaluacion_num
+        #   o '_mes' como fallback.
         gf = _resolve_field(item.get('groupField', '_curso'), column_roles)
         vfs = item.get('valueField')
         if isinstance(vfs, str): vfs = [vfs]
         if not vfs: vfs = ['_logro_1']
         vfs = [_resolve_field(v, column_roles) for v in vfs]
+
+        compare_previous = bool(item.get('comparePrevious', False))
+        period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
+        if compare_previous and (not period_field or period_field == '_mes'):
+            # Intentar resolver desde column_roles.evaluacion_num si está disponible
+            ev_role = column_roles.get('evaluacion_num') or []
+            if ev_role:
+                col = ev_role[0].get('column', '')
+                if col:
+                    period_field = _to_field_name(col)
 
         # Resolver nivel_de_logro
         level_field = None
@@ -540,48 +557,96 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         levels_cfg = _achievement_levels(indicator)
         level_names = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
 
+        # ── Detectar periodos para comparación histórica ──
+        period_actual = None
+        period_prev = None
+        if compare_previous and period_field:
+            periods = sorted(
+                {str(r.get(period_field, '')) for r in records if r.get(period_field) is not None and str(r.get(period_field, '')) != ''},
+                key=_natural_sort_key,
+            )
+            if len(periods) >= 2:
+                period_actual = periods[-1]
+                period_prev = periods[-2]
+
         # Recolectar grupos y agregaciones
         from collections import defaultdict
         buckets = defaultdict(list)
+        buckets_prev = defaultdict(list)  # para periodo anterior
         for r in records:
             g = str(r.get(gf, ''))
             if not g: continue
+            r_period = str(r.get(period_field, '')) if period_field else None
             for vf in vfs:
                 try:
-                    buckets[(g, vf)].append(float(r.get(vf)))
+                    val = float(r.get(vf))
                 except (TypeError, ValueError):
-                    pass
+                    continue
+                # Si comparePrevious activo y hay 2+ periodos, separar por periodo
+                if period_actual and r_period == period_actual:
+                    buckets[(g, vf)].append(val)
+                elif period_prev and r_period == period_prev:
+                    buckets_prev[(g, vf)].append(val)
+                elif not period_actual:
+                    # Sin comparación o sin múltiples periodos: agrupar todo
+                    buckets[(g, vf)].append(val)
 
         groups = sorted({k[0] for k in buckets.keys()}, key=_natural_sort_key)
 
-        # Headers: Curso | Alumnos | (por cada vf: Promedio, Mín, Máx) | (por nivel: count)
+        # Headers: Curso | Alumnos | (por cada vf: Promedio, [Δ], Mín, Máx) | (por nivel: count)
         header = [item.get('groupLabel', 'Curso'), 'Alumnos']
+        show_delta = bool(period_actual and period_prev)
         for vf in vfs:
             label = vf.lstrip('_').replace('_', ' ').title()
-            header.extend([f'{label} prom.', f'{label} mín.', f'{label} máx.'])
+            header.append(f'{label} prom.')
+            if show_delta:
+                header.append(f'Δ vs {period_prev}')
+            header.extend([f'{label} mín.', f'{label} máx.'])
         for lname in level_names:
             header.append(lname)
 
+        def _fmt_delta(d):
+            """Formatea delta con flecha unicode. Devuelve string."""
+            if d is None:
+                return '—'
+            arrow = '▲' if d > 0.05 else ('▼' if d < -0.05 else '→')
+            sign = '+' if d > 0 else ''
+            return f'{arrow} {sign}{d:.1f}'
+
         rows_out = []
         for g in groups:
-            n_alumnos = len({r.get('_rut') or r.get('_nombre') for r in records
-                             if str(r.get(gf, '')) == g}) or len([r for r in records if str(r.get(gf, '')) == g])
+            # Conteo de alumnos por curso (usando RUT/Nombre como identidad o fallback al periodo actual)
+            if period_actual:
+                actual_records = [r for r in records
+                                  if str(r.get(gf, '')) == g
+                                  and str(r.get(period_field, '')) == period_actual]
+            else:
+                actual_records = [r for r in records if str(r.get(gf, '')) == g]
+            n_alumnos = len({r.get('_rut') or r.get('_nombre') for r in actual_records}) or len(actual_records)
             row = [g, str(n_alumnos)]
             for vf in vfs:
                 vals = buckets.get((g, vf), [])
+                vals_prev = buckets_prev.get((g, vf), [])
                 if vals:
-                    row.extend([
-                        f'{sum(vals)/len(vals):.1f}',
-                        f'{min(vals):.1f}',
-                        f'{max(vals):.1f}',
-                    ])
+                    avg = sum(vals) / len(vals)
+                    row.append(f'{avg:.1f}')
+                    if show_delta:
+                        if vals_prev:
+                            avg_prev = sum(vals_prev) / len(vals_prev)
+                            row.append(_fmt_delta(avg - avg_prev))
+                        else:
+                            row.append('—')
+                    row.extend([f'{min(vals):.1f}', f'{max(vals):.1f}'])
                 else:
-                    row.extend(['—', '—', '—'])
-            # Counts por nivel
+                    row.append('—')
+                    if show_delta:
+                        row.append('—')
+                    row.extend(['—', '—'])
+            # Counts por nivel (sobre periodo actual si aplica)
             if level_field and level_names:
                 for lname in level_names:
-                    cnt = sum(1 for r in records
-                              if str(r.get(gf, '')) == g and str(r.get(level_field, '')) == lname)
+                    cnt = sum(1 for r in actual_records
+                              if str(r.get(level_field, '')) == lname)
                     row.append(str(cnt))
             rows_out.append(row)
 
