@@ -76,3 +76,6 @@ data/pipeline_runs/*
 
 # Assets de organizaciones (imágenes subidas por los usuarios)
 data/org_assets/
+
+# Bulk loads de evaluaciones (contienen PII: RUTs y nombres de estudiantes)
+data/evaluaciones_bulk_load/
