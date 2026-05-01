@@ -136,15 +136,25 @@ h3.section-title {
 table.report-table {
   border-collapse: collapse;
   margin: 0.3cm auto 0.6cm auto;
-  font-size: 8pt;
+  font-size: 7.5pt;
   page-break-inside: auto;
 }
 
 table.report-table th,
 table.report-table td {
   border: 0.5pt solid #000;
-  padding: 3pt 7pt;
+  padding: 2pt 6pt;
   vertical-align: middle;
+}
+
+/* Tablas con muchas filas (ej: reporte por pregunta con 40 filas) suben
+   a 7pt y reducen padding para caber en una sola página letter. */
+table.report-table.dense {
+  font-size: 7pt;
+}
+table.report-table.dense th,
+table.report-table.dense td {
+  padding: 1.5pt 5pt;
 }
 
 table.report-table thead {
