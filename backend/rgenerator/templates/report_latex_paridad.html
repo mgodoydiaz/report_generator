@@ -105,11 +105,16 @@ body {
 /* ── Tipografía y títulos ───────────────────────────────────── */
 
 h1.document-title {
-  font-size: 21pt;
+  font-size: 18pt;
   text-align: center;
   font-weight: 700;
   margin: 0.6cm 0 0.3cm 0;
-  letter-spacing: -0.5pt;
+  letter-spacing: -0.3pt;
+  /* Bajado de 21pt a 18pt para que t\xC3\xADtulos largos tipo
+     "Informe Ensayo SIMCE N\xC2\xB0 5 - Lenguaje 2\xC2\xB0 Medio" entren
+     en una sola l\xC3\xADnea en letter paper con m\xC3\xA1rgenes 2cm L/R.
+     LaTeX kernea m\xC3\xA1s compacto que CSS, por eso necesitamos esta
+     compensaci\xC3\xB3n. */
 }
 
 h2.school-name {
