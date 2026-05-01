@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>{{ documenttitle }}</title>
+<style>
+/* ============================================================
+   Paridad visual con `formato_informe.tex` (LaTeX, Segoe UI)
+   - letter paper
+   - top=3.5cm, bottom=2cm, left=2cm, right=2cm, headheight=61pt
+   - header: logo izq + 3 líneas centradas + logo der, regla 0.4pt
+   - footer: regla 0.4pt, autor izq, página der
+   - tipografía: Inter (fallback DejaVu Sans / Segoe UI)
+   ============================================================ */
+
+@page {
+  size: letter;
+  margin: 3.5cm 2cm 2cm 2cm;
+
+  /* Una sola región @top-center con width:100% para que el border-bottom
+     sea una línea continua (las 3 regiones @top-left/center/right serían
+     3 cajas con sus propios bordes y se cortarían entre ellas). */
+  @top-center {
+    content: element(headerBlock);
+    width: 100%;
+    vertical-align: bottom;
+    padding-bottom: 4pt;
+    border-bottom: 0.4pt solid black;
+  }
+
+  @bottom-center {
+    content: element(footerBlock);
+    width: 100%;
+    vertical-align: top;
+    padding-top: 4pt;
+    border-top: 0.4pt solid black;
+  }
+}
+
+html {
+  font-family: Inter, "DejaVu Sans", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  font-size: 9pt;
+  line-height: 1.25;
+  color: #111;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Running headers/footers ────────────────────────────────── */
+
+/* Header: un solo running element con layout interno de 3 columnas
+   (logo izq | texto centro | logo der). Mantiene la línea horizontal
+   continua bajo todo el header. */
+#headerBlock {
+  position: running(headerBlock);
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}
+#headerBlock > .hb-left,
+#headerBlock > .hb-center,
+#headerBlock > .hb-right {
+  display: table-cell;
+  vertical-align: middle;
+}
+#headerBlock .hb-left { width: 25%; text-align: left; }
+#headerBlock .hb-center {
+  width: 50%;
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.25;
+  font-weight: 400;
+}
+#headerBlock .hb-right { width: 25%; text-align: right; }
+#headerBlock img {
+  height: 2cm;
+  width: auto;
+}
+
+/* Footer: mismo patrón, 2 columnas (autor izq | nº página der).
+   Línea horizontal continua arriba. */
+#footerBlock {
+  position: running(footerBlock);
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  font-size: 9pt;
+}
+#footerBlock > .fb-left,
+#footerBlock > .fb-right {
+  display: table-cell;
+  vertical-align: middle;
+}
+#footerBlock .fb-left { width: 80%; text-align: left; }
+#footerBlock .fb-right { width: 20%; text-align: right; }
+/* Inserta el número de página dentro del running element: counter(page)
+   se evalúa en el contexto de cada página al renderizar. */
+#footerBlock .fb-right::before {
+  content: counter(page);
+}
+
+/* ── Tipografía y títulos ───────────────────────────────────── */
+
+h1.document-title {
+  font-size: 21pt;
+  text-align: center;
+  font-weight: 700;
+  margin: 0.6cm 0 0.3cm 0;
+  letter-spacing: -0.5pt;
+}
+
+h2.school-name {
+  font-size: 13pt;
+  text-align: center;
+  font-weight: 400;
+  color: #222;
+  margin: 0 0 1cm 0;
+}
+
+h3.section-title {
+  font-size: 11pt;
+  font-weight: 700;
+  margin: 0.7cm 0 0.3cm 0;
+}
+
+/* ── Tablas estilo formato_informe.tex ──────────────────────── */
+
+table.report-table {
+  border-collapse: collapse;
+  margin: 0.3cm auto 0.6cm auto;
+  font-size: 8pt;
+  page-break-inside: auto;
+}
+
+table.report-table th,
+table.report-table td {
+  border: 0.5pt solid #000;
+  padding: 3pt 7pt;
+  vertical-align: middle;
+}
+
+table.report-table thead {
+  display: table-header-group;
+}
+
+table.report-table th {
+  font-weight: 700;
+  background: #fff;
+}
+
+table.report-table td.al-left,
+table.report-table th.al-left {
+  text-align: left;
+}
+table.report-table td.al-right,
+table.report-table th.al-right {
+  text-align: right;
+}
+
+/* ── Figuras ─────────────────────────────────────────────────── */
+
+figure.report-figure {
+  margin: 0.4cm auto 0.7cm auto;
+  text-align: center;
+  page-break-inside: avoid;
+}
+figure.report-figure img {
+  display: block;
+  margin: 0 auto;
+}
+
+figure.report-figure .missing {
+  border: 0.5pt dashed #888;
+  color: #888;
+  padding: 1cm;
+  font-size: 9pt;
+}
+
+/* ── Secciones dinámicas (logro por alumno/pregunta por curso) ── */
+
+.section.dynamic {
+  page-break-before: always;
+}
+
+p.error {
+  color: #b91c1c;
+  font-size: 9pt;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+  {# ──────────────── Running elements ──────────────── #}
+  <div id="headerBlock">
+    <div class="hb-left">
+      {%- if branding.left_image_b64 -%}
+      <img src="data:{{ branding.left_image_mime }};base64,{{ branding.left_image_b64 }}" alt="logo izquierdo"/>
+      {%- endif -%}
+    </div>
+    <div class="hb-center">
+      {%- if centerheaderone -%}{{ centerheaderone }}<br/>{%- endif -%}
+      {%- if centerheadertwo -%}{{ centerheadertwo }}<br/>{%- endif -%}
+      {%- if centerheaderthree -%}{{ centerheaderthree }}{%- endif -%}
+    </div>
+    <div class="hb-right">
+      {%- if branding.right_image_b64 -%}
+      <img src="data:{{ branding.right_image_mime }};base64,{{ branding.right_image_b64 }}" alt="logo derecho"/>
+      {%- endif -%}
+    </div>
+  </div>
+
+  <div id="footerBlock">
+    <div class="fb-left">{{ leftfooter }}</div>
+    <div class="fb-right"></div>
+  </div>
+
+  {# ──────────────── Título y subtítulo ──────────────── #}
+  {% if documenttitle %}
+  <h1 class="document-title">{{ documenttitle }}</h1>
+  {% endif %}
+  {% if schoolname %}
+  <h2 class="school-name">{{ schoolname }}</h2>
+  {% endif %}
+
+  {# ──────────────── Secciones fijas ──────────────── #}
+  {% for sec in secciones_fijas %}
+  <div class="section fija">
+    <h3 class="section-title">{{ sec.titulo }}</h3>
+    {{ sec.html | safe }}
+  </div>
+  {% endfor %}
+
+  {# ──────────────── Secciones dinámicas (page-break-before) ──────────────── #}
+  {% for sec in secciones_dinamicas %}
+  <div class="section dynamic">
+    <h3 class="section-title">{{ sec.titulo }}</h3>
+    {{ sec.html | safe }}
+  </div>
+  {% endfor %}
+
+</body>
+</html>

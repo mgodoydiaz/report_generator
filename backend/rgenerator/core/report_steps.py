@@ -921,6 +921,169 @@ class RenderReport(Step):
         self._log_artifacts_delta(ctx, before)
 
 
+class RenderHtmlReport(Step):
+    """
+    Equivalente WeasyPrint de RenderReport (LaTeX) — paridad visual con
+    `formato_informe.tex`.
+
+    Lee el MISMO esquema JSON que RenderReport (variables_documento +
+    secciones_fijas + secciones_dinamicas), compone HTML con Jinja2 +
+    `report_html_tools` y produce informe.pdf vía WeasyPrint.
+
+    Parámetros:
+        report_schema (dict, opcional): esquema directo. Si no se pasa,
+            se lee de ctx.params['report_schema'] o ctx.params['report_schema_path'].
+        output_filename (str): nombre del PDF de salida (default 'informe.pdf').
+        template_name (str): nombre del template Jinja2 en
+            backend/rgenerator/templates/ (default 'report_latex_paridad.html').
+
+    Requiere:
+        - ctx.aux_dir con tablas .xlsx e imágenes .png ya generadas (por
+          GenerateGraphics + GenerateTables o pre-existentes).
+
+    Produce:
+        - ctx.outputs['report_pdf']: Path al PDF generado.
+    """
+    def __init__(self, report_schema: Optional[Dict] = None,
+                 output_filename: str = "informe.pdf",
+                 template_name: str = "report_latex_paridad.html"):
+        super().__init__(name="RenderHtmlReport")
+        self.report_schema = report_schema
+        self.output_filename = output_filename
+        self.template_name = template_name
+
+    def run(self, ctx):
+        from jinja2 import Environment, FileSystemLoader
+        from weasyprint import HTML as WeasyprintHTML
+        from rgenerator.tooling.report_html_tools import render_section, encode_image_b64
+
+        before = self._snapshot_artifacts(ctx)
+        if not getattr(self, "name", None):
+            self.name = self.__class__.__name__
+
+        # 1. Resolver schema (constructor → params → path)
+        schema = self.report_schema or ctx.params.get("report_schema")
+        if not schema:
+            schema_path = ctx.params.get("report_schema_path")
+            if schema_path:
+                try:
+                    with open(schema_path, "r", encoding="utf-8") as f:
+                        schema = json.load(f)
+                except Exception as e:
+                    self._log(f"[{self.name}] Error cargando schema desde {schema_path}: {e}")
+
+        if not schema:
+            self._log(f"[{self.name}] Error: no se encontró report_schema.")
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 2. Resolver aux_dir
+        aux_dir = getattr(ctx, "aux_dir", None)
+        if not aux_dir:
+            aux_dir = (ctx.base_dir / "aux_files") if hasattr(ctx, "base_dir") else Path("aux_files")
+        aux_dir = Path(aux_dir)
+        if not aux_dir.exists():
+            self._log(f"[{self.name}] Error: aux_dir no existe ({aux_dir}).")
+            return
+
+        base_dir = getattr(ctx, "base_dir", None)
+        variables = dict(schema.get("variables_documento", {}))
+        if "evaluacion" not in variables and getattr(ctx, "evaluation", None):
+            variables["evaluacion"] = ctx.evaluation
+
+        # 3. Branding (logos en header)
+        branding = self._build_branding(variables, aux_dir, base_dir)
+
+        # 4. Renderizar secciones (delega tablas e imágenes a report_html_tools)
+        secciones_fijas = [
+            render_section(s, aux_dir, base_dir)
+            for s in schema.get("secciones_fijas", [])
+        ]
+        secciones_dinamicas = [
+            render_section(s, aux_dir, base_dir)
+            for s in schema.get("secciones_dinamicas", [])
+        ]
+
+        # 5. Render Jinja
+        templates_dir = Path(__file__).parent.parent / "templates"
+        env = Environment(loader=FileSystemLoader(str(templates_dir)), autoescape=False)
+        template = env.get_template(self.template_name)
+        html_str = template.render(
+            documenttitle=variables.get("documenttitle", ""),
+            schoolname=variables.get("schoolname", ""),
+            centerheaderone=variables.get("centerheaderone", ""),
+            centerheadertwo=variables.get("centerheadertwo", ""),
+            centerheaderthree=variables.get("centerheaderthree", ""),
+            leftfooter=variables.get("leftfooter", ""),
+            branding=branding,
+            secciones_fijas=secciones_fijas,
+            secciones_dinamicas=secciones_dinamicas,
+        )
+
+        # 6. WeasyPrint → PDF (base_url permite resolver paths relativos en CSS)
+        try:
+            pdf_bytes = WeasyprintHTML(string=html_str, base_url=str(aux_dir)).write_pdf()
+        except Exception as e:
+            self._log(f"[{self.name}] Error en WeasyPrint: {e}")
+            raise
+
+        # 7. Escribir PDF
+        out_dir = getattr(ctx, "outputs_dir", None) or aux_dir
+        out_dir = Path(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        out_path = out_dir / self.output_filename
+        out_path.write_bytes(pdf_bytes)
+
+        ctx.outputs["report_pdf"] = out_path
+        self._log(f"[{self.name}] PDF generado: {out_path} ({len(pdf_bytes)} bytes)")
+
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+    @staticmethod
+    def _build_branding(variables: dict, aux_dir: Path, base_dir: Optional[Path]) -> dict:
+        """Resuelve y codifica los logos `leftimage` / `rightimage` del esquema.
+
+        Estrategia de resolución (igual a `formato_informe.tex` que usa rutas
+        relativas a aux_dir, más fallback a `data/database/reports_templates/img/`
+        donde están copiados los logos del repo):
+            1. Path absoluto si existe.
+            2. aux_dir / rel_path
+            3. base_dir / rel_path (si base_dir presente)
+            4. REPORTS_TEMPLATES_DIR / rel_path
+            5. REPORTS_TEMPLATES_DIR / 'img' / basename(rel_path)
+        """
+        from rgenerator.tooling.report_html_tools import encode_image_b64
+
+        def _resolve(rel_path):
+            if not rel_path:
+                return None
+            p = Path(rel_path)
+            if p.is_absolute() and p.exists():
+                return p
+            candidates = [aux_dir / rel_path]
+            if base_dir is not None:
+                candidates.append(Path(base_dir) / rel_path)
+            candidates.append(REPORTS_TEMPLATES_DIR / rel_path)
+            candidates.append(REPORTS_TEMPLATES_DIR / "img" / Path(rel_path).name)
+            for c in candidates:
+                if c.exists():
+                    return c
+            return None
+
+        left = _resolve(variables.get("leftimage"))
+        right = _resolve(variables.get("rightimage"))
+        l_meta = encode_image_b64(left) if left else None
+        r_meta = encode_image_b64(right) if right else None
+        return {
+            "left_image_b64": l_meta["b64"] if l_meta else None,
+            "left_image_mime": l_meta["mime"] if l_meta else None,
+            "right_image_b64": r_meta["b64"] if r_meta else None,
+            "right_image_mime": r_meta["mime"] if r_meta else None,
+        }
+
+
 class GenerateDocxReport(Step):
     """
     Genera un informe DOCX (y opcionalmente PDF) usando una plantilla Word y docxtpl.
