@@ -1,0 +1,58 @@
+{
+    "variables_documento": {
+        "leftimage": "img/logo_php.png",
+        "rightimage": "img/php_panguipulli.png",
+        "centerheaderone": "Informe DIA Diagnóstico",
+        "centerheadertwo": "Matemáticas Nivel Medio",
+        "centerheaderthree": "Abril 2026",
+        "leftfooter": "Miguel Godoy Díaz",
+        "rightfooter": "\\thepage",
+        "documenttitle": "Informe DIA Diagnóstico - Matemáticas Nivel Medio",
+        "schoolname": "Liceo Técnico Profesional PHP Panguipulli",
+        "theauthor": "Miguel Godoy Díaz"
+    },
+    "secciones_fijas": [
+        {
+            "titulo": "Cuadro Resumen Logro por Curso",
+            "tipo": "tabla",
+            "contenido": "aux_files/resumen_logro_por_curso.xlsx"
+        },
+        {
+            "titulo": "Logro Promedio por Nivel",
+            "tipo": "imagen",
+            "contenido": "aux_files/logro_promedio_por_nivel.png",
+            "options": "height=0.4\\textheight"
+        },
+        {
+            "titulo": "Logro Promedio por Curso",
+            "tipo": "imagen",
+            "contenido": "aux_files/logro_promedio_por_curso.png",
+            "options": "width=0.9\\textwidth"
+        },
+        {
+            "titulo": "Distribución de Rendimiento por Curso",
+            "tipo": "imagen",
+            "contenido": "aux_files/distribucion_rendimiento_por_curso.png",
+            "options": "width=0.9\\textwidth"
+        },
+        {
+            "titulo": "Logro Promedio por Eje Temático",
+            "tipo": "imagen",
+            "contenido": "aux_files/logro_promedio_por_eje.png",
+            "options": "width=0.95\\textwidth"
+        },
+        {
+            "titulo": "Logro Promedio por Habilidad",
+            "tipo": "imagen",
+            "contenido": "aux_files/logro_promedio_por_habilidad.png",
+            "options": "width=0.95\\textwidth"
+        },
+        {
+            "titulo": "Cantidad de Alumnos por Nivel de Logro",
+            "tipo": "imagen",
+            "contenido": "aux_files/alumnos_por_nivel.png",
+            "options": "width=0.9\\textwidth"
+        }
+    ],
+    "secciones_dinamicas": []
+}
