@@ -14,6 +14,18 @@
   {% endif %}
   @bottom-left  { content: element(footer-left); }
   @bottom-right { content: element(footer-right); }
+  @bottom-center {
+    {% if not branding or branding.show_page_number != false %}
+    content: "Página " counter(page);
+    {% else %}
+    content: "{{ report_date }}";
+    {% endif %}
+    font-size: 7.5pt;
+    color: #94a3b8;
+    padding-top: 4px;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+  }
 }
 @page cover { margin: 0; }
 
@@ -225,15 +237,10 @@ table.data-table tr:nth-child(even) td { background: #f8fafc; }
 </div>
 {% endif %}
 
-<!-- Footer running elements -->
+<!-- Footer running elements: izquierda autor, centro nº de página (CSS counter
+     en @bottom-center), derecha fecha del informe. -->
 <div class="footer-left">{{ branding.left_footer if branding and branding.left_footer else org_name }}</div>
-<div class="footer-right">
-  {% if not branding or branding.show_page_number != false %}
-  <span>Página <pdf:pagenumber></span>
-  {% else %}
-  {{ report_date }}
-  {% endif %}
-</div>
+<div class="footer-right">{{ report_date }}</div>
 
 {% for section in sections %}
 
@@ -252,10 +259,17 @@ table.data-table tr:nth-child(even) td { background: #f8fafc; }
     {% endif %}
     <div class="accent-line"></div>
     <h1>{{ section.title }}</h1>
+    {% if section.subtitle %}
     <div class="subtitle">{{ section.subtitle }}</div>
+    {% endif %}
+    {% if section.filters_label %}
+    <div class="subtitle" style="font-size: 11pt; color: #475569; margin-top: 0.3cm;">
+      {{ section.filters_label }}
+    </div>
+    {% endif %}
     <div class="accent-line"></div>
     <div class="meta">
-      {{ org_name }}<br>
+      {{ section.org_label or org_name }}<br>
       Fecha: {{ report_date }}
     </div>
     <div class="cover-bar-bottom"></div>

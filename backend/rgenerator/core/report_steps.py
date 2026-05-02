@@ -127,11 +127,53 @@ class GenerateGraphics(Step):
 # ── Helpers compartidos para RenderPDFReport ─────────────────────────────────
 
 def _to_field_name(name: str) -> str:
+    """Normaliza el nombre de una columna a un field key con prefijo `_`.
+
+    Quita tildes/acentos primero (NFKD + ASCII) para que 'Versión' se mapee a
+    `_version` y no a `_versi_n`. Después minúsculas y reemplazo de no-alfanum.
+    """
     import re
-    s = name.strip().lower()
+    import unicodedata
+    s = unicodedata.normalize('NFKD', name).encode('ascii', 'ignore').decode('ascii')
+    s = s.strip().lower()
     s = re.sub(r'[^a-z0-9_]', '_', s)
     s = re.sub(r'_+', '_', s).strip('_')
     return f'_{s}'
+
+
+def _role_format_for_field(field: str, column_roles: dict, role_formats: dict) -> str:
+    """Dado un field name (ej `_rend`), devuelve el format del rol que lo
+    contiene (`'percent'`, `'number'`, etc.). Devuelve `'number'` por default.
+    """
+    if not isinstance(field, str) or not field.startswith('_'):
+        return 'number'
+    # Buscar role cuya primera columna se mapea a este field
+    for role, entries in (column_roles or {}).items():
+        if not isinstance(entries, list) or not entries:
+            continue
+        first = entries[0]
+        if isinstance(first, dict):
+            col = first.get('column', '')
+            if col and _to_field_name(col) == field:
+                return (role_formats or {}).get(role, 'number')
+    return 'number'
+
+
+def _format_value(val, fmt: str) -> str:
+    """Formatea un valor numérico según el format del rol."""
+    if val is None:
+        return '—'
+    try:
+        v = float(val)
+    except (TypeError, ValueError):
+        return str(val)
+    if fmt == 'percent':
+        # Si el valor está entre 0 y 1, asumir fracción (0.65 → 65%)
+        # Si está entre 1 y 100, asumir ya en escala (65 → 65%)
+        if -1.5 <= v <= 1.5:
+            return f'{v * 100:.0f}%'
+        return f'{v:.0f}%'
+    return f'{v:.1f}'
 
 
 _KNOWN_ROLES = {
@@ -308,27 +350,56 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             # Cuenta valores categóricos (level_field) agrupados por group_field.
             # Usa achievement_levels del indicator para orden y color.
             gf = group_field or '_curso'
-            # Resolver levelField si no fue pasado: usar nivel_de_logro del indicator
+            # Resolver levelField. Si vino del item, _resolve_field ya lo
+            # tradujo (ej _nivel_de_logro → _logro). NO re-resolver acá: el
+            # bug previo era hacer fallback cuando lf == '_logro', cayendo
+            # a '_categoria' que no existe en SIMCE/DIA.
             lf = level_field
-            if not lf or lf == '_logro':
+            if not lf:
                 role_entries = column_roles.get('nivel_de_logro') or []
                 if role_entries:
                     col = role_entries[0].get('column', '')
                     if col:
                         lf = _to_field_name(col)
-                if not lf or lf == '_logro':
-                    lf = '_categoria'  # fallback razonable
+            if not lf:
+                lf = '_categoria'  # último fallback
+
+            # Filtro al último periodo si hay múltiples y groupField no es el
+            # periodField (modo "snapshot" por evaluación). En histórico,
+            # groupField suele ser el periodo (_mes, _hito), entonces NO
+            # filtramos.
+            period_field_local = period_field
+            if not period_field_local or period_field_local == '_mes':
+                ev_role = column_roles.get('evaluacion_num') or []
+                if ev_role:
+                    col = ev_role[0].get('column', '')
+                    if col:
+                        period_field_local = _to_field_name(col)
+
+            records_filtered = records
+            if period_field_local and gf != period_field_local:
+                periods_present = sorted(
+                    {str(r.get(period_field_local, '')) for r in records
+                     if r.get(period_field_local) is not None and str(r.get(period_field_local, '')) != ''},
+                    key=_natural_sort_key,
+                )
+                if len(periods_present) >= 2:
+                    last = periods_present[-1]
+                    records_filtered = [r for r in records
+                                        if str(r.get(period_field_local, '')) == last]
+
             levels_cfg = _achievement_levels(indicator)
             level_order = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
             level_colors = {l.get('name', ''): l.get('color', '#94a3b8') for l in levels_cfg}
 
-            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+            groups = sorted({str(r.get(gf, '')) for r in records_filtered if r.get(gf) is not None},
                             key=_natural_sort_key)
             if not level_order:
-                level_order = sorted({str(r.get(lf, '')) for r in records if r.get(lf) is not None})
+                level_order = sorted({str(r.get(lf, '')) for r in records_filtered
+                                     if r.get(lf) is not None and str(r.get(lf, '')) != ''})
 
             counts = {g: {l: 0 for l in level_order} for g in groups}
-            for r in records:
+            for r in records_filtered:
                 g = str(r.get(gf, ''))
                 l = str(r.get(lf, ''))
                 if g in counts and l in counts[g]:
@@ -361,6 +432,15 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             vf = x_field if isinstance(x_field, str) else (x_field[0] if x_field else '_logro_1')
             vf = _resolve_field(vf, column_roles)
 
+            # Detectar formato del role (percent vs number)
+            role_formats = {}
+            if indicator is not None:
+                try:
+                    role_formats = json.loads(indicator.role_formats) if isinstance(indicator.role_formats, str) else (indicator.role_formats or {})
+                except Exception:
+                    role_formats = {}
+            fmt = _role_format_for_field(vf, column_roles, role_formats)
+
             groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
                             key=_natural_sort_key)
             periods = sorted({str(r.get(pf, '')) for r in records if r.get(pf) is not None},
@@ -371,15 +451,20 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             width = 0.8 / max(1, len(groups))
             colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
                       '#f43f5e', '#3b82f6', '#a855f7']
+            max_val = 0
             for i, g in enumerate(groups):
                 vals = []
                 for p in periods:
                     nums = []
                     for r in records:
                         if str(r.get(gf, '')) == g and str(r.get(pf, '')) == p:
-                            try: nums.append(float(r.get(vf, 0)))
+                            v = r.get(vf)
+                            if v is None or v == '':
+                                continue
+                            try: nums.append(float(v))
                             except (TypeError, ValueError): pass
                     vals.append(sum(nums) / len(nums) if nums else 0)
+                max_val = max(max_val, max(vals) if vals else 0)
                 offset = (i - (len(groups) - 1) / 2) * width
                 ax.bar(x + offset, vals, width, label=g, color=colors[i % len(colors)],
                        edgecolor='white', linewidth=0.5, zorder=2)
@@ -387,7 +472,16 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             ax.set_ylabel(item.get('labelY', vf.lstrip('_').title()), fontsize=9)
             ax.spines[['top', 'right']].set_visible(False)
             ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
-            ax.legend(fontsize=7, loc='upper left', ncol=2)
+            # Formato percent: ylim 0-1 + ticker percent
+            if fmt == 'percent' and max_val <= 1.5:
+                ax.set_ylim(0, 1)
+                from matplotlib.ticker import PercentFormatter as _PF
+                ax.yaxis.set_major_formatter(_PF(1.0))
+            # Leyenda: cuando hay muchos grupos, fuera del plot a la derecha
+            if len(groups) > 8:
+                ax.legend(fontsize=6, loc='center left', bbox_to_anchor=(1.01, 0.5), ncol=1)
+            else:
+                ax.legend(fontsize=7, loc='upper left', ncol=2)
 
         elif comp == 'BarByGroup':
             # Si valueField es lista → barras agrupadas (una por valueField).
@@ -398,6 +492,15 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 vfs = [vfs]
             vfs = [_resolve_field(v, column_roles) for v in vfs]
 
+            # Detectar formato del primer vf para ylim/ticks
+            role_formats = {}
+            if indicator is not None:
+                try:
+                    role_formats = json.loads(indicator.role_formats) if isinstance(indicator.role_formats, str) else (indicator.role_formats or {})
+                except Exception:
+                    role_formats = {}
+            fmt_first = _role_format_for_field(vfs[0] if vfs else '', column_roles, role_formats)
+
             groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
                             key=_natural_sort_key)
 
@@ -405,15 +508,20 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             x = np.arange(len(groups))
             width = 0.8 / max(1, len(vfs))
             colors = ['#6366f1', '#06b6d4', '#f59e0b', '#10b981', '#f43f5e']
+            max_val = 0
             for i, vf in enumerate(vfs):
                 vals = []
                 for g in groups:
                     nums = []
                     for r in records:
                         if str(r.get(gf, '')) == g:
-                            try: nums.append(float(r.get(vf, 0)))
+                            v = r.get(vf)
+                            if v is None or v == '':
+                                continue  # NO contar como 0, el field no existe en este record
+                            try: nums.append(float(v))
                             except (TypeError, ValueError): pass
                     vals.append(sum(nums) / len(nums) if nums else 0)
+                max_val = max(max_val, max(vals) if vals else 0)
                 offset = (i - (len(vfs) - 1) / 2) * width
                 bars = ax.bar(x + offset, vals, width,
                               label=vf.lstrip('_').replace('_', ' ').title(),
@@ -421,13 +529,26 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                               edgecolor='white', linewidth=0.5)
                 if item.get('showValues', False):
                     for b, v in zip(bars, vals):
+                        if fmt_first == 'percent' and -1.5 <= v <= 1.5:
+                            label_str = f'{v * 100:.0f}%'
+                        else:
+                            label_str = f'{v:.1f}'
                         ax.text(b.get_x() + b.get_width() / 2, v + max(vals + [1]) * 0.01,
-                                f'{v:.1f}', ha='center', va='bottom', fontsize=7)
+                                label_str, ha='center', va='bottom', fontsize=7)
             ax.set_xticks(x); ax.set_xticklabels(groups, rotation=20, ha='right', fontsize=8)
             ax.spines[['top', 'right']].set_visible(False)
             ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            # Formato percent: ylim 0-1 + ticker percent
+            if fmt_first == 'percent' and max_val <= 1.5:
+                ax.set_ylim(0, 1)
+                from matplotlib.ticker import PercentFormatter as _PF
+                ax.yaxis.set_major_formatter(_PF(1.0))
+            # Leyenda fuera del plot cuando hay muchos grupos o multi-value
             if len(vfs) > 1 and item.get('showLegend', True):
-                ax.legend(fontsize=8)
+                if len(groups) > 8:
+                    ax.legend(fontsize=7, loc='center left', bbox_to_anchor=(1.01, 0.5))
+                else:
+                    ax.legend(fontsize=8)
 
         elif comp in ('HeatmapMatrix',):
             x_f = item.get('xField', '')
@@ -522,25 +643,15 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
 
     if comp in ('SummaryTable', 'TablaResumenCursos'):
         # Tabla resumen por curso: Alumnos, Promedio, Min, Max, + count por nivel.
-        # valueField: campo numérico (default _logro_1 → resuelto)
-        # groupField: campo de agrupación (default _curso)
-        # comparePrevious (bool, default False): si records tiene múltiples
-        #   periodos (vía periodField), calcula delta del Promedio vs el
-        #   periodo inmediatamente anterior. Si solo hay 1 periodo, no muestra
-        #   la columna Δ (caso: primera evaluación del año).
-        # periodField: campo temporal para detectar periodos (ej: '_mes',
-        #   '_n_prueba', '_evaluacion'). Default: usa column_roles.evaluacion_num
-        #   o '_mes' como fallback.
         gf = _resolve_field(item.get('groupField', '_curso'), column_roles)
         vfs = item.get('valueField')
         if isinstance(vfs, str): vfs = [vfs]
         if not vfs: vfs = ['_logro_1']
-        vfs = [_resolve_field(v, column_roles) for v in vfs]
+        vfs_resolved = [_resolve_field(v, column_roles) for v in vfs]
 
         compare_previous = bool(item.get('comparePrevious', False))
         period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
-        if compare_previous and (not period_field or period_field == '_mes'):
-            # Intentar resolver desde column_roles.evaluacion_num si está disponible
+        if not period_field or period_field == '_mes':
             ev_role = column_roles.get('evaluacion_num') or []
             if ev_role:
                 col = ev_role[0].get('column', '')
@@ -557,46 +668,57 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         levels_cfg = _achievement_levels(indicator)
         level_names = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
 
-        # ── Detectar periodos para comparación histórica ──
+        # role_formats para mostrar percent vs number
+        role_formats = {}
+        if indicator is not None:
+            try:
+                role_formats = json.loads(indicator.role_formats) if isinstance(indicator.role_formats, str) else (indicator.role_formats or {})
+            except Exception:
+                role_formats = {}
+
+        # Detectar periodos en records (siempre, no solo si comparePrevious).
+        # Si hay 2+ periodos y groupField NO es el periodFiel, asumimos que es
+        # un layout "por evaluación" y filtramos al último periodo. Esto evita
+        # que counts se inflen sumando todos los periodos.
         period_actual = None
         period_prev = None
-        if compare_previous and period_field:
+        if period_field and gf != period_field:
             periods = sorted(
-                {str(r.get(period_field, '')) for r in records if r.get(period_field) is not None and str(r.get(period_field, '')) != ''},
+                {str(r.get(period_field, '')) for r in records
+                 if r.get(period_field) is not None and str(r.get(period_field, '')) != ''},
                 key=_natural_sort_key,
             )
-            if len(periods) >= 2:
+            if len(periods) >= 1:
                 period_actual = periods[-1]
+            if compare_previous and len(periods) >= 2:
                 period_prev = periods[-2]
 
         # Recolectar grupos y agregaciones
         from collections import defaultdict
         buckets = defaultdict(list)
-        buckets_prev = defaultdict(list)  # para periodo anterior
+        buckets_prev = defaultdict(list)
         for r in records:
             g = str(r.get(gf, ''))
             if not g: continue
             r_period = str(r.get(period_field, '')) if period_field else None
-            for vf in vfs:
+            for vf in vfs_resolved:
                 try:
                     val = float(r.get(vf))
                 except (TypeError, ValueError):
                     continue
-                # Si comparePrevious activo y hay 2+ periodos, separar por periodo
                 if period_actual and r_period == period_actual:
                     buckets[(g, vf)].append(val)
                 elif period_prev and r_period == period_prev:
                     buckets_prev[(g, vf)].append(val)
                 elif not period_actual:
-                    # Sin comparación o sin múltiples periodos: agrupar todo
                     buckets[(g, vf)].append(val)
 
         groups = sorted({k[0] for k in buckets.keys()}, key=_natural_sort_key)
 
-        # Headers: Curso | Alumnos | (por cada vf: Promedio, [Δ], Mín, Máx) | (por nivel: count)
+        # Headers
         header = [item.get('groupLabel', 'Curso'), 'Alumnos']
         show_delta = bool(period_actual and period_prev)
-        for vf in vfs:
+        for vf, vf_orig in zip(vfs_resolved, vfs):
             label = vf.lstrip('_').replace('_', ' ').title()
             header.append(f'{label} prom.')
             if show_delta:
@@ -605,17 +727,18 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         for lname in level_names:
             header.append(lname)
 
-        def _fmt_delta(d):
-            """Formatea delta con flecha unicode. Devuelve string."""
+        def _fmt_delta(d, fmt='number'):
             if d is None:
                 return '—'
-            arrow = '▲' if d > 0.05 else ('▼' if d < -0.05 else '→')
+            arrow = '▲' if d > 0.005 else ('▼' if d < -0.005 else '→')
             sign = '+' if d > 0 else ''
+            if fmt == 'percent':
+                return f'{arrow} {sign}{d * 100:.0f}%' if -1.5 <= d <= 1.5 else f'{arrow} {sign}{d:.0f}%'
             return f'{arrow} {sign}{d:.1f}'
 
         rows_out = []
         for g in groups:
-            # Conteo de alumnos por curso (usando RUT/Nombre como identidad o fallback al periodo actual)
+            # Records del periodo actual (filtra siempre que period_actual exista)
             if period_actual:
                 actual_records = [r for r in records
                                   if str(r.get(gf, '')) == g
@@ -624,25 +747,30 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
                 actual_records = [r for r in records if str(r.get(gf, '')) == g]
             n_alumnos = len({r.get('_rut') or r.get('_nombre') for r in actual_records}) or len(actual_records)
             row = [g, str(n_alumnos)]
-            for vf in vfs:
+            for vf, vf_orig in zip(vfs_resolved, vfs):
+                fmt = _role_format_for_field(vf, column_roles, role_formats)
+                # También probar con vf_orig por si vino con role-name
+                if fmt == 'number' and isinstance(vf_orig, str) and vf_orig.startswith('_'):
+                    fmt = (role_formats or {}).get(vf_orig[1:], 'number')
+
                 vals = buckets.get((g, vf), [])
                 vals_prev = buckets_prev.get((g, vf), [])
                 if vals:
                     avg = sum(vals) / len(vals)
-                    row.append(f'{avg:.1f}')
+                    row.append(_format_value(avg, fmt))
                     if show_delta:
                         if vals_prev:
                             avg_prev = sum(vals_prev) / len(vals_prev)
-                            row.append(_fmt_delta(avg - avg_prev))
+                            row.append(_fmt_delta(avg - avg_prev, fmt))
                         else:
                             row.append('—')
-                    row.extend([f'{min(vals):.1f}', f'{max(vals):.1f}'])
+                    row.extend([_format_value(min(vals), fmt), _format_value(max(vals), fmt)])
                 else:
                     row.append('—')
                     if show_delta:
                         row.append('—')
                     row.extend(['—', '—'])
-            # Counts por nivel (sobre periodo actual si aplica)
+            # Counts por nivel — siempre sobre actual_records (que ya están filtrados al periodo actual si aplica)
             if level_field and level_names:
                 for lname in level_names:
                     cnt = sum(1 for r in actual_records
@@ -821,6 +949,67 @@ def build_pdf_bytes(
     raw_sections = pdf_layout.get('sections', [])
     records = _build_records(db, indicator, org_id, filters=filters)
 
+    # ── Auto-filtrar al último periodo si layout es modo "evaluacion" ──
+    # Cuando el pdf_layout declara `"mode": "evaluacion"` y el usuario NO
+    # filtró explícitamente la dimensión temporal, recortamos records al
+    # periodo más reciente. Esto evita que SummaryTable/StackedCount cuenten
+    # registros de varios periodos (bug pre-fix: II A SIMCE mostraba 49
+    # alumnos en counts cuando son 28 — sumaba todas las pruebas).
+    layout_mode = (pdf_layout.get('mode') or 'historico').lower()
+    if layout_mode == 'evaluacion':
+        # Resolver el field temporal del indicator (column_roles.evaluacion_num)
+        try:
+            cr = json.loads(indicator.column_roles) if isinstance(indicator.column_roles, str) else (indicator.column_roles or {})
+        except Exception:
+            cr = {}
+        ev_role = (cr or {}).get('evaluacion_num') or []
+        if ev_role:
+            col = ev_role[0].get('column', '') if isinstance(ev_role[0], dict) else ''
+            if col:
+                period_field_auto = _to_field_name(col)
+                # Si el usuario ya filtró este periodo via `filters`, no tocar
+                user_filtered_period = False
+                if filters:
+                    try:
+                        from backend.models import Dimension
+                        dim_ids_in_filter = [int(k) for k in filters.keys()]
+                        dims_in_filter = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids_in_filter)).all()
+                        for d in dims_in_filter:
+                            if _to_field_name(d.name) == period_field_auto:
+                                user_filtered_period = True
+                                break
+                    except Exception:
+                        pass
+                if not user_filtered_period:
+                    periods_present = sorted(
+                        {str(r.get(period_field_auto, '')) for r in records
+                         if r.get(period_field_auto) is not None and str(r.get(period_field_auto, '')) != ''},
+                        key=_natural_sort_key,
+                    )
+                    if len(periods_present) >= 1:
+                        last_period = periods_present[-1]
+                        # Mantener los del periodo más reciente. Para tabla de
+                        # SummaryTable que necesita el penúltimo (delta), ese
+                        # filtra usando el period_field internamente sobre
+                        # records ya pasados — pero al haber recortado acá,
+                        # comparePrevious con un solo periodo no calcula Δ.
+                        # Solución: NO recortar si comparePrevious está
+                        # activo en alguna sección (mantenemos histórico para
+                        # que SummaryTable pueda comparar).
+                        any_compare = any(
+                            (sec.get('item') or {}).get('comparePrevious')
+                            for sec in raw_sections
+                            if sec.get('type') == 'table'
+                        )
+                        if not any_compare:
+                            records = [r for r in records
+                                       if str(r.get(period_field_auto, '')) == last_period]
+                        # Si any_compare, dejamos records con todos los
+                        # periodos. SummaryTable filtra al último internamente
+                        # para counts, y StackedCount también lo hace por su
+                        # propio filtro interno. (Ver fix en _chart_to_png_b64
+                        # y _table_section.)
+
     # Resolver nombre de la organización
     org = db.query(Organization).filter(Organization.id == org_id).first()
     org_name = org.name if org else str(org_id)
@@ -828,13 +1017,36 @@ def build_pdf_bytes(
     # Cargar branding (logos + header)
     branding = _load_branding(pdf_layout, db, org_id)
 
+    # ── Construir etiqueta de filtros aplicados (para enriquecer el cover) ──
+    # Mapea {id_dimension: valor} → "Curso 2°A · Mes Octubre · Año 2025".
+    filters_label = ''
+    if filters:
+        try:
+            from backend.models import Dimension
+            dim_ids = [int(k) for k in filters.keys()]
+            dims = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids)).all()
+            dim_name_by_id = {d.id_dimension: d.name for d in dims}
+            parts = []
+            for k, v in filters.items():
+                try:
+                    name = dim_name_by_id.get(int(k), '')
+                except (ValueError, TypeError):
+                    name = ''
+                if name and v:
+                    parts.append(f'{name}: {v}')
+            filters_label = ' · '.join(parts)
+        except Exception:
+            filters_label = ''
+
     # Renderizar cada sección
     rendered = []
     for sec in raw_sections:
         t = sec.get('type')
         if t == 'cover':
             rendered.append({'type': 'cover', 'title': sec.get('title', indicator.name),
-                             'subtitle': sec.get('subtitle', '')})
+                             'subtitle': sec.get('subtitle', ''),
+                             'filters_label': filters_label,
+                             'org_label': org_name})
         elif t == 'page_break':
             rendered.append({'type': 'page_break'})
         elif t == 'text':
