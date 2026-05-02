@@ -501,7 +501,31 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     role_formats = {}
             fmt_first = _role_format_for_field(vfs[0] if vfs else '', column_roles, role_formats)
 
-            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+            # Filtrar al último periodo cuando hay múltiples y groupField no es
+            # el periodField. Garantiza consistencia con SummaryTable
+            # (issue 1A: tabla y gráfico mostraban valores distintos en SIMCE
+            # por evaluación cuando la tabla filtraba al último periodo y el
+            # gráfico promediaba todos).
+            period_field_local = period_field
+            if not period_field_local or period_field_local == '_mes':
+                ev_role = column_roles.get('evaluacion_num') or []
+                if ev_role:
+                    col = ev_role[0].get('column', '') if isinstance(ev_role[0], dict) else ''
+                    if col:
+                        period_field_local = _to_field_name(col)
+            records_local = records
+            if period_field_local and gf != period_field_local:
+                periods_present = sorted(
+                    {str(r.get(period_field_local, '')) for r in records
+                     if r.get(period_field_local) is not None and str(r.get(period_field_local, '')) != ''},
+                    key=_natural_sort_key,
+                )
+                if len(periods_present) >= 2:
+                    last = periods_present[-1]
+                    records_local = [r for r in records
+                                     if str(r.get(period_field_local, '')) == last]
+
+            groups = sorted({str(r.get(gf, '')) for r in records_local if r.get(gf) is not None},
                             key=_natural_sort_key)
 
             import numpy as np
@@ -513,7 +537,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 vals = []
                 for g in groups:
                     nums = []
-                    for r in records:
+                    for r in records_local:
                         if str(r.get(gf, '')) == g:
                             v = r.get(vf)
                             if v is None or v == '':
@@ -1038,8 +1062,25 @@ def build_pdf_bytes(
         except Exception:
             filters_label = ''
 
+    # Si el layout declara `title` (sin sección cover explícita), inyectar
+    # un encabezado minimalista al inicio del documento — al estilo LaTeX:
+    # h1 grande centrado + subtítulo + filtros, sin portada con gradientes.
+    layout_title = pdf_layout.get('title')
+    layout_subtitle = pdf_layout.get('subtitle', '')
+    has_cover_section = any(s.get('type') == 'cover' for s in raw_sections)
+
     # Renderizar cada sección
     rendered = []
+
+    # Inyectar page_title si corresponde (antes de la primera sección)
+    if layout_title and not has_cover_section:
+        rendered.append({
+            'type': 'page_title',
+            'title': layout_title,
+            'subtitle': layout_subtitle,
+            'filters_label': filters_label,
+        })
+
     for sec in raw_sections:
         t = sec.get('type')
         if t == 'cover':

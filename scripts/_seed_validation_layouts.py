@@ -52,10 +52,10 @@ def simce_evaluacion() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "evaluacion",
+        "title": "Informe SIMCE — Por evaluación",
+        "subtitle": "Resumen de la prueba seleccionada",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe SIMCE — Por evaluación",
-             "subtitle": "Resumen de la prueba seleccionada"},
             {"type": "table", "heading": "Cuadro Resumen Logro por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -83,10 +83,10 @@ def simce_historico() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "historico",
+        "title": "Informe SIMCE — Histórico",
+        "subtitle": "Evolución del rendimiento entre evaluaciones",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe SIMCE — Histórico",
-             "subtitle": "Evolución del rendimiento entre evaluaciones"},
             {"type": "chart", "heading": "Evolución del Logro Promedio por Curso y Mes",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -107,10 +107,10 @@ def dia_evaluacion() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "evaluacion",
+        "title": "Informe DIA — Por evaluación",
+        "subtitle": "Resumen del hito seleccionado",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe DIA — Por evaluación",
-             "subtitle": "Resumen del hito seleccionado"},
             {"type": "table", "heading": "Cuadro Resumen Logro por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -137,10 +137,10 @@ def dia_historico() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "historico",
+        "title": "Informe DIA — Histórico",
+        "subtitle": "Evolución entre hitos del año",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe DIA — Histórico",
-             "subtitle": "Evolución entre hitos del año"},
             {"type": "chart", "heading": "Evolución del Logro Promedio por Curso y Hito",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -157,10 +157,10 @@ def idel_evaluacion() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "evaluacion",
+        "title": "Informe IDEL — Por evaluación",
+        "subtitle": "Resultados de la versión seleccionada",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe IDEL — Por evaluación",
-             "subtitle": "Resultados de la versión seleccionada"},
             {"type": "table", "heading": "Cuadro Resumen Puntaje por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -184,10 +184,10 @@ def idel_historico() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "historico",
+        "title": "Informe IDEL — Histórico",
+        "subtitle": "Evolución entre versiones de la prueba",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe IDEL — Histórico",
-             "subtitle": "Evolución entre versiones de la prueba"},
             {"type": "chart", "heading": "Evolución del Puntaje Promedio por Curso y Versión",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -204,10 +204,10 @@ def cv_evaluacion() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "evaluacion",
+        "title": "Informe Cálculo Veloz — Por evaluación",
+        "subtitle": "Resultados de la prueba seleccionada",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe Cálculo Veloz — Por evaluación",
-             "subtitle": "Resultados de la prueba seleccionada"},
             {"type": "table", "heading": "Cuadro Resumen por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": ["_logro_2", "_logro_1"],
@@ -233,10 +233,10 @@ def cv_historico() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "historico",
+        "title": "Informe Cálculo Veloz — Histórico",
+        "subtitle": "Evolución de Puntaje y Nota entre pruebas",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe Cálculo Veloz — Histórico",
-             "subtitle": "Evolución de Puntaje y Nota entre pruebas"},
             {"type": "chart", "heading": "Evolución del Puntaje Promedio por Curso y Mes",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_2", "groupField": "_curso",
@@ -257,10 +257,10 @@ def fl_evaluacion() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "evaluacion",
+        "title": "Informe Fluidez Lectora — Por evaluación",
+        "subtitle": "Resultados de la medición seleccionada",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe Fluidez Lectora — Por evaluación",
-             "subtitle": "Resultados de la medición seleccionada"},
             {"type": "table", "heading": "Cuadro Resumen PPM por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -288,10 +288,10 @@ def fl_historico() -> dict:
     return {
         "engine": "weasyprint",
         "mode": "historico",
+        "title": "Informe Fluidez Lectora — Histórico",
+        "subtitle": "Evolución de fluidez entre evaluaciones",
         "branding": BRANDING_PHP,
         "sections": [
-            {"type": "cover", "title": "Informe Fluidez Lectora — Histórico",
-             "subtitle": "Evolución de fluidez entre evaluaciones"},
             {"type": "chart", "heading": "Evolución PPM Promedio por Curso y Evaluación",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_1", "groupField": "_curso",
