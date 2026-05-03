@@ -82,13 +82,28 @@ def _ordered_by_time(group: pd.DataFrame, time_field: str) -> pd.DataFrame:
 # Kind: agg
 # ─────────────────────────────────────────────────────────────────────────
 
+def _resolve_entity_keys(df: pd.DataFrame, entity_field, label: str) -> list[str]:
+    """Normaliza entity_field a lista de columnas y valida existencia.
+
+    Acepta string ("Rut") o lista (["Curso", "Nombre"]) para soportar
+    groupby compuesto cuando no hay un id único de estudiante.
+    """
+    keys = entity_field if isinstance(entity_field, (list, tuple)) else [entity_field]
+    keys = list(keys)
+    missing = [k for k in keys if k not in df.columns]
+    if missing:
+        raise KeyError(f"{label}: entity_field columnas inexistentes: {missing}")
+    return keys
+
+
 def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Agregación por entity broadcast a todas las filas del grupo.
 
     Config esperado:
         name: nombre de la columna nueva
         value_field: columna numérica (o ordinal con ordinal_levels)
-        entity_field: columna por la que agrupar (ej "Rut")
+        entity_field: columna o lista de columnas por las que agrupar.
+            Ej "Rut" (1 columna) o ["Curso", "Nombre"] (compuesto).
         agg: 'mean' | 'sum' | 'min' | 'max' | 'std' | 'count' | 'nunique'
         value_type: 'numeric' (default) | 'ordinal'
         ordinal_levels: lista (requerido si ordinal)
@@ -99,7 +114,7 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_field = config["entity_field"]
+    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"agg '{name}'")
     agg_fn = config.get("agg", "mean")
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
@@ -107,14 +122,13 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
     if value_field not in df.columns:
         raise KeyError(f"agg '{name}': value_field '{value_field}' no existe en el DataFrame")
-    if entity_field not in df.columns:
-        raise KeyError(f"agg '{name}': entity_field '{entity_field}' no existe en el DataFrame")
 
     df = df.copy()
     series_num = _as_numeric(df[value_field], value_type, ordinal_levels)
 
-    # Calcular agregación + count por entity
-    grouped = series_num.groupby(df[entity_field])
+    # Calcular agregación + count por entity (uno o varios campos)
+    group_keys = [df[k] for k in entity_keys]
+    grouped = series_num.groupby(group_keys)
     agg_series = grouped.agg(agg_fn)
     counts = grouped.count()
 
@@ -122,8 +136,20 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     if min_points > 1:
         agg_series = agg_series.where(counts >= min_points, other=np.nan)
 
-    # Broadcast a cada fila vía map
-    df[name] = df[entity_field].map(agg_series)
+    # Broadcast a cada fila usando merge (soporta multi-key)
+    if len(entity_keys) == 1:
+        df[name] = df[entity_keys[0]].map(agg_series)
+    else:
+        agg_df = agg_series.reset_index().rename(columns={agg_series.name or 0: name})
+        # Si la serie no tiene name, queda en columna 0 tras reset_index
+        if name not in agg_df.columns:
+            cols_no_keys = [c for c in agg_df.columns if c not in entity_keys]
+            agg_df = agg_df.rename(columns={cols_no_keys[0]: name})
+        # Si la columna `name` ya existía en df (re-aplicación), drop antes
+        # del merge para evitar sufijos _x/_y de pandas.
+        if name in df.columns:
+            df = df.drop(columns=[name])
+        df = df.merge(agg_df[entity_keys + [name]], on=entity_keys, how="left")
     return df
 
 
@@ -150,13 +176,13 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_field = config["entity_field"]
+    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"slope '{name}'")
     time_field = config["time_field"]
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
     min_points = int(config.get("min_points", 2))
 
-    for f in (value_field, entity_field, time_field):
+    for f in (value_field, time_field):
         if f not in df.columns:
             raise KeyError(f"slope '{name}': columna '{f}' no existe en el DataFrame")
 
@@ -167,34 +193,58 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
     df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
-    # Para cada entidad, ordenar y calcular pendiente expansiva.
-    # Inicializamos la columna con NaN.
-    result = pd.Series(index=df.index, dtype=float)
+    # Pre-agregar por (entity, time) si hay múltiples filas con el mismo
+    # punto temporal por entidad. Caso real: DIA tiene varias filas por
+    # estudiante en el mismo Hito (una por subprueba: Localizar /
+    # Interpretar / Reflexionar). Para slope/delta nos interesa el
+    # promedio del estudiante por hito, no cada subprueba.
+    agg_per_time = (
+        df.dropna(subset=["_value_num", "_time_num"])
+        .groupby(entity_keys + ["_time_num"], as_index=False, sort=False)["_value_num"]
+        .mean()
+    )
 
-    for entity_value, group in df.groupby(entity_field, sort=False):
-        ordered = group.sort_values("_time_num", kind="mergesort")
+    # Para cada entidad, ordenar y calcular pendiente expansiva sobre el
+    # df agregado. Mapping (entity_value, time_num) → slope value;
+    # después se broadcast a todas las filas originales del par.
+    group_by_arg = entity_keys[0] if len(entity_keys) == 1 else entity_keys
+    slope_map: dict = {}
+    for entity_value, group in agg_per_time.groupby(group_by_arg, sort=False):
+        ordered = group.sort_values("_time_num", kind="mergesort").reset_index(drop=True)
         x_values = ordered["_time_num"].to_numpy()
         y_values = ordered["_value_num"].to_numpy()
 
-        for i, (idx, _row) in enumerate(ordered.iterrows()):
-            # Tomar los puntos hasta i inclusive
+        # Para cada punto temporal del estudiante, calcular slope expansivo
+        # con los puntos previos + actual, y asignarlo a TODAS las filas
+        # originales que tienen ese (entity, time).
+        for i in range(len(ordered)):
+            time_at_i = float(x_values[i])
             x_slice = x_values[: i + 1]
             y_slice = y_values[: i + 1]
-            # Filtrar NaN en cualquiera de las dos series
             mask = ~(np.isnan(x_slice) | np.isnan(y_slice))
             x_clean = x_slice[mask]
             y_clean = y_slice[mask]
             if len(x_clean) < min_points or len(np.unique(x_clean)) < 2:
-                result.loc[idx] = np.nan
-                continue
-            try:
-                # polyfit grado 1: [pendiente, intercepto]
-                slope = np.polyfit(x_clean, y_clean, 1)[0]
-                result.loc[idx] = float(slope)
-            except (np.linalg.LinAlgError, ValueError):
-                result.loc[idx] = np.nan
+                slope_val = np.nan
+            else:
+                try:
+                    slope_val = float(np.polyfit(x_clean, y_clean, 1)[0])
+                except (np.linalg.LinAlgError, ValueError):
+                    slope_val = np.nan
+            slope_map[(entity_value, time_at_i)] = slope_val
 
-    df[name] = result
+    # Broadcast: para cada fila original, lookup por (entity_value, time_num)
+    def _lookup(row):
+        if len(entity_keys) == 1:
+            ev = row[entity_keys[0]]
+        else:
+            ev = tuple(row[k] for k in entity_keys)
+        tn = row["_time_num"]
+        if pd.isna(tn):
+            return np.nan
+        return slope_map.get((ev, float(tn)), np.nan)
+
+    df[name] = df.apply(_lookup, axis=1)
     df.drop(columns=["_value_num", "_time_num"], inplace=True)
     return df
 
@@ -215,13 +265,13 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_field = config["entity_field"]
+    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"delta '{name}'")
     time_field = config["time_field"]
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
     min_points = int(config.get("min_points", 2))
 
-    for f in (value_field, entity_field, time_field):
+    for f in (value_field, time_field):
         if f not in df.columns:
             raise KeyError(f"delta '{name}': columna '{f}' no existe en el DataFrame")
 
@@ -232,16 +282,39 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
     df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
-    deltas: dict[Any, float] = {}
-    for entity_value, group in df.groupby(entity_field, sort=False):
+    # Pre-agregar por (entity, time) — caso DIA con varias subpruebas en el
+    # mismo hito. Sin esto, "primero" y "último" pueden ser dos subpruebas
+    # del mismo hito, dando deltas espurios.
+    agg_per_time = (
+        df.dropna(subset=["_value_num", "_time_num"])
+        .groupby(entity_keys + ["_time_num"], as_index=False, sort=False)["_value_num"]
+        .mean()
+    )
+
+    # Calcular delta por grupo (uno o varios campos)
+    group_by_arg = entity_keys[0] if len(entity_keys) == 1 else entity_keys
+    delta_records = []
+    for entity_value, group in agg_per_time.groupby(group_by_arg, sort=False):
         valid = group.dropna(subset=["_value_num", "_time_num"])
         if len(valid) < min_points:
-            deltas[entity_value] = np.nan
-            continue
-        ordered = valid.sort_values("_time_num", kind="mergesort")
-        deltas[entity_value] = float(ordered["_value_num"].iloc[-1] - ordered["_value_num"].iloc[0])
+            delta_val = np.nan
+        else:
+            ordered = valid.sort_values("_time_num", kind="mergesort")
+            delta_val = float(ordered["_value_num"].iloc[-1] - ordered["_value_num"].iloc[0])
+        # entity_value puede ser tupla (multi-key) o escalar
+        if len(entity_keys) == 1:
+            delta_records.append({entity_keys[0]: entity_value, name: delta_val})
+        else:
+            row = dict(zip(entity_keys, entity_value))
+            row[name] = delta_val
+            delta_records.append(row)
 
-    df[name] = df[entity_field].map(deltas)
+    deltas_df = pd.DataFrame(delta_records)
+    # Si `name` ya existía en df (re-aplicación), drop antes del merge para
+    # evitar que pandas rename a name_x / name_y.
+    if name in df.columns:
+        df = df.drop(columns=[name])
+    df = df.merge(deltas_df, on=entity_keys, how="left")
     df.drop(columns=["_value_num", "_time_num"], inplace=True)
     return df
 

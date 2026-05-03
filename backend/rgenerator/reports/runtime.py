@@ -169,18 +169,23 @@ def construir_pdf(
             else:
                 esquema[key] = value
 
-    # Aplicar derived_fields del esquema. Cada entry tiene forma
-    # {df_input: 'estudiantes'|'preguntas'|..., configs: [...]}.
-    # Son cálculos de runtime (no se persisten); mientras los pipelines
-    # ETL no incluyan ApplyDerivedFields y re-procesen los datos, el
-    # esquema permite tener Avance/Logro_Promedio en los informes ya.
+    # NOTA: las derived_fields del esquema se aplican en crear_informe.py
+    # ANTES del filtro a un solo hito/prueba (las funciones temporales
+    # como slope/delta necesitan ver el histórico completo). Aplicarlas
+    # acá otra vez sobre dfs ya filtrados sobreescribiría con NaN.
+    # Aquí solo se ejecutan si la columna calculada NO existe todavía
+    # en el df (fallback para esquemas que NO tengan un crear_informe.py
+    # custom que las aplique upstream).
     derived_fields_runtime = esquema.get("derived_fields") or []
     for entry in derived_fields_runtime:
         target_key = entry.get("df_input")
         configs = entry.get("configs") or []
         if target_key and configs and target_key in dataframes:
-            dataframes = dict(dataframes)
-            dataframes[target_key] = apply_derived_fields(dataframes[target_key], configs)
+            df_target = dataframes[target_key]
+            pending = [c for c in configs if c.get("name") not in df_target.columns]
+            if pending:
+                dataframes = dict(dataframes)
+                dataframes[target_key] = apply_derived_fields(df_target, pending)
 
     # Resolver branding (logos a path absoluto + base64)
     branding = dict(esquema.get("branding", {}))

@@ -315,9 +315,93 @@ class TestOrchestrator:
 # Registry
 # ─────────────────────────────────────────────────────────────────────────
 
+class TestEntityCompuesto:
+    """Soporte de entity_field como lista de columnas (groupby compuesto).
+
+    Útil cuando no hay un id único de estudiante (ej DIA: usa Curso+Nombre
+    en lugar de Rut).
+    """
+    @pytest.fixture
+    def df_dia_sin_rut(self):
+        rows = []
+        # Mismo Nombre en distintos cursos: deberían tratarse como entidades
+        # diferentes con la combinación (Curso, Nombre).
+        for curso in ("I A", "II B"):
+            for hito_idx, hito in enumerate(("DIAGNOSTICO", "INTERMEDIO", "CIERRE"), start=1):
+                rows.append({
+                    "Curso": curso,
+                    "Nombre": "Juan Pérez",
+                    "Hito": hito,
+                    "Logro": 0.30 + (hito_idx * 0.10) + (0.05 if curso == "II B" else 0),
+                })
+        return pd.DataFrame(rows)
+
+    def test_agg_compuesto(self, df_dia_sin_rut):
+        out = apply_agg(df_dia_sin_rut, {
+            "name": "Promedio",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"],
+            "agg": "mean",
+        })
+        # I A:  0.40, 0.50, 0.60 → 0.50
+        # II B: 0.45, 0.55, 0.65 → 0.55
+        ia = out[out["Curso"] == "I A"]["Promedio"].iloc[0]
+        iib = out[out["Curso"] == "II B"]["Promedio"].iloc[0]
+        assert ia == pytest.approx(0.50)
+        assert iib == pytest.approx(0.55)
+
+    def test_slope_compuesto_con_time_ordinal(self, df_dia_sin_rut):
+        out = apply_slope(df_dia_sin_rut, {
+            "name": "Avance",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+        })
+        # Pendiente perfecta = 0.10
+        ia_cierre = out[(out["Curso"] == "I A") & (out["Hito"] == "CIERRE")]["Avance"].iloc[0]
+        assert ia_cierre == pytest.approx(0.10, abs=1e-9)
+
+    def test_reaplicacion_no_genera_sufijos(self, df_dia_sin_rut):
+        """Re-ejecutar agg/delta con entity compuesto sobre un df que ya
+        tiene la columna calculada NO debe agregar sufijos _x/_y."""
+        config = {
+            "kind": "agg",
+            "name": "Promedio",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"],
+            "agg": "mean",
+        }
+        out_1 = apply_agg(df_dia_sin_rut, config)
+        out_2 = apply_agg(out_1, config)
+        # La columna debe seguir siendo "Promedio" tras la re-aplicación.
+        assert "Promedio" in out_2.columns
+        assert "Promedio_x" not in out_2.columns
+        assert "Promedio_y" not in out_2.columns
+
+    def test_delta_compuesto(self, df_dia_sin_rut):
+        out = apply_delta(df_dia_sin_rut, {
+            "name": "Mejora",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+        })
+        # I A: 0.60 - 0.40 = 0.20
+        ia = out[out["Curso"] == "I A"]["Mejora"].iloc[0]
+        assert ia == pytest.approx(0.20, abs=1e-9)
+
+
 class TestRegistry:
     def test_kinds_esperados(self):
         assert set(KIND_REGISTRY.keys()) == {"agg", "slope", "delta"}
+
+    def test_metadata_introspection_first_check(self):
+        """Sentinel para detectar si el iter del registry pasa los kinds."""
+        for kind, spec in KIND_REGISTRY.items():
+            assert callable(spec["fn"])
 
     def test_metadata_introspection(self):
         for kind, spec in KIND_REGISTRY.items():

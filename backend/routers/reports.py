@@ -181,9 +181,11 @@ async def generar_reporte(
                     400,
                     "El indicator DIA debe tener metrics 'estudiantes' y 'preguntas' asociadas",
                 )
+            hito = filtros_temporales_dict.get("Hito")
             pdf_bytes = dia_informe.construir(
                 df_estudiantes,
                 df_preguntas,
+                hito=hito,
                 overrides=body.overrides,
             )
     except HTTPException:
