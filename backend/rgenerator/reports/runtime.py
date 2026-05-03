@@ -46,6 +46,28 @@ def _resolve_logo_path(name: str | None) -> str | None:
     return str(p) if p.exists() else None
 
 
+def _interpolar(obj: Any, context: dict) -> Any:
+    """Reemplaza placeholders `{clave}` en strings recursivamente.
+
+    Soporta dicts, listas y strings. Otros tipos se devuelven sin tocar.
+    Usado para que un esquema con `{curso}` se concrete por iteración.
+
+    Ejemplo:
+        _interpolar({"titulo": "Logro - {curso}"}, {"curso": "I A"})
+        → {"titulo": "Logro - I A"}
+    """
+    if isinstance(obj, str):
+        try:
+            return obj.format(**context)
+        except (KeyError, IndexError):
+            return obj
+    if isinstance(obj, dict):
+        return {k: _interpolar(v, context) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_interpolar(v, context) for v in obj]
+    return obj
+
+
 def _ejecutar_seccion(
     seccion: dict,
     dataframes: dict[str, pd.DataFrame],
@@ -160,8 +182,40 @@ def construir_pdf(
         aux_dir = Path(tmp_str)
 
         rendered = []
+
+        # 1) Secciones fijas
         for sec in esquema.get("secciones_fijas", []):
             rendered.append(_ejecutar_seccion(sec, dataframes, aux_dir))
+
+        # 2) Secciones dinámicas — iteran por valor único de `iterar_por`
+        # del DataFrame `df_iterar`. Cada valor inserta page_break + las
+        # secciones declaradas en `secciones`. Replica el flujo LaTeX:
+        # `for curso in cursos: \newpage \section + tabla + tabla`.
+        din_cfg = esquema.get("secciones_dinamicas") or {}
+        # Filtrar comentarios JSON (keys que arrancan con _)
+        din_cfg = {k: v for k, v in din_cfg.items() if not k.startswith("_")}
+        if din_cfg:
+            iterar_por = din_cfg.get("iterar_por")
+            df_iterar_key = din_cfg.get("df_iterar")
+            secciones_template = din_cfg.get("secciones", [])
+
+            if iterar_por and df_iterar_key in dataframes and secciones_template:
+                df_iterar = dataframes[df_iterar_key]
+                if iterar_por in df_iterar.columns:
+                    valores = df_iterar[iterar_por].dropna().unique().tolist()
+                    # Orden alfanumérico natural (1 A, 1 B, 2 A, ...)
+                    valores = sorted(valores, key=lambda x: str(x))
+
+                    for valor in valores:
+                        # Page break antes de cada valor (igual a \newpage LaTeX)
+                        rendered.append({"tipo": "page_break"})
+                        # Context para interpolar {curso} en titulo y params.
+                        # La key se deriva del nombre de la columna en lowercase
+                        # (Curso → curso, Habilidad → habilidad, etc.).
+                        ctx = {iterar_por.lower(): str(valor), "valor": str(valor)}
+                        for sec_template in secciones_template:
+                            sec_concreta = _interpolar(sec_template, ctx)
+                            rendered.append(_ejecutar_seccion(sec_concreta, dataframes, aux_dir))
 
         # Renderizar HTML
         env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=False)

@@ -132,6 +132,17 @@
         "titulo_leyenda": "Eje Temático",
         "formato": "percent"
       }
+    },
+    {
+      "tipo": "table",
+      "titulo": "Estadística por Pregunta del Establecimiento",
+      "fn": "crear_tabla_estadistica_por_pregunta",
+      "df_input": "preguntas_prueba",
+      "params": {
+        "parametros": {},
+        "columnas_alternativas": ["A", "B", "C", "D", "E"],
+        "columnas_data": ["Pregunta", "Correcta", "Distractor"]
+      }
     }
   ],
   "secciones_dinamicas": {

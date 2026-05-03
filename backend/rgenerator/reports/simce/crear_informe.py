@@ -57,10 +57,15 @@ def construir(
         df_estudiantes["Numero_Prueba"] == numero_prueba
     ].copy()
 
+    df_preguntas_prueba = df_preguntas[
+        df_preguntas["Numero_Prueba"] == numero_prueba
+    ].copy() if "Numero_Prueba" in df_preguntas.columns else df_preguntas.copy()
+
     dataframes = {
-        "estudiantes": df_estudiantes,            # df completo (para evolución por mes)
+        "estudiantes": df_estudiantes,                # df completo (para evolución por mes)
         "estudiantes_prueba": df_estudiantes_prueba,  # df filtrado a 1 prueba
-        "preguntas": df_preguntas,                # df preguntas filtrado por asignatura
+        "preguntas": df_preguntas,                    # df preguntas filtrado por asignatura
+        "preguntas_prueba": df_preguntas_prueba,      # df preguntas filtrado a 1 prueba
     }
 
     return runtime.construir_pdf("simce", dataframes, overrides=overrides)
