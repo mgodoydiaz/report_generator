@@ -20,6 +20,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "EnrichWithLookup": ps.EnrichWithLookup,
     "ModifyColumnValues": ps.ModifyColumnValues,
     "ApplyDerivedFields": ps.ApplyDerivedFields,
+    "RunDIAPDFExtraction": ps.RunDIAPDFExtraction,  # STUB: lanza NotImplementedError, ver pdf_steps.py
     "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
     "DeleteTempFiles": ps.DeleteTempFiles,
     "RequestUserFiles": ps.RequestUserFiles,

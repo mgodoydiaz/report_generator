@@ -1,0 +1,94 @@
+{
+  "pipeline_metadata": {
+    "name": "DIA Lectura (IA)",
+    "description": "Procesa archivos XLS por curso (Agencia DIA): lee metadata B5/B6, calcula Logro como mean horizontal de las preguntas, asigna Nivel Logro por umbral, normaliza nombres para join entre hitos. Migra script_consolidar_DIA.py artesanal. PDF de preguntas pendiente — ver README. (IA)",
+    "input": "Excel",
+    "output": "Métrica"
+  },
+  "context": {
+    "base_dir": "./data",
+    "evaluation": "DIA_Lectura",
+    "header_row": 12,
+    "metadata_cells": [
+      {"column_name": "Establecimiento", "cell": "B5"},
+      {"column_name": "Curso",           "cell": "B6"}
+    ],
+    "enrich_data": [
+      {"key": "Asignatura", "val": "Lectura"},
+      {"key": "Hito",       "val": "DIAGNOSTICO", "user_input": true}
+    ],
+    "derived_fields": [
+      {
+        "kind": "row_mean_dynamic",
+        "name": "Logro",
+        "exclude_columns": [
+          "Numero Lista", "Nombre del Estudiante",
+          "Establecimiento", "Curso", "Asignatura", "Hito"
+        ],
+        "scale": 0.01,
+        "replace_decimal_comma": true
+      },
+      {
+        "kind": "row_threshold",
+        "name": "Nivel Logro",
+        "value_field": "Logro",
+        "thresholds": [
+          {"max": 0.4,  "label": "Inicial"},
+          {"max": 0.6,  "label": "Intermedio"},
+          {"max": null, "label": "Avanzado"}
+        ]
+      },
+      {
+        "kind": "normalize_name",
+        "name": "Nombre_Norm",
+        "value_field": "Nombre del Estudiante"
+      }
+    ],
+    "transformations": [
+      {
+        "columna": "Curso",
+        "operacion": "replace",
+        "valor_completo": false,
+        "valores": [
+          {"patron": "° básico ", "reemplazo": ""},
+          {"patron": "° medio ",  "reemplazo": ""}
+        ]
+      }
+    ]
+  },
+  "pipeline": [
+    {"step": "InitRun", "params": {"evaluation": "DIA_Lectura", "base_dir": "./data"}},
+    {"step": "RequestUserFiles", "params": {"file_specs": [
+      {
+        "id": "estudiantes",
+        "label": "Archivos XLS por curso (Agencia DIA)",
+        "description": "Un .xls por curso descargado de la plataforma Agencia DIA. Estructura esperada: Establecimiento en B5, Curso en B6, header en fila 13.",
+        "multiple": true,
+        "optional": false
+      }
+    ]}},
+    {"step": "EnrichWithUserInput", "params": {"input_key": "estudiantes"}},
+    {"step": "RunExcelETL", "params": {
+      "input_key": "estudiantes",
+      "output_key": "df_estudiantes_raw"
+    }},
+    {"step": "EnrichWithContext", "params": {
+      "input_key": "df_estudiantes_raw",
+      "output_key": "df_estudiantes_enriched"
+    }},
+    {"step": "ApplyDerivedFields", "params": {
+      "input_key": "df_estudiantes_enriched",
+      "output_key": "df_estudiantes_logro"
+    }},
+    {"step": "ModifyColumnValues", "params": {
+      "input_key": "df_estudiantes_logro",
+      "output_key": "df_estudiantes_clean"
+    }},
+    {"step": "SaveToMetric", "params": {
+      "metric_id": "REEMPLAZAR_POR_ID_METRICA_DIA_LECTURA",
+      "input_key": "df_estudiantes_clean",
+      "clear_existing": false
+    }},
+    {"step": "DeleteTempFiles", "params": {}}
+  ]
+}

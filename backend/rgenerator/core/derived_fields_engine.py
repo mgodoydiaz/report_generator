@@ -16,6 +16,18 @@ Kinds soportados:
   hasta esa fila inclusive. Ej: `Avance` SIMCE.
 - `delta`: último valor menos primero por entity. Broadcast a todas las
   filas. Útil para "fin de año vs inicio".
+- `row_mean_dynamic`: mean horizontal sobre columnas dinámicas (todas
+  menos las excluidas, o solo las incluidas). Pensado para DIA, donde
+  cada archivo trae N columnas-puntaje distintas y necesitamos el
+  promedio como nueva columna `Logro`. Soporta `scale` y normalización
+  de coma decimal.
+- `row_threshold`: clasifica el valor de una columna según umbrales
+  ordenados ASC. Ej: Logro ≤0.4 → Inicial, ≤0.6 → Intermedio, resto →
+  Avanzado.
+- `normalize_name`: ordena alfabéticamente las palabras de un campo
+  nombre para producir una clave estable. Resuelve el bug DIA donde el
+  mismo estudiante aparece como "Nombre Apellido" en un hito y
+  "Apellido Nombre" en otro, dando 0 matches al hacer join.
 
 Soporta `value_type: ordinal`: si los valores son cualitativos
 (ej: Insuficiente, Elemental, Adecuado), se mapean a 1..N usando
@@ -24,6 +36,7 @@ formato numérico (no se revierte porque la salida típicamente es numérica).
 """
 from __future__ import annotations
 
+import unicodedata
 from typing import Any, Callable
 
 import numpy as np
@@ -320,6 +333,201 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Kind: row_mean_dynamic (mean horizontal sobre columnas dinámicas)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_row_mean_dynamic(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Mean horizontal sobre un subconjunto dinámico de columnas.
+
+    Para cada fila calcula el promedio de las columnas indicadas por
+    `include_columns`, o todas las columnas excepto las de
+    `exclude_columns`. Pensado para DIA, donde cada archivo trae N
+    columnas-puntaje distintas (varía por curso) y necesitamos el
+    promedio como nueva columna (`Logro`).
+
+    Config esperado:
+        name: nombre de la columna nueva.
+        exclude_columns: lista de columnas a excluir del cálculo.
+            Mutuamente excluyente con include_columns.
+        include_columns: lista explícita de columnas a usar.
+            Mutuamente excluyente con exclude_columns.
+        scale: multiplicador opcional (default 1.0). DIA usa 0.01 para
+            pasar de 0-100 a 0-1.
+        replace_decimal_comma: bool (default False). Si True, reemplaza
+            ',' por '.' antes de castear a numérico (Excel es-CL).
+        min_columns: mínimo de columnas no-NaN por fila para calcular.
+            Si la fila tiene menos, NaN. Default 1.
+
+    Retorna df con la columna `name` agregada.
+    """
+    name = config["name"]
+    exclude = set(config.get("exclude_columns") or [])
+    include = config.get("include_columns")
+    scale = float(config.get("scale", 1.0))
+    replace_comma = bool(config.get("replace_decimal_comma", False))
+    min_cols = int(config.get("min_columns", 1))
+
+    if include and exclude:
+        raise ValueError(
+            f"row_mean_dynamic '{name}': usa include_columns o exclude_columns, no ambos."
+        )
+
+    df = df.copy()
+
+    if include:
+        missing = [c for c in include if c not in df.columns]
+        if missing:
+            raise KeyError(
+                f"row_mean_dynamic '{name}': include_columns inexistentes: {missing}"
+            )
+        score_cols = list(include)
+    else:
+        # Excluir el name también si ya existe (re-aplicación)
+        score_cols = [c for c in df.columns if c not in exclude and c != name]
+
+    if not score_cols:
+        df[name] = np.nan
+        return df
+
+    sub = df[score_cols].copy()
+    if replace_comma:
+        for c in score_cols:
+            # En pandas <3 strings vienen como object; en pandas 3.x como
+            # 'str'. Cubrimos ambos: si no es numérico, intentamos replace.
+            if not pd.api.types.is_numeric_dtype(sub[c]):
+                sub[c] = sub[c].astype(str).str.replace(",", ".", regex=False)
+    for c in score_cols:
+        sub[c] = pd.to_numeric(sub[c], errors="coerce")
+
+    means = sub.mean(axis=1, skipna=True)
+    counts = sub.notna().sum(axis=1)
+
+    if min_cols > 1:
+        means = means.where(counts >= min_cols, other=np.nan)
+
+    df[name] = means * scale
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kind: row_threshold (etiqueta por umbral)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_row_threshold(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Clasifica una columna numérica según umbrales ordenados ASC.
+
+    Para cada valor `v` recorre `thresholds` en orden y devuelve la
+    primera `label` cuyo `max` cumpla `v <= max`. Un threshold con
+    `max: null` actúa como catch-all (debe ser el último).
+
+    Config esperado:
+        name: nombre de la columna nueva.
+        value_field: columna numérica a evaluar.
+        thresholds: lista ordenada ASC de {max, label}.
+        default: label para valores NaN o no clasificables (default None).
+
+    Ejemplo (DIA):
+        thresholds: [
+            {"max": 0.4,  "label": "Inicial"},
+            {"max": 0.6,  "label": "Intermedio"},
+            {"max": null, "label": "Avanzado"}
+        ]
+
+    Retorna df con la columna `name` agregada.
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    thresholds = config.get("thresholds") or []
+    default = config.get("default")
+
+    if value_field not in df.columns:
+        raise KeyError(
+            f"row_threshold '{name}': value_field '{value_field}' no existe en el DataFrame"
+        )
+    if not thresholds:
+        raise ValueError(f"row_threshold '{name}': thresholds no puede estar vacío")
+
+    df = df.copy()
+    series_num = pd.to_numeric(df[value_field], errors="coerce")
+
+    def _classify(v):
+        if pd.isna(v):
+            return default
+        for thr in thresholds:
+            mx = thr.get("max")
+            if mx is None:
+                return thr.get("label")
+            try:
+                if v <= float(mx):
+                    return thr.get("label")
+            except (TypeError, ValueError):
+                continue
+        return default
+
+    df[name] = series_num.map(_classify)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kind: normalize_name (clave estable para nombres con orden distinto)
+# ─────────────────────────────────────────────────────────────────────────
+
+def _strip_accents(s: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn"
+    )
+
+
+def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Ordena alfabéticamente las palabras de un campo nombre.
+
+    Resuelve el bug DIA donde el mismo estudiante aparece como
+    "Nombre Apellido" en un hito y "Apellido Nombre" en otro: ordenando
+    sus palabras, ambas versiones colapsan a la misma clave estable.
+    Pierde la separación nombre/apellido pero permite el join entre
+    hitos cuando no hay RUT.
+
+    Config esperado:
+        name: columna nueva con la versión normalizada.
+        value_field: columna fuente con el nombre original.
+        case: 'upper' (default) | 'lower' | 'preserve'.
+        strip_accents: bool (default True). Quita tildes para
+            comparación y output.
+
+    Retorna df con la columna `name` agregada.
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    case = config.get("case", "upper")
+    strip_accents = bool(config.get("strip_accents", True))
+
+    if value_field not in df.columns:
+        raise KeyError(
+            f"normalize_name '{name}': value_field '{value_field}' no existe en el DataFrame"
+        )
+
+    def _normalize(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return None
+        s = str(v).strip()
+        if not s:
+            return s
+        if strip_accents:
+            s = _strip_accents(s)
+        words = sorted((w for w in s.split() if w), key=str.lower)
+        out = " ".join(words)
+        if case == "upper":
+            return out.upper()
+        if case == "lower":
+            return out.lower()
+        return out
+
+    df = df.copy()
+    df[name] = df[value_field].map(_normalize)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Registry + orquestador
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -344,6 +552,27 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Diferencia entre el último valor y el primero por entity, broadcast a todas las filas.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
         "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points"],
+    },
+    "row_mean_dynamic": {
+        "fn": apply_row_mean_dynamic,
+        "display_name": "Promedio horizontal dinámico",
+        "description": "Mean por fila sobre columnas dinámicas (todas menos las excluidas, o solo las incluidas). Soporta scale y normalización de coma decimal. Pensado para DIA.",
+        "required_args": ["name"],
+        "optional_args": ["exclude_columns", "include_columns", "scale", "replace_decimal_comma", "min_columns"],
+    },
+    "row_threshold": {
+        "fn": apply_row_threshold,
+        "display_name": "Etiqueta por umbral",
+        "description": "Clasifica un valor numérico según una lista de umbrales ordenados ASC. Cada umbral define {max, label}; max=null actúa como catch-all.",
+        "required_args": ["name", "value_field", "thresholds"],
+        "optional_args": ["default"],
+    },
+    "normalize_name": {
+        "fn": apply_normalize_name,
+        "display_name": "Normalizar nombre",
+        "description": "Ordena alfabéticamente las palabras de un nombre para producir clave estable. Resuelve el bug DIA de 'Nombre Apellido' vs 'Apellido Nombre' entre hitos.",
+        "required_args": ["name", "value_field"],
+        "optional_args": ["case", "strip_accents"],
     },
 }
 

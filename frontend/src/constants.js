@@ -21,6 +21,7 @@ export const STEP_OPTIONS = [
   "EnrichWithContext",
   "EnrichWithLookup",
   "ModifyColumnValues",
+  "ApplyDerivedFields",
   "LoadMetricToDF",
   "SaveToMetric",
   "ExportConsolidatedExcel",
@@ -45,6 +46,7 @@ export const STEP_TRANSLATIONS = {
   "EnrichWithContext": "Enriquecer por Contexto",
   "EnrichWithLookup": "Enriquecer con Lookup",
   "ModifyColumnValues": "Modificar Valores",
+  "ApplyDerivedFields": "Aplicar Campos Derivados",
   "LoadMetricToDF": "Cargar Métrica como DataFrame",
   "SaveToMetric": "Cargar Métricas",
   "ExportConsolidatedExcel": "Exportar Datos",
@@ -139,6 +141,14 @@ export const STEP_DEFAULT_PARAMS = {
   "RunExcelETL": `{
   "input_key": "nombre_input", // Clave del artifact de entrada
   "output_key": "nombre_output" // Clave del artifact de salida
+  // Parámetros opcionales que normalmente vienen del spec (LoadConfigFromSpec):
+  // "header_row": 12, // int o {nombre_archivo: int, "default": int}
+  // "select_columns": ["col1", "col2"],
+  // "rename_columns": {"col_original": "col_final"},
+  // "metadata_cells": [ // celdas pre-header a inyectar como columna (caso DIA)
+  //   {"column_name": "Establecimiento", "cell": "B5"},
+  //   {"column_name": "Curso",           "cell": "B6"}
+  // ]
 }`,
 
   "EnrichWithUserInput": `{
@@ -186,6 +196,31 @@ export const STEP_DEFAULT_PARAMS = {
     //     { "condicion": "*",     "expresion": "x" }        // "*" aplica a todos los valores
     //   ]
     // }
+  ]
+}`,
+
+  "ApplyDerivedFields": `{
+  "input_key": "nombre_input", // Clave del artifact (DataFrame)
+  "output_key": "nombre_output", // Clave del artifact resultante
+  "derived_fields": [
+    // Kinds disponibles: agg | slope | delta | row_mean_dynamic | row_threshold | normalize_name
+    // Ejemplos:
+    // {"kind": "agg",   "name": "Logro_Promedio_Estudiante",
+    //  "value_field": "Logro", "entity_field": "Rut", "agg": "mean"},
+    // {"kind": "slope", "name": "Avance",
+    //  "value_field": "Logro", "entity_field": "Rut",
+    //  "time_field": "Numero_Prueba", "min_points": 2},
+    // {"kind": "delta", "name": "Mejora_vs_Inicio",
+    //  "value_field": "Logro", "entity_field": "Rut", "time_field": "Numero_Prueba"},
+    // {"kind": "row_mean_dynamic", "name": "Logro",
+    //  "exclude_columns": ["Numero Lista", "Nombre", "Curso"], "scale": 0.01},
+    // {"kind": "row_threshold", "name": "Nivel Logro", "value_field": "Logro",
+    //  "thresholds": [
+    //    {"max": 0.4,  "label": "Inicial"},
+    //    {"max": 0.6,  "label": "Intermedio"},
+    //    {"max": null, "label": "Avanzado"}
+    //  ]},
+    // {"kind": "normalize_name", "name": "Nombre_Norm", "value_field": "Nombre"}
   ]
 }`,
 

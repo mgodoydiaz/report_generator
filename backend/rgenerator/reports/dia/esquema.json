@@ -2,7 +2,7 @@
   "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje).",
   "derived_fields": [
     {
-      "_comment": "Para DIA solo se calcula Logro_Promedio_Estudiante (mean por estudiante dentro del hito mostrado). Avance y Mejora_vs_Inicio NO se incluyen porque hay un bug de calidad de datos: los nombres de DIAGNOSTICO y INTERMEDIO vienen invertidos (DIAG: 'Nombre Apellido', INTER: 'Apellido Nombre'), dando 0 matches entre hitos al agrupar por (Curso, Nombre). Habilitar cuando se normalicen los nombres en el ETL.",
+      "_comment": "Por ahora solo Logro_Promedio_Estudiante (mean por estudiante dentro del hito mostrado). Para activar Avance y Mejora_vs_Inicio, los pipelines DIA (data/pipelines/dia/) ya guardan 'Nombre_Norm' en metric_data via el kind normalize_name (apellidos+nombre ordenados alfabéticamente, resuelve el bug DIAG 'Nombre Apellido' vs INTER 'Apellido Nombre'). Cuando metric_data tenga la columna 'Nombre_Norm' poblada para todos los hitos, descomentar las dos configs de abajo y reemplazar 'Nombre' por 'Nombre_Norm' en entity_field.",
       "df_input": "estudiantes",
       "configs": [
         {
@@ -14,6 +14,28 @@
           "min_points": 1
         }
       ]
+    }
+  ],
+  "_derived_fields_pendientes_normalize": [
+    {
+      "kind": "slope",
+      "name": "Avance",
+      "value_field": "Logro",
+      "entity_field": ["Curso", "Nombre_Norm"],
+      "time_field": "Hito",
+      "time_type": "ordinal",
+      "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+      "min_points": 2
+    },
+    {
+      "kind": "delta",
+      "name": "Mejora_vs_Inicio",
+      "value_field": "Logro",
+      "entity_field": ["Curso", "Nombre_Norm"],
+      "time_field": "Hito",
+      "time_type": "ordinal",
+      "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+      "min_points": 2
     }
   ],
   "title": "Informe DIA",
