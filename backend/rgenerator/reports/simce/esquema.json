@@ -1,5 +1,41 @@
 {
   "_comment": "Esquema declarativo del informe SIMCE. Cada sección llama a una función de charts.py o tables.py vía CHART_REGISTRY/TABLE_REGISTRY. Los df_input deben matchear las keys que pasa el orquestador (estudiantes_prueba, df_estudiantes, df_preguntas).",
+  "derived_fields": [
+    {
+      "_comment": "Calcular columnas derivadas en runtime sobre el df 'estudiantes' (todas las pruebas del año, no filtrado a una). Usa Mes como eje temporal ordinal.",
+      "df_input": "estudiantes",
+      "configs": [
+        {
+          "kind": "agg",
+          "name": "Logro_Promedio_Estudiante",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "agg": "mean",
+          "min_points": 1
+        },
+        {
+          "kind": "slope",
+          "name": "Avance",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "time_field": "Mes",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "min_points": 2
+        },
+        {
+          "kind": "delta",
+          "name": "Mejora_vs_Inicio",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "time_field": "Mes",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "min_points": 2
+        }
+      ]
+    }
+  ],
   "title": "Informe Ensayo SIMCE",
   "subtitle": "Resumen de la prueba seleccionada",
   "filters_label": "",
@@ -159,13 +195,22 @@
         "params": {
           "parametros": {"Curso": "{curso}"},
           "sort_by": "Rend",
-          "formatos": {"Rend": "percent", "Simce": "number"},
-          "columnas": ["Nombre", "Rend", "Simce", "Logro"],
+          "formatos": {
+            "Rend": "percent",
+            "Simce": "number",
+            "Logro_Promedio_Estudiante": "percent",
+            "Avance": "percent",
+            "Mejora_vs_Inicio": "percent"
+          },
+          "columnas": ["Nombre", "Rend", "Simce", "Logro", "Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"],
           "columnas_renombrar": {
             "Nombre": "Estudiante",
             "Rend": "Logro",
             "Simce": "SIMCE",
-            "Logro": "Nivel"
+            "Logro": "Nivel",
+            "Logro_Promedio_Estudiante": "Promedio Año",
+            "Avance": "Avance",
+            "Mejora_vs_Inicio": "Mejora"
           }
         }
       },

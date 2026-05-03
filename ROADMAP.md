@@ -71,16 +71,30 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 
 ### Funcionalidades
 - [x] Implementar generación de gráficos, tablas, reportes y dashboards desde el frontend (dashboards en `Results`; descarga de PDF vía modal con motor `weasyprint` o `pdl_idel`)
+- [x] **Motor PDF v2 con paridad LaTeX** (`backend/rgenerator/reports/`) — paquete independiente: charts.py + tables.py + runtime.py + templates HTML que replican el formato LaTeX referencia. Endpoint `POST /api/reports/{tipo}` (simce | dia). Botón "Generar v2" en `/results` con modal de branding editable. Validación de filtro temporal requerido. Detalle: `docs/usuario/motor_pdf_v2.md`.
+- [x] **Campos derivados (`derived_fields`)** — engine que aplica funciones a columnas: `agg` (groupby + agregación), `slope` (regresión lineal expansiva), `delta` (último menos primero). Soporta `entity_field` compuesto (ej `["Curso", "Nombre"]`), `value_type=ordinal` con `ordinal_levels`, `time_type=ordinal` con `time_ordinal_levels`. Step `ApplyDerivedFields` para usar en pipelines ETL. Aplicado al pipeline SIMCE Lenguaje (id=14) y a esquemas v2 SIMCE/DIA.
 - [ ] Perfilamiento y configuración por usuario
 - [x] Implementar multitenancy (múltiples organizaciones/clientes)
 - [ ] Falta agregar Habilidad y Eje Temático como métrica
 - [ ] Agregar un paso que, dependiendo de la dimensión, enriquezca una métrica
 - [ ] Agregar un consolidado de pasos (agregar el enriquecer por métrica)
 - [ ] Completar pruebas e implementación con: Lenguaje, Matemáticas SIMCE, Cálculo Veloz, y PDL
+- [ ] **Pipeline DIA Matemáticas / Lectura** — portar `script_consolidar_DIA.py` artesanal del cliente a steps configurables (ETL XLS estudiantes con header en fila 12, extracción de PDFs con camelot+fitz, normalización de nombres entre hitos, cálculo de Logro = mean dynamic columns). Ver `docs/desarrollo/script_dia_artesanal_referencia.md`.
+- [ ] **Catálogo de tablas/layouts** — UI para configurar tablas de informe en base a una métrica (resumen por curso, estudiantes, preguntas) usando `derived_fields` como celdas calculadas.
+- [ ] **Catálogo de generadores de gráficos** — `CHART_REGISTRY` ya existe; falta UI rica para configurar gráficos en informes y dashboards (matplotlib/seaborn/plotly/recharts).
+- [ ] **Sprint de filtros transversales** — filtros multi-nivel (varios valores por dimensión) en resultados, dashboards, valores e informes. Hoy filtran solo por igualdad simple.
+- [ ] **Página `/functions`** — UI catálogo + form por kind para editar `derived_fields` sin tocar JSON crudo. Hoy es placeholder. Por mientras, edición vía LayoutEditorModal.
+- [ ] **Migrar `derived_fields` y esquemas a DB** — hoy viven en archivos del repo (`backend/rgenerator/reports/{tipo}/esquema.json`); migrar a campos del Indicator para edición desde UI.
 
 ### Calidad y documentación
 - [ ] Escribir suite de tests automatizados
 - [x] Crear documentación de pasos y guía de uso — (Migrado a `.agents/workflows/`)
+
+---
+
+## Issues conocidos (datos)
+
+- **DIA: nombres invertidos entre hitos** — en LECTURA y MATEMÁTICAS, los nombres en `DIAGNOSTICO` vienen "Nombre Apellido" y en `INTERMEDIO` "Apellido Nombre". Resultado: 0 matches al agrupar por `(Curso, Nombre)`, lo que bloquea cálculo de `Avance` y `Mejora_vs_Inicio` entre hitos. Por eso esas columnas están desactivadas en `dia/esquema.json`. Solución: agregar un step de normalización de nombres al pipeline DIA (sort de palabras del nombre, o mejor: usar `Numero Lista` + `Curso` como clave compuesta si es estable entre hitos). Re-habilitar las 2 derived_fields cuando se resuelva.
 
 ---
 
@@ -89,3 +103,4 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 | Versión | Fecha | Descripción |
 |---------|-------|-------------|
 | v0.0.1 | 2026-03-03 | Primera versión etiquetada — pipeline SIMCE Lenguaje funcional, ETL + reportes + métricas |
+| v0.2.0 | 2026-05-04 | Motor PDF v2 (paridad LaTeX) + campos derivados (agg/slope/delta) + step `ApplyDerivedFields` + modal de branding editable + 74 tests verdes. SIMCE Lenguaje muestra Avance del estudiante por regresión lineal en el PDF. |

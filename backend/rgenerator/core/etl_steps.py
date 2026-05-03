@@ -7,6 +7,7 @@ from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step, WaitingForInputException
+from .derived_fields_engine import apply_derived_fields
 
 
 class RunExcelETL(Step):
@@ -629,6 +630,103 @@ class ModifyColumnValues(Step):
 
         # 5. Guardar
         ctx.artifacts[output_key] = df_mod
+        ctx.last_artifact_key = output_key
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+
+class ApplyDerivedFields(Step):
+    """
+    Agrega columnas calculadas (derived_fields) al DataFrame.
+
+    Aplica una lista declarativa de funciones (kinds: agg / slope / delta)
+    al DataFrame que viene del step previo. Las columnas resultantes quedan
+    disponibles para el resto del pipeline (incluido SaveToMetric, que las
+    persiste en metric_data).
+
+    Parámetros:
+        input_key (opcional): clave del artifact de entrada.
+            Default: ctx.last_artifact_key.
+        output_key (opcional): clave del artifact de salida.
+            Default: f"df_derived_{input_key}".
+        derived_fields (opcional): lista de configs.
+            Si no se entrega, busca en ctx.params["derived_fields"].
+
+    Ejemplo de configs:
+        [
+          {"kind": "agg",   "name": "Logro_Promedio_Estudiante",
+           "value_field": "Rend", "entity_field": "Rut", "agg": "mean"},
+          {"kind": "slope", "name": "Avance",
+           "value_field": "Rend", "entity_field": "Rut",
+           "time_field": "Numero_Prueba", "min_points": 2},
+          {"kind": "delta", "name": "Mejora_vs_Inicio",
+           "value_field": "Rend", "entity_field": "Rut",
+           "time_field": "Numero_Prueba"}
+        ]
+
+    Ver `derived_fields_engine.KIND_REGISTRY` para todos los kinds y args.
+    """
+    def __init__(
+        self,
+        input_key: Optional[str] = None,
+        output_key: Optional[str] = None,
+        derived_fields: Optional[List[Dict]] = None,
+    ):
+        resolved_output_key = output_key
+        if input_key and not resolved_output_key:
+            resolved_output_key = f"df_derived_{input_key}"
+
+        super().__init__(
+            name="ApplyDerivedFields",
+            requires=[input_key] if input_key else [],
+            produces=[resolved_output_key] if resolved_output_key else [],
+        )
+        self.input_key = input_key
+        self.output_key = resolved_output_key
+        self.derived_fields = derived_fields or []
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+
+        # 1. Resolver input/output
+        input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key.")
+        output_key = self.output_key or f"df_derived_{input_key}"
+        self.input_key = input_key
+        self.output_key = output_key
+
+        # 2. Obtener DataFrame
+        df = ctx.artifacts.get(input_key)
+        if df is None or (hasattr(df, "empty") and df.empty):
+            self._log(f"[{self.name}] Warning: DataFrame vacío o inexistente en {input_key}")
+            ctx.artifacts[output_key] = pd.DataFrame() if df is None else df.copy()
+            ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3. Resolver lista de derived_fields (init o context)
+        configs = self.derived_fields or ctx.params.get("derived_fields", [])
+        if not configs:
+            self._log(f"[{self.name}] No hay derived_fields configurados; passthrough.")
+            ctx.artifacts[output_key] = df.copy()
+            ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 4. Aplicar engine
+        try:
+            df_out = apply_derived_fields(df, configs)
+        except Exception as e:
+            raise ValueError(f"[{self.name}] Error aplicando derived_fields: {e}")
+
+        added_cols = [c for c in df_out.columns if c not in df.columns]
+        self._log(f"[{self.name}] Aplicadas {len(configs)} funciones, columnas nuevas: {added_cols}")
+
+        # 5. Guardar
+        ctx.artifacts[output_key] = df_out
         ctx.last_artifact_key = output_key
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)

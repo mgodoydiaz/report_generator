@@ -24,9 +24,13 @@ aplica).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from .. import runtime
+from ...core.derived_fields_engine import apply_derived_fields
 
 
 def construir(
@@ -34,6 +38,7 @@ def construir(
     df_preguntas: pd.DataFrame,
     asignatura: str,
     numero_prueba: int,
+    mes: str | None = None,
     overrides: dict | None = None,
 ) -> bytes:
     """Construye el PDF SIMCE para una asignatura + número de prueba.
@@ -58,27 +63,40 @@ def construir(
     if "Asignatura" in df_preguntas.columns:
         df_preguntas = df_preguntas[df_preguntas["Asignatura"] == asignatura].copy()
 
-    n_prueba_col = next(
-        (c for c in ("N Prueba", "Numero_Prueba", "N_Prueba", "Nro Prueba") if c in df_estudiantes.columns),
-        None,
-    )
-    if n_prueba_col and df_estudiantes[n_prueba_col].notna().any():
-        df_estudiantes_prueba = df_estudiantes[
-            df_estudiantes[n_prueba_col] == numero_prueba
-        ].copy()
-    else:
-        df_estudiantes_prueba = df_estudiantes.copy()
+    # Aplicar derived_fields ANTES del filtro a una sola prueba. slope/delta
+    # necesitan ver todas las pruebas del estudiante para calcular. El df ya
+    # está filtrado por asignatura. Una vez calculadas las columnas
+    # derivadas, el filter por prueba las hereda automáticamente.
+    esquema_path = Path(__file__).parent / "esquema.json"
+    if esquema_path.exists():
+        with open(esquema_path, encoding="utf-8") as f:
+            esquema = json.load(f)
+        for entry in (esquema.get("derived_fields") or []):
+            target = entry.get("df_input")
+            configs = entry.get("configs") or []
+            if not configs:
+                continue
+            if target == "estudiantes":
+                df_estudiantes = apply_derived_fields(df_estudiantes, configs)
+            elif target == "preguntas":
+                df_preguntas = apply_derived_fields(df_preguntas, configs)
 
-    n_prueba_col_p = next(
-        (c for c in ("N Prueba", "Numero_Prueba", "N_Prueba", "Nro Prueba") if c in df_preguntas.columns),
-        None,
-    )
-    if n_prueba_col_p and df_preguntas[n_prueba_col_p].notna().any():
-        df_preguntas_prueba = df_preguntas[
-            df_preguntas[n_prueba_col_p] == numero_prueba
-        ].copy()
-    else:
-        df_preguntas_prueba = df_preguntas.copy()
+    # Filtrar a una sola prueba: prioridad a Mes (string ej "OCTUBRE 2"),
+    # fallback a Numero_Prueba/N Prueba (int 1-5). Si ninguno aplica,
+    # se usa todo el dataset.
+    def _filter_to_one_prueba(df: pd.DataFrame) -> pd.DataFrame:
+        if mes and "Mes" in df.columns:
+            return df[df["Mes"].astype(str) == str(mes)].copy()
+        n_prueba_col = next(
+            (c for c in ("N Prueba", "Numero_Prueba", "N_Prueba", "Nro Prueba") if c in df.columns),
+            None,
+        )
+        if n_prueba_col and df[n_prueba_col].notna().any():
+            return df[df[n_prueba_col] == numero_prueba].copy()
+        return df.copy()
+
+    df_estudiantes_prueba = _filter_to_one_prueba(df_estudiantes)
+    df_preguntas_prueba = _filter_to_one_prueba(df_preguntas)
 
     dataframes = {
         "estudiantes": df_estudiantes,                # df completo (para evolución por mes)

@@ -125,12 +125,19 @@ async def generar_reporte(
             f"{', '.join(requeridos)}.",
         )
 
+    # Separar filtros temporales (van a crear_informe como param) de los
+    # estructurales (van al loader). Esto permite que las derived_fields
+    # tipo slope/delta vean todo el histórico antes de filtrar a una prueba.
+    temporales_set = set(requeridos)
+    filtros_estructurales = {k: v for k, v in filtros_aplicados.items() if k not in temporales_set}
+    filtros_temporales_dict = {k: v for k, v in filtros_aplicados.items() if k in temporales_set}
+
     try:
         dataframes = cargar_dataframes_indicator(
             db,
             indicator_id=body.indicator_id,
             org_id=user.org_id,
-            filtros=filtros_aplicados,
+            filtros=filtros_estructurales,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -140,10 +147,17 @@ async def generar_reporte(
 
     try:
         if tipo == "simce":
-            # SIMCE necesita asignatura + numero_prueba. Los toma de filtros
-            # si vienen, sino usa defaults razonables.
-            asignatura = (body.filtros or {}).get("Asignatura", "LENGUAJE")
-            numero_prueba = int((body.filtros or {}).get("Numero_Prueba", 5))
+            # SIMCE necesita asignatura + numero_prueba (o el Mes específico).
+            # crear_informe.construir aplica el filtro temporal después de
+            # ejecutar las derived_fields, para que slope/delta vean todas
+            # las pruebas del histórico.
+            asignatura = filtros_estructurales.get("Asignatura", "LENGUAJE")
+            mes = filtros_temporales_dict.get("Mes")
+            n_prueba_raw = filtros_temporales_dict.get("N Prueba") or filtros_temporales_dict.get("Numero_Prueba", 5)
+            try:
+                numero_prueba = int(n_prueba_raw)
+            except (TypeError, ValueError):
+                numero_prueba = 5
             df_estudiantes = dataframes.get("estudiantes", None)
             df_preguntas = dataframes.get("preguntas", None)
             if df_estudiantes is None or df_preguntas is None:
@@ -156,6 +170,7 @@ async def generar_reporte(
                 df_preguntas,
                 asignatura=asignatura,
                 numero_prueba=numero_prueba,
+                mes=mes,
                 overrides=body.overrides,
             )
         else:  # dia
@@ -166,9 +181,11 @@ async def generar_reporte(
                     400,
                     "El indicator DIA debe tener metrics 'estudiantes' y 'preguntas' asociadas",
                 )
+            hito = filtros_temporales_dict.get("Hito")
             pdf_bytes = dia_informe.construir(
                 df_estudiantes,
                 df_preguntas,
+                hito=hito,
                 overrides=body.overrides,
             )
     except HTTPException:

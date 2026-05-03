@@ -14,7 +14,7 @@ Módulos especializados:
 
 from .init_steps import InitRun, LoadConfigFromSpec  # LoadConfig DEPRECADO
 from .io_steps import DiscoverInputs, RequestUserFiles, ExportConsolidatedExcel, DeleteTempFiles
-from .etl_steps import RunExcelETL, EnrichWithUserInput, EnrichWithContext, EnrichWithLookup, ModifyColumnValues
+from .etl_steps import RunExcelETL, EnrichWithUserInput, EnrichWithContext, EnrichWithLookup, ModifyColumnValues, ApplyDerivedFields
 from .report_steps import GenerateGraphics, GenerateTables, RenderReport, RenderHtmlReport, GenerateDocxReport, RenderPDFReport
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "EnrichWithContext",
     "EnrichWithLookup",
     "ModifyColumnValues",
+    "ApplyDerivedFields",
     # Report
     "GenerateGraphics",
     "GenerateTables",
