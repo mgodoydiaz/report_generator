@@ -134,7 +134,10 @@ table.report-table {
   font-size: 9pt;
   page-break-inside: auto;
 }
+/* El header se repite en cada página al cortarse */
 table.report-table thead { display: table-header-group; }
+/* Las filas no se cortan por la mitad */
+table.report-table tr { page-break-inside: avoid; }
 table.report-table th,
 table.report-table td {
   border: 0.5pt solid #000;

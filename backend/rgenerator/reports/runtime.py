@@ -183,8 +183,12 @@ def construir_pdf(
 
         rendered = []
 
-        # 1) Secciones fijas
+        # 1) Secciones fijas. Cualquier sección con `break_before: true`
+        # inserta un page_break antes (útil para tablas anchas que de otro
+        # modo se cortan a media página).
         for sec in esquema.get("secciones_fijas", []):
+            if sec.get("break_before"):
+                rendered.append({"tipo": "page_break"})
             rendered.append(_ejecutar_seccion(sec, dataframes, aux_dir))
 
         # 2) Secciones dinámicas — iteran por valor único de `iterar_por`

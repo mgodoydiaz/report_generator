@@ -138,6 +138,7 @@
       "titulo": "Estadística por Pregunta del Establecimiento",
       "fn": "crear_tabla_estadistica_por_pregunta",
       "df_input": "preguntas_prueba",
+      "break_before": true,
       "params": {
         "parametros": {},
         "columnas_alternativas": ["A", "B", "C", "D", "E"],
