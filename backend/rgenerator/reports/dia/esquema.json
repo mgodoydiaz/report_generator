@@ -100,7 +100,7 @@
       "fn": "alumnos_por_nivel_cualitativo",
       "df_input": "estudiantes",
       "params": {
-        "columna_nivel": "NIVEL DE LOGRO",
+        "columna_nivel": "Nivel Logro",
         "agrupar_por": "Curso",
         "lista_niveles": ["Avanzado", "Intermedio", "Inicial"],
         "titulo_grafico": "Cantidad de Alumnos por Nivel de Logro y Curso",
@@ -123,11 +123,11 @@
           "parametros": {"Curso": "{curso}"},
           "sort_by": "Logro",
           "formatos": {"Logro": "percent"},
-          "columnas": ["Número de Lista", "Nombre del Estudiante", "Logro", "NIVEL DE LOGRO"],
+          "columnas": ["Numero Lista", "Nombre", "Logro", "Nivel Logro"],
           "columnas_renombrar": {
-            "Número de Lista": "N° Lista",
-            "Nombre del Estudiante": "Estudiante",
-            "NIVEL DE LOGRO": "Nivel"
+            "Numero Lista": "N° Lista",
+            "Nombre": "Estudiante",
+            "Nivel Logro": "Nivel"
           }
         }
       },
@@ -140,7 +140,7 @@
           "valor_agrupacion": "{curso}",
           "agrupar_por": "Curso",
           "sort_by": "Logro",
-          "columnas": ["N° Pregunta", "Eje Temático", "Habilidad", "Logro", "Nivel de Logro"]
+          "columnas": ["N° Pregunta", "Eje Temático", "Habilidad", "Logro", "Nivel Logro"]
         }
       }
     ]

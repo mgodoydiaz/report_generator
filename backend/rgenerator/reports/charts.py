@@ -282,7 +282,11 @@ def boxplot_valor_por_curso(
     ax.set_xlabel(agrupar_por)
     ax.set_ylabel(ylabel)
     ax.set_xticks(np.arange(len(cursos)))
-    ax.set_xticklabels(cursos, rotation=0)
+    # Rotación adaptativa: 0° si pocos grupos cortos; 45° si muchos o largos
+    # (umbral conservador: rotamos cuando hay ≥6 grupos o algún label > 6 chars).
+    label_largo = any(len(str(c)) > 6 for c in cursos)
+    rot = 45 if (len(cursos) >= 6 or label_largo) else 0
+    ax.set_xticklabels(cursos, rotation=rot, ha="right" if rot else "center")
     if ylims:
         ax.set_ylim(ylims)
     if formato == "percent":
