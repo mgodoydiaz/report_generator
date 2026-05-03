@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
+import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
 
 export default function Results() {
     const { fetchAuth } = useAuth();
@@ -29,6 +30,8 @@ export default function Results() {
 
     // ── Estado: modal de generación de PDF ──
     const [showReportModal, setShowReportModal] = useState(false);
+    const [showReportV2Modal, setShowReportV2Modal] = useState(false);
+    const [reportV2Context, setReportV2Context] = useState(null); // {tipoV2, indicatorId, filtros}
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -299,20 +302,68 @@ export default function Results() {
 
                     {/* Botón generar informe PDF */}
                     {selectedIndicator && (
-                        <div className="flex items-end">
+                        <div className="flex items-end gap-2">
                             <button
                                 onClick={() => setShowReportModal(true)}
                                 disabled={!pdfConfigured || loadingDashboard}
                                 title={
                                     !pdfConfigured
                                         ? 'Configura el informe PDF en el Editor de Layout → pestaña Informe PDF'
-                                        : 'Abrir el modal de generación de informe'
+                                        : 'Abrir el modal de generación de informe (motor v1)'
                                 }
                                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
                             >
                                 <Download size={14} />
                                 Generar Reporte
                             </button>
+                            {/* Botón motor v2 (paridad LaTeX). Detecta tipo por el nombre del indicador.
+                                Solo se muestra para indicators DIA / SIMCE — el motor v2 todavía no
+                                soporta IDEL/CV/FL. */}
+                            {(() => {
+                                const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
+                                const nombre = (ind?.name || '').toLowerCase();
+                                const tipoV2 = nombre.includes('simce') ? 'simce'
+                                    : nombre.includes('dia') ? 'dia'
+                                    : null;
+                                if (!tipoV2) return null;
+                                // Mapear filtros UI → nombres DB para validar y mandar.
+                                const params = {};
+                                Object.entries(selectedFilters || {}).forEach(([dimId, val]) => {
+                                    const dimName = indicatorDims[dimId]?.name;
+                                    if (dimName && val !== '' && val !== null) params[dimName] = val;
+                                });
+                                // El motor v2 requiere al menos UN filtro temporal por tipo.
+                                // Sin esto los datos mezclan varias evaluaciones y los
+                                // gráficos quedan sucios.
+                                const filtrosTemporales = tipoV2 === 'simce'
+                                    ? ['Mes', 'N Prueba', 'Numero_Prueba']
+                                    : ['Hito', 'Año'];
+                                const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
+                                const disabled = loadingDashboard || !tieneFiltroTemporal;
+                                const titleMsg = !tieneFiltroTemporal
+                                    ? `Aplica un filtro de ${filtrosTemporales.slice(0, 2).join(' o ')} antes de generar el informe v2 (un punto en el tiempo)`
+                                    : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            // Abrir modal v2 con contexto actual.
+                                            // El modal arma overrides de branding y llama el endpoint.
+                                            setReportV2Context({
+                                                tipoV2,
+                                                indicatorId: parseInt(selectedIndicator, 10),
+                                                filtros: params,
+                                            });
+                                            setShowReportV2Modal(true);
+                                        }}
+                                        disabled={disabled}
+                                        title={titleMsg}
+                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
+                                    >
+                                        <Download size={14} />
+                                        Generar v2 ({tipoV2.toUpperCase()})
+                                    </button>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -370,6 +421,15 @@ export default function Results() {
                 sortedDimKeys={sortedDimKeys}
                 onSaved={fetchInitialData}
             />
+            {reportV2Context && (
+                <GenerateReportV2Modal
+                    open={showReportV2Modal}
+                    onClose={() => setShowReportV2Modal(false)}
+                    tipoV2={reportV2Context.tipoV2}
+                    indicatorId={reportV2Context.indicatorId}
+                    filtros={reportV2Context.filtros}
+                />
+            )}
         </div>
     );
 }

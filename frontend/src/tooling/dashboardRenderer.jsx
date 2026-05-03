@@ -66,7 +66,16 @@ export const SIMCE_PRESET_LAYOUT = {
             label: 'Detalle Curso',
             rows: [
                 { cols: 1, items: [{ type: 'course_selector' }] },
-                { cols: 1, items: [{ type: 'chart', component: 'GraficoHabilidades', requires: ['habilidad'] }] },
+                // Vista equivalente a las páginas por curso del informe PDF:
+                // ~6 gráficos + tablas que muestran los datos del curso seleccionado.
+                { cols: 2, items: [
+                    { type: 'chart', component: 'GraficoLogroPorCurso',     requires: ['logro_1'], filter: 'cursoActivo' },
+                    { type: 'chart', component: 'GraficoDistribucionNiveles', requires: ['nivel_de_logro'], filter: 'cursoActivo' },
+                ]},
+                { cols: 2, items: [
+                    { type: 'chart', component: 'GraficoHabilidades',        requires: ['habilidad'] },
+                    { type: 'chart', component: 'GraficoBoxplotPorCurso',    requires: ['logro_1'], filter: 'cursoActivo' },
+                ]},
                 { cols: 1, items: [{ type: 'table', component: 'TablaAlumnos' }] },
                 { cols: 1, items: [{ type: 'table', component: 'TablaPreguntas' }] },
             ],

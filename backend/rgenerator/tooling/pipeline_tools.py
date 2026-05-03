@@ -27,6 +27,7 @@ STEP_MAPPING: Dict[str, Type[Step]] = {
     "GenerateGraphics": ps.GenerateGraphics,
     "GenerateTables": ps.GenerateTables,
     "RenderReport": ps.RenderReport,
+    "RenderHtmlReport": ps.RenderHtmlReport,
     "GenerateDocxReport": ps.GenerateDocxReport,
     "RenderPDFReport": ps.RenderPDFReport,
 }
