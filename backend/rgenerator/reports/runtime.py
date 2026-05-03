@@ -32,6 +32,7 @@ from weasyprint import HTML as WeasyprintHTML
 
 from . import charts, tables
 from .helpers import df_a_html_table, embed_png_b64
+from ..core.derived_fields_engine import apply_derived_fields
 
 REPORTS_DIR = Path(__file__).parent
 TEMPLATES_DIR = REPORTS_DIR / "templates"
@@ -167,6 +168,19 @@ def construir_pdf(
                 esquema[key].update(value)
             else:
                 esquema[key] = value
+
+    # Aplicar derived_fields del esquema. Cada entry tiene forma
+    # {df_input: 'estudiantes'|'preguntas'|..., configs: [...]}.
+    # Son cálculos de runtime (no se persisten); mientras los pipelines
+    # ETL no incluyan ApplyDerivedFields y re-procesen los datos, el
+    # esquema permite tener Avance/Logro_Promedio en los informes ya.
+    derived_fields_runtime = esquema.get("derived_fields") or []
+    for entry in derived_fields_runtime:
+        target_key = entry.get("df_input")
+        configs = entry.get("configs") or []
+        if target_key and configs and target_key in dataframes:
+            dataframes = dict(dataframes)
+            dataframes[target_key] = apply_derived_fields(dataframes[target_key], configs)
 
     # Resolver branding (logos a path absoluto + base64)
     branding = dict(esquema.get("branding", {}))
