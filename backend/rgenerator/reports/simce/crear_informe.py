@@ -49,17 +49,36 @@ def construir(
     Returns:
         Bytes del PDF generado.
     """
-    # Filtrar igual que SIMCE/crear_informe.py
-    df_estudiantes = df_estudiantes[df_estudiantes["Asignatura"] == asignatura].copy()
-    df_preguntas = df_preguntas[df_preguntas["Asignatura"] == asignatura].copy()
+    # Filtrar igual que SIMCE/crear_informe.py. Soportar nombres alternos
+    # de columnas (DB del proyecto usa "N Prueba" con espacio, no
+    # "Numero_Prueba"). Si la columna del nº de prueba no existe o todos
+    # sus valores son null, no filtra (usa todo el dataset).
+    if "Asignatura" in df_estudiantes.columns:
+        df_estudiantes = df_estudiantes[df_estudiantes["Asignatura"] == asignatura].copy()
+    if "Asignatura" in df_preguntas.columns:
+        df_preguntas = df_preguntas[df_preguntas["Asignatura"] == asignatura].copy()
 
-    df_estudiantes_prueba = df_estudiantes[
-        df_estudiantes["Numero_Prueba"] == numero_prueba
-    ].copy()
+    n_prueba_col = next(
+        (c for c in ("N Prueba", "Numero_Prueba", "N_Prueba", "Nro Prueba") if c in df_estudiantes.columns),
+        None,
+    )
+    if n_prueba_col and df_estudiantes[n_prueba_col].notna().any():
+        df_estudiantes_prueba = df_estudiantes[
+            df_estudiantes[n_prueba_col] == numero_prueba
+        ].copy()
+    else:
+        df_estudiantes_prueba = df_estudiantes.copy()
 
-    df_preguntas_prueba = df_preguntas[
-        df_preguntas["Numero_Prueba"] == numero_prueba
-    ].copy() if "Numero_Prueba" in df_preguntas.columns else df_preguntas.copy()
+    n_prueba_col_p = next(
+        (c for c in ("N Prueba", "Numero_Prueba", "N_Prueba", "Nro Prueba") if c in df_preguntas.columns),
+        None,
+    )
+    if n_prueba_col_p and df_preguntas[n_prueba_col_p].notna().any():
+        df_preguntas_prueba = df_preguntas[
+            df_preguntas[n_prueba_col_p] == numero_prueba
+        ].copy()
+    else:
+        df_preguntas_prueba = df_preguntas.copy()
 
     dataframes = {
         "estudiantes": df_estudiantes,                # df completo (para evolución por mes)

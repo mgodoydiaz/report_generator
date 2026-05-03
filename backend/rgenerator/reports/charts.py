@@ -144,8 +144,32 @@ def valor_promedio_agrupado_por(
     Equivalente LaTeX: SIMCE.valor_promedio_agrupado_por,
         DIA.logro_promedio_por_eje, DIA.logro_promedio_por_habilidad.
     """
+    # Filtrar filas donde la categoría secundaria es null/vacía: si el dato
+    # no está cargado (ej "Eje Temático" None en DIA por bug de seed), no
+    # tiene sentido graficarlo como serie en blanco.
+    df_local = df_preguntas[
+        df_preguntas[agrupar_secundario_por].notna()
+        & (df_preguntas[agrupar_secundario_por].astype(str).str.strip() != "")
+    ].copy()
+
+    # Si después del filtro no queda nada útil, devolvemos un placeholder
+    # "Sin datos" en lugar de generar un gráfico vacío con eje -0.04 a 0.04.
+    if df_local.empty or df_local[columna_valor].isna().all():
+        fig, ax = plt.subplots(figsize=(8, 3))
+        ax.axis("off")
+        ax.text(
+            0.5, 0.5,
+            f"Sin datos disponibles para «{agrupar_secundario_por}»",
+            ha="center", va="center",
+            fontsize=11, color="#666", style="italic",
+            transform=ax.transAxes,
+        )
+        plt.savefig(nombre_grafico, dpi=300, bbox_inches="tight")
+        plt.close()
+        return None
+
     # Agrupamos por las dos categorías
-    resumen = df_preguntas.groupby([agrupar_principal_por, agrupar_secundario_por]).agg(
+    resumen = df_local.groupby([agrupar_principal_por, agrupar_secundario_por]).agg(
         Promedio=(columna_valor, "mean")
     ).reset_index()
 
@@ -155,8 +179,8 @@ def valor_promedio_agrupado_por(
     width = 0.18
 
     # Se ordena el grupo secundario si se indicó una columna de orden
-    if orden_grupo_secundario in df_preguntas.columns and orden_grupo_secundario != "":
-        orden = df_preguntas[[agrupar_secundario_por, orden_grupo_secundario]].drop_duplicates()
+    if orden_grupo_secundario in df_local.columns and orden_grupo_secundario != "":
+        orden = df_local[[agrupar_secundario_por, orden_grupo_secundario]].drop_duplicates()
         orden = orden.sort_values(by=orden_grupo_secundario)
         grupo_secundario = orden[agrupar_secundario_por].tolist()
 

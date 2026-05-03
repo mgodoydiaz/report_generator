@@ -32,7 +32,7 @@
       "fn": "resumen_estadistico_basico",
       "df_input": "estudiantes_prueba",
       "params": {
-        "columna": "SIMCE",
+        "columna": "Simce",
         "formato": "number",
         "agrupar_por": "Curso"
       }
@@ -55,7 +55,7 @@
       "fn": "boxplot_valor_por_curso",
       "df_input": "estudiantes_prueba",
       "params": {
-        "columna_valor": "SIMCE",
+        "columna_valor": "Simce",
         "agrupar_por": "Curso",
         "titulo_grafico": "Distribución de Puntaje SIMCE por Curso",
         "ylabel": "Puntaje SIMCE",
@@ -83,7 +83,7 @@
       "fn": "valor_promedio_agrupado_por",
       "df_input": "estudiantes",
       "params": {
-        "columna_valor": "SIMCE",
+        "columna_valor": "Simce",
         "agrupar_principal_por": "Curso",
         "agrupar_secundario_por": "Mes",
         "titulo_grafico": "Evolución del Puntaje SIMCE Promedio por Curso y Mes",
@@ -127,7 +127,7 @@
       "params": {
         "columna_valor": "Logro",
         "agrupar_principal_por": "Curso",
-        "agrupar_secundario_por": "Eje temático",
+        "agrupar_secundario_por": "Eje Temático",
         "titulo_grafico": "Logro Promedio por Eje Temático",
         "titulo_leyenda": "Eje Temático",
         "formato": "percent"
@@ -158,18 +158,30 @@
         "df_input": "estudiantes_prueba",
         "params": {
           "parametros": {"Curso": "{curso}"},
-          "sort_by": "Rend"
+          "sort_by": "Rend",
+          "formatos": {"Rend": "percent", "Simce": "number"},
+          "columnas": ["Nombre", "Rend", "Simce", "Logro"],
+          "columnas_renombrar": {
+            "Nombre": "Estudiante",
+            "Rend": "Logro",
+            "Simce": "SIMCE",
+            "Logro": "Nivel"
+          }
         }
       },
       {
         "tipo": "table",
         "titulo": "Logro por Pregunta - {curso}",
         "fn": "tabla_logro_por_pregunta",
-        "df_input": "preguntas",
+        "df_input": "preguntas_prueba",
         "params": {
           "valor_agrupacion": "{curso}",
           "agrupar_por": "Curso",
-          "sort_by": "Logro"
+          "sort_by": "Logro",
+          "columnas": ["Pregunta", "Habilidad", "Eje Temático", "Logro"],
+          "columnas_renombrar": {
+            "Pregunta": "N° Pregunta"
+          }
         }
       }
     ]

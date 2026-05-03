@@ -321,17 +321,26 @@ export default function Results() {
                                 const nombre = (ind?.name || '').toLowerCase();
                                 const tipoV2 = nombre.includes('simce') ? 'simce' : nombre.includes('dia') ? 'dia' : null;
                                 if (!tipoV2) return null;
+                                // Mapear filtros UI → nombres DB para validar y mandar.
+                                const params = {};
+                                Object.entries(selectedFilters || {}).forEach(([dimId, val]) => {
+                                    const dimName = indicatorDims[dimId]?.name;
+                                    if (dimName && val !== '' && val !== null) params[dimName] = val;
+                                });
+                                // El motor v2 requiere al menos UN filtro temporal por tipo.
+                                // Sin esto los datos mezclan varias evaluaciones y los
+                                // gráficos quedan sucios.
+                                const filtrosTemporales = tipoV2 === 'simce'
+                                    ? ['Mes', 'N Prueba', 'Numero_Prueba']
+                                    : ['Hito', 'Año'];
+                                const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
+                                const disabled = loadingDashboard || !tieneFiltroTemporal;
+                                const titleMsg = !tieneFiltroTemporal
+                                    ? `Aplica un filtro de ${filtrosTemporales.slice(0, 2).join(' o ')} antes de generar el informe v2 (un punto en el tiempo)`
+                                    : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
                                 return (
                                     <button
                                         onClick={async () => {
-                                            const params = {};
-                                            // Mapear filtros activos del UI a filtros de la DB (clave humana).
-                                            // selectedFilters viene como {id_dimension: valor} — necesitamos
-                                            // resolver los nombres legibles desde indicatorDims.
-                                            Object.entries(selectedFilters || {}).forEach(([dimId, val]) => {
-                                                const dimName = indicatorDims[dimId]?.name;
-                                                if (dimName && val !== '' && val !== null) params[dimName] = val;
-                                            });
                                             const tid = toast.loading('Generando informe v2…');
                                             try {
                                                 const res = await fetchAuth(`${API_BASE_URL}/reports/${tipoV2}`, {
@@ -362,9 +371,9 @@ export default function Results() {
                                                 toast.error('Error v2: ' + e.message, { id: tid });
                                             }
                                         }}
-                                        disabled={loadingDashboard}
-                                        title={`Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`}
-                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all"
+                                        disabled={disabled}
+                                        title={titleMsg}
+                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
                                     >
                                         <Download size={14} />
                                         Generar v2 ({tipoV2.toUpperCase()})

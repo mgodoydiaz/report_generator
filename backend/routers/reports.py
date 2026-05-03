@@ -107,12 +107,30 @@ async def generar_reporte(
     if tipo not in ("simce", "dia"):
         raise HTTPException(404, f"Tipo '{tipo}' no soportado. Disponibles: simce, dia")
 
+    # Validación: el motor v2 está pensado para UNA evaluación. Sin filtro
+    # temporal mezclaría datos de múltiples meses/hitos y los gráficos
+    # quedarían sucios. Exigimos al menos uno de los filtros temporales
+    # conocidos por tipo.
+    filtros_aplicados = body.filtros or {}
+    filtros_temporales = {
+        "simce": ["Mes", "N Prueba", "Numero_Prueba"],
+        "dia": ["Hito", "Año"],
+    }
+    requeridos = filtros_temporales.get(tipo, [])
+    if not any(k in filtros_aplicados for k in requeridos):
+        raise HTTPException(
+            400,
+            f"El motor v2 requiere al menos un filtro temporal para mantener "
+            f"un solo punto en el tiempo. Para '{tipo}', aplicar uno de: "
+            f"{', '.join(requeridos)}.",
+        )
+
     try:
         dataframes = cargar_dataframes_indicator(
             db,
             indicator_id=body.indicator_id,
             org_id=user.org_id,
-            filtros=body.filtros,
+            filtros=filtros_aplicados,
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
