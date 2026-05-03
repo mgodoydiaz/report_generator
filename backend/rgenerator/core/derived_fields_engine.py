@@ -160,9 +160,12 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         if f not in df.columns:
             raise KeyError(f"slope '{name}': columna '{f}' no existe en el DataFrame")
 
+    time_type = config.get("time_type", "numeric")
+    time_ordinal_levels = config.get("time_ordinal_levels")
+
     df = df.copy()
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
-    df["_time_num"] = pd.to_numeric(df[time_field], errors="coerce")
+    df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
     # Para cada entidad, ordenar y calcular pendiente expansiva.
     # Inicializamos la columna con NaN.
@@ -222,9 +225,12 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         if f not in df.columns:
             raise KeyError(f"delta '{name}': columna '{f}' no existe en el DataFrame")
 
+    time_type = config.get("time_type", "numeric")
+    time_ordinal_levels = config.get("time_ordinal_levels")
+
     df = df.copy()
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
-    df["_time_num"] = pd.to_numeric(df[time_field], errors="coerce")
+    df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
     deltas: dict[Any, float] = {}
     for entity_value, group in df.groupby(entity_field, sort=False):
@@ -257,14 +263,14 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "display_name": "Pendiente lineal expansiva",
         "description": "Para cada fila, regresión lineal sobre (time_field, value_field) usando los puntos hasta esa fila del mismo entity. Útil para Avance del estudiante.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "min_points"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points"],
     },
     "delta": {
         "fn": apply_delta,
         "display_name": "Último menos primero",
         "description": "Diferencia entre el último valor y el primero por entity, broadcast a todas las filas.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "min_points"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points"],
     },
 }
 
