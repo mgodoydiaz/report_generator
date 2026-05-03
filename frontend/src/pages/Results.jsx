@@ -299,20 +299,87 @@ export default function Results() {
 
                     {/* Botón generar informe PDF */}
                     {selectedIndicator && (
-                        <div className="flex items-end">
+                        <div className="flex items-end gap-2">
                             <button
                                 onClick={() => setShowReportModal(true)}
                                 disabled={!pdfConfigured || loadingDashboard}
                                 title={
                                     !pdfConfigured
                                         ? 'Configura el informe PDF en el Editor de Layout → pestaña Informe PDF'
-                                        : 'Abrir el modal de generación de informe'
+                                        : 'Abrir el modal de generación de informe (motor v1)'
                                 }
                                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
                             >
                                 <Download size={14} />
                                 Generar Reporte
                             </button>
+                            {/* Botón motor v2 (paridad LaTeX). Detecta tipo por el nombre del indicador.
+                                Solo se muestra para indicators DIA / SIMCE — el motor v2 todavía no
+                                soporta IDEL/CV/FL. */}
+                            {(() => {
+                                const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
+                                const nombre = (ind?.name || '').toLowerCase();
+                                const tipoV2 = nombre.includes('simce') ? 'simce' : nombre.includes('dia') ? 'dia' : null;
+                                if (!tipoV2) return null;
+                                // Mapear filtros UI → nombres DB para validar y mandar.
+                                const params = {};
+                                Object.entries(selectedFilters || {}).forEach(([dimId, val]) => {
+                                    const dimName = indicatorDims[dimId]?.name;
+                                    if (dimName && val !== '' && val !== null) params[dimName] = val;
+                                });
+                                // El motor v2 requiere al menos UN filtro temporal por tipo.
+                                // Sin esto los datos mezclan varias evaluaciones y los
+                                // gráficos quedan sucios.
+                                const filtrosTemporales = tipoV2 === 'simce'
+                                    ? ['Mes', 'N Prueba', 'Numero_Prueba']
+                                    : ['Hito', 'Año'];
+                                const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
+                                const disabled = loadingDashboard || !tieneFiltroTemporal;
+                                const titleMsg = !tieneFiltroTemporal
+                                    ? `Aplica un filtro de ${filtrosTemporales.slice(0, 2).join(' o ')} antes de generar el informe v2 (un punto en el tiempo)`
+                                    : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
+                                return (
+                                    <button
+                                        onClick={async () => {
+                                            const tid = toast.loading('Generando informe v2…');
+                                            try {
+                                                const res = await fetchAuth(`${API_BASE_URL}/reports/${tipoV2}`, {
+                                                    method: 'POST',
+                                                    headers: { 'Content-Type': 'application/json' },
+                                                    body: JSON.stringify({
+                                                        indicator_id: parseInt(selectedIndicator, 10),
+                                                        filtros: params,
+                                                    }),
+                                                });
+                                                if (!res.ok) {
+                                                    const err = await res.json().catch(() => ({}));
+                                                    throw new Error(err.detail || `HTTP ${res.status}`);
+                                                }
+                                                const blob = await res.blob();
+                                                const url = URL.createObjectURL(blob);
+                                                // Descarga directa (evita el popup blocker de window.open
+                                                // post-await fetch, que en muchos browsers es bloqueado).
+                                                const a = document.createElement('a');
+                                                a.href = url;
+                                                a.download = `informe_${tipoV2}.pdf`;
+                                                document.body.appendChild(a);
+                                                a.click();
+                                                document.body.removeChild(a);
+                                                setTimeout(() => URL.revokeObjectURL(url), 1000);
+                                                toast.success('Informe v2 descargado', { id: tid });
+                                            } catch (e) {
+                                                toast.error('Error v2: ' + e.message, { id: tid });
+                                            }
+                                        }}
+                                        disabled={disabled}
+                                        title={titleMsg}
+                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
+                                    >
+                                        <Download size={14} />
+                                        Generar v2 ({tipoV2.toUpperCase()})
+                                    </button>
+                                );
+                            })()}
                         </div>
                     )}
 

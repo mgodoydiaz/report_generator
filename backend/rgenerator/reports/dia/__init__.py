@@ -1,0 +1,1 @@
+"""Configuración del informe DIA."""
