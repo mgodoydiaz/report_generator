@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
+import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
 
 export default function Results() {
     const { fetchAuth } = useAuth();
@@ -29,6 +30,8 @@ export default function Results() {
 
     // ── Estado: modal de generación de PDF ──
     const [showReportModal, setShowReportModal] = useState(false);
+    const [showReportV2Modal, setShowReportV2Modal] = useState(false);
+    const [reportV2Context, setReportV2Context] = useState(null); // {tipoV2, indicatorId, filtros}
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -342,36 +345,15 @@ export default function Results() {
                                     : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
                                 return (
                                     <button
-                                        onClick={async () => {
-                                            const tid = toast.loading('Generando informe v2…');
-                                            try {
-                                                const res = await fetchAuth(`${API_BASE_URL}/reports/${tipoV2}`, {
-                                                    method: 'POST',
-                                                    headers: { 'Content-Type': 'application/json' },
-                                                    body: JSON.stringify({
-                                                        indicator_id: parseInt(selectedIndicator, 10),
-                                                        filtros: params,
-                                                    }),
-                                                });
-                                                if (!res.ok) {
-                                                    const err = await res.json().catch(() => ({}));
-                                                    throw new Error(err.detail || `HTTP ${res.status}`);
-                                                }
-                                                const blob = await res.blob();
-                                                const url = URL.createObjectURL(blob);
-                                                // Descarga directa (evita el popup blocker de window.open
-                                                // post-await fetch, que en muchos browsers es bloqueado).
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = `informe_${tipoV2}.pdf`;
-                                                document.body.appendChild(a);
-                                                a.click();
-                                                document.body.removeChild(a);
-                                                setTimeout(() => URL.revokeObjectURL(url), 1000);
-                                                toast.success('Informe v2 descargado', { id: tid });
-                                            } catch (e) {
-                                                toast.error('Error v2: ' + e.message, { id: tid });
-                                            }
+                                        onClick={() => {
+                                            // Abrir modal v2 con contexto actual.
+                                            // El modal arma overrides de branding y llama el endpoint.
+                                            setReportV2Context({
+                                                tipoV2,
+                                                indicatorId: parseInt(selectedIndicator, 10),
+                                                filtros: params,
+                                            });
+                                            setShowReportV2Modal(true);
                                         }}
                                         disabled={disabled}
                                         title={titleMsg}
@@ -439,6 +421,15 @@ export default function Results() {
                 sortedDimKeys={sortedDimKeys}
                 onSaved={fetchInitialData}
             />
+            {reportV2Context && (
+                <GenerateReportV2Modal
+                    open={showReportV2Modal}
+                    onClose={() => setShowReportV2Modal(false)}
+                    tipoV2={reportV2Context.tipoV2}
+                    indicatorId={reportV2Context.indicatorId}
+                    filtros={reportV2Context.filtros}
+                />
+            )}
         </div>
     );
 }
