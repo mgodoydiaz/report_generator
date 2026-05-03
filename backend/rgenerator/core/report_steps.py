@@ -16,6 +16,58 @@ from backend.config import REPORTS_TEMPLATES_DIR
 from rgenerator.tooling.constants import formato_informe_generico, indice_alfabetico
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Paletas LaTeX-paridad (ver docs/desarrollo/visual_vocabulary_dia.md).
+# Usadas por _chart_to_png_b64 para alinear la estética de los gráficos
+# embebidos en el PDF con el LaTeX referencia (Set2 + tab10 + semáforo
+# negro/grises). NO introducir paletas adicionales sin actualizar el doc.
+# ─────────────────────────────────────────────────────────────────────────
+def _hex_from_rgba(rgba):
+    r, g, b = rgba[0], rgba[1], rgba[2]
+    return '#{:02x}{:02x}{:02x}'.format(int(round(r * 255)), int(round(g * 255)), int(round(b * 255)))
+
+
+# Construidas perezosamente la primera vez que se llama _chart_to_png_b64,
+# para no importar matplotlib al cargar el módulo (los pipelines que no
+# generan PDFs no deberían pagarlo).
+_PALETTE_CATEGORICAL = None  # Set2 (8 pasteles)  — categórico general
+_PALETTE_BOXPLOT = None       # tab10 (10 saturados) — boxplots por categoría
+PALETTE_SEMAFORO = {
+    'Avanzado':       '#1f9e89', 'Adecuado':       '#1f9e89', 'Bajo Riesgo':   '#1f9e89',
+    'Intermedio':     '#f1a340', 'Elemental':      '#f1a340', 'Cierto Riesgo': '#f1a340',
+    'Inicial':        '#e64b35', 'Insuficiente':   '#e64b35', 'Crítico':       '#e64b35',
+}
+SEMAFORO_FALLBACK_ORDER = ['#e64b35', '#f1a340', '#1f9e89']  # rojo→naranja→verde por orden ordinal
+
+MPL_RCPARAMS_LATEX = {
+    'font.family': ['Segoe UI', 'Inter', 'DejaVu Sans'],
+    'font.size': 9,
+    'axes.titlesize': 10,
+    'axes.labelsize': 9,
+    'xtick.labelsize': 8,
+    'ytick.labelsize': 8,
+}
+
+CHART_DPI = 300
+
+
+def _ensure_palettes():
+    """Inicializa Set2 y tab10 a partir de matplotlib la primera vez."""
+    global _PALETTE_CATEGORICAL, _PALETTE_BOXPLOT
+    if _PALETTE_CATEGORICAL is None:
+        import matplotlib.pyplot as plt  # noqa: WPS433
+        _PALETTE_CATEGORICAL = [_hex_from_rgba(c) for c in plt.cm.Set2.colors]
+        _PALETTE_BOXPLOT = [_hex_from_rgba(c) for c in plt.cm.tab10.colors]
+    return _PALETTE_CATEGORICAL, _PALETTE_BOXPLOT
+
+
+def _semaforo_color(level: str, ordinal_index: int = 0) -> str:
+    """Retorna color semáforo para un nivel. Si no matchee, usa orden ordinal."""
+    if level in PALETTE_SEMAFORO:
+        return PALETTE_SEMAFORO[level]
+    return SEMAFORO_FALLBACK_ORDER[ordinal_index % len(SEMAFORO_FALLBACK_ORDER)]
+
+
 class GenerateGraphics(Step):
     """
     Genera gráficos utilizando herramientas de matplotlib definidas en plot_tools.
@@ -302,13 +354,26 @@ def _build_records(
 
 
 def _achievement_levels(indicator) -> list[dict]:
-    """Devuelve lista [{name, color, order}] desde indicator.achievement_levels."""
+    """Devuelve lista [{name, color, order}] desde indicator.achievement_levels.
+
+    Acepta también el formato legacy ["Avanzado", "Intermedio", ...] (strings)
+    y lo normaliza a [{name, order}] para que los consumidores siempre puedan
+    hacer .get('name'). El color cae al fallback semáforo si no está.
+    """
     raw = getattr(indicator, 'achievement_levels', None) or '[]'
     try:
         levels = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
         levels = []
-    return levels if isinstance(levels, list) else []
+    if not isinstance(levels, list):
+        return []
+    out = []
+    for i, lv in enumerate(levels):
+        if isinstance(lv, dict):
+            out.append(lv)
+        elif isinstance(lv, str):
+            out.append({'name': lv, 'order': i})
+    return out
 
 
 def _natural_sort_key(s):
@@ -327,6 +392,10 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
     import matplotlib.pyplot as plt
     import collections
 
+    # Estilo LaTeX-paridad (Segoe UI, tamaños chicos, ver visual_vocabulary_dia.md)
+    plt.rcParams.update(MPL_RCPARAMS_LATEX)
+    pal_cat, pal_box = _ensure_palettes()
+
     column_roles = {}
     if indicator is not None:
         try:
@@ -343,7 +412,15 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                                  else item.get('levelField') or '_' + (column_roles.get('nivel_de_logro', [{}])[0].get('column', '') or '').lower().replace(' ', '_'),
                                  column_roles)
 
-    fig, ax = plt.subplots(figsize=(7, 3.5))
+    # figsize por componente: barras simples medium (8,4), grouped/stacked
+    # más anchos. Ver docs/desarrollo/visual_vocabulary_dia.md §11.
+    if comp in ('GroupedBarByPeriod',) or (comp == 'BarByGroup' and isinstance(item.get('valueField'), list) and len(item.get('valueField', [])) > 1):
+        figsize = (12, 6)
+    elif comp == 'StackedCountByGroup':
+        figsize = (10, 6)
+    else:
+        figsize = (8, 4)
+    fig, ax = plt.subplots(figsize=figsize)
 
     try:
         if comp in ('StackedCountByGroup', 'DistribucionNiveles'):
@@ -390,7 +467,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
 
             levels_cfg = _achievement_levels(indicator)
             level_order = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
-            level_colors = {l.get('name', ''): l.get('color', '#94a3b8') for l in levels_cfg}
+            # Solo guardamos colores realmente declarados en la config; los
+            # niveles sin color caen al fallback semáforo (verde/naranja/rojo)
+            # vía _semaforo_color en el loop de barras.
+            level_colors = {l.get('name', ''): l.get('color')
+                            for l in levels_cfg if l.get('color')}
 
             groups = sorted({str(r.get(gf, '')) for r in records_filtered if r.get(gf) is not None},
                             key=_natural_sort_key)
@@ -406,24 +487,24 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     counts[g][l] += 1
 
             bottom = [0] * len(groups)
-            default_colors = ['#dc2626', '#ea580c', '#eab308', '#16a34a', '#2563eb', '#7c3aed']
             for i, level in enumerate(level_order):
                 vals = [counts[g][level] for g in groups]
-                col = level_colors.get(level) or default_colors[i % len(default_colors)]
-                bars = ax.bar(groups, vals, label=level, color=col, bottom=bottom, zorder=2,
-                              edgecolor='white', linewidth=0.6)
+                # Prioridad: color del achievement_level del indicator → paleta
+                # semáforo (Avanzado/Intermedio/Inicial) → fallback ordinal.
+                col = level_colors.get(level) or _semaforo_color(level, i)
+                bars = ax.bar(groups, vals, label=level, color=col, bottom=bottom, zorder=2)
                 for b, v, btm in zip(bars, vals, bottom):
                     if v > 0:
                         ax.text(b.get_x() + b.get_width() / 2, btm + v / 2, str(v),
-                                ha='center', va='center', fontsize=8, color='white', fontweight='bold')
+                                ha='center', va='center', fontsize=9, color='white', fontweight='bold')
                 bottom = [a + b for a, b in zip(bottom, vals)]
 
-            ax.set_ylabel(item.get('labelY', 'Cantidad de alumnos'), fontsize=9)
+            ax.set_ylabel(item.get('labelY', 'Cantidad de alumnos'))
             ax.spines[['top', 'right']].set_visible(False)
-            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.yaxis.grid(True, linestyle='--', alpha=0.6, zorder=0)
             if level_order:
-                ax.legend(fontsize=8, loc='upper right')
-            plt.xticks(rotation=20, ha='right', fontsize=8)
+                ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
+            plt.xticks(rotation=20, ha='right')
 
         elif comp == 'GroupedBarByPeriod':
             # Barras agrupadas: una serie por groupField, eje X por periodField.
@@ -449,8 +530,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             import numpy as np
             x = np.arange(len(periods))
             width = 0.8 / max(1, len(groups))
-            colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
-                      '#f43f5e', '#3b82f6', '#a855f7']
+            colors = pal_cat
             max_val = 0
             for i, g in enumerate(groups):
                 vals = []
@@ -467,11 +547,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 max_val = max(max_val, max(vals) if vals else 0)
                 offset = (i - (len(groups) - 1) / 2) * width
                 ax.bar(x + offset, vals, width, label=g, color=colors[i % len(colors)],
-                       edgecolor='white', linewidth=0.5, zorder=2)
-            ax.set_xticks(x); ax.set_xticklabels(periods, fontsize=8)
-            ax.set_ylabel(item.get('labelY', vf.lstrip('_').title()), fontsize=9)
+                       edgecolor='gray', linewidth=0.8, zorder=2)
+            ax.set_xticks(x); ax.set_xticklabels(periods)
+            ax.set_ylabel(item.get('labelY', vf.lstrip('_').title()))
             ax.spines[['top', 'right']].set_visible(False)
-            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.yaxis.grid(True, linestyle='--', linewidth=0.9, alpha=0.6, zorder=0)
             # Formato percent: ylim 0-1 + ticker percent
             if fmt == 'percent' and max_val <= 1.5:
                 ax.set_ylim(0, 1)
@@ -531,7 +611,10 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             import numpy as np
             x = np.arange(len(groups))
             width = 0.8 / max(1, len(vfs))
-            colors = ['#6366f1', '#06b6d4', '#f59e0b', '#10b981', '#f43f5e']
+            colors = pal_cat
+            # Bordes: barras simples (1 vf) más gruesos en negro; barras
+            # agrupadas (multi vf) más finos en gris para no saturar.
+            edge_color, edge_width = ('black', 1.2) if len(vfs) == 1 else ('gray', 0.8)
             max_val = 0
             for i, vf in enumerate(vfs):
                 vals = []
@@ -550,7 +633,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 bars = ax.bar(x + offset, vals, width,
                               label=vf.lstrip('_').replace('_', ' ').title(),
                               color=colors[i % len(colors)], zorder=2,
-                              edgecolor='white', linewidth=0.5)
+                              edgecolor=edge_color, linewidth=edge_width)
                 if item.get('showValues', False):
                     for b, v in zip(bars, vals):
                         if fmt_first == 'percent' and -1.5 <= v <= 1.5:
@@ -558,10 +641,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                         else:
                             label_str = f'{v:.1f}'
                         ax.text(b.get_x() + b.get_width() / 2, v + max(vals + [1]) * 0.01,
-                                label_str, ha='center', va='bottom', fontsize=7)
-            ax.set_xticks(x); ax.set_xticklabels(groups, rotation=20, ha='right', fontsize=8)
+                                label_str, ha='center', va='bottom', fontsize=8,
+                                bbox=dict(facecolor='white', edgecolor='none', pad=1, alpha=0.7))
+            ax.set_xticks(x); ax.set_xticklabels(groups, rotation=20, ha='right')
             ax.spines[['top', 'right']].set_visible(False)
-            ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+            ax.yaxis.grid(True, linestyle='--', linewidth=0.9, alpha=0.6, zorder=0)
             # Formato percent: ylim 0-1 + ticker percent
             if fmt_first == 'percent' and max_val <= 1.5:
                 ax.set_ylim(0, 1)
@@ -589,9 +673,9 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                             and r.get(v_f) is not None]
                     row_vals.append(sum(vals) / len(vals) if vals else 0)
                 z.append(row_vals)
-            im = ax.imshow(z, aspect='auto', cmap='Blues')
-            ax.set_xticks(range(len(xs))); ax.set_xticklabels(xs, fontsize=8)
-            ax.set_yticks(range(len(ys))); ax.set_yticklabels(ys, fontsize=8)
+            im = ax.imshow(z, aspect='auto', cmap='Greens')
+            ax.set_xticks(range(len(xs))); ax.set_xticklabels(xs)
+            ax.set_yticks(range(len(ys))); ax.set_yticklabels(ys)
             fig.colorbar(im, ax=ax)
 
         elif comp == 'GaugeIndicator':
@@ -599,16 +683,18 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             val = sum(vals) / len(vals) if vals else 0
             ax.axis('off')
             ax.text(0.5, 0.6, f'{val:.1f}', ha='center', va='center',
-                    fontsize=40, fontweight='bold', color='#4f46e5', transform=ax.transAxes)
+                    fontsize=40, fontweight='bold', color='#111', transform=ax.transAxes)
             ax.text(0.5, 0.35, item.get('labelX', x_field), ha='center', va='center',
-                    fontsize=11, color='#64748b', transform=ax.transAxes)
+                    fontsize=11, color='#444', transform=ax.transAxes)
 
         elif comp == 'Histogram':
             vals = [float(r.get(x_field) or 0) for r in records if r.get(x_field) is not None]
-            ax.hist(vals, bins=item.get('nbins', 10), color='#6366f1', alpha=0.8, edgecolor='white')
-            ax.set_xlabel(item.get('labelX', x_field), fontsize=9)
-            ax.set_ylabel(item.get('labelY', 'Frecuencia'), fontsize=9)
+            ax.hist(vals, bins=item.get('nbins', 10), color=pal_cat[0], alpha=0.85,
+                    edgecolor='black', linewidth=1.0)
+            ax.set_xlabel(item.get('labelX', x_field))
+            ax.set_ylabel(item.get('labelY', 'Frecuencia'))
             ax.spines[['top', 'right']].set_visible(False)
+            ax.yaxis.grid(True, linestyle='--', linewidth=0.9, alpha=0.6, zorder=0)
 
         else:
             # Barras genéricas: agrupa por x_field, promedia y_field
@@ -623,32 +709,33 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             if buckets:
                 labels = sorted(buckets.keys())
                 vals = [sum(buckets[l]) / len(buckets[l]) for l in labels]
-                colors = ['#6366f1', '#8b5cf6', '#06b6d4', '#f59e0b', '#10b981',
-                          '#f43f5e', '#3b82f6', '#a855f7']
+                colors = pal_cat
                 ax.bar(labels, vals,
                        color=[colors[i % len(colors)] for i in range(len(labels))],
-                       width=0.6, zorder=3)
-                ax.set_ylabel(item.get('labelY', y_field or ''), fontsize=9)
-                ax.yaxis.grid(True, linestyle='--', alpha=0.4, zorder=0)
+                       width=0.6, edgecolor='black', linewidth=1.2, zorder=3)
+                ax.set_ylabel(item.get('labelY', y_field or ''))
+                ax.yaxis.grid(True, linestyle='--', linewidth=0.9, alpha=0.6, zorder=0)
                 ax.spines[['top', 'right']].set_visible(False)
                 for i, (lbl, val) in enumerate(zip(labels, vals)):
                     ax.text(i, val + max(vals) * 0.01, f'{val:.1f}',
                             ha='center', va='bottom', fontsize=8)
-                plt.xticks(rotation=30, ha='right', fontsize=8)
+                plt.xticks(rotation=30, ha='right')
             else:
                 ax.text(0.5, 0.5, 'Sin datos', ha='center', va='center',
-                        transform=ax.transAxes, color='#94a3b8')
+                        transform=ax.transAxes, color='#444')
                 ax.axis('off')
 
     except Exception as e:
         ax.text(0.5, 0.5, f'Error: {e}', ha='center', va='center',
-                transform=ax.transAxes, color='#ef4444', fontsize=8)
+                transform=ax.transAxes, color='#b91c1c', fontsize=8)
         ax.axis('off')
 
-    ax.set_title(item.get('labelX', ''), fontsize=10, pad=8)
+    # NOTA: el heading del gráfico viene del HTML (h2 sobre el chart-wrap),
+    # no se setea ax.set_title para evitar duplicación con el LaTeX referencia
+    # (que tampoco usa título inline en sus figuras).
     fig.tight_layout()
     buf = io.BytesIO()
-    fig.savefig(buf, format='png', dpi=120, bbox_inches='tight')
+    fig.savefig(buf, format='png', dpi=CHART_DPI, bbox_inches='tight')
     plt.close(fig)
     buf.seek(0)
     return base64.b64encode(buf.read()).decode()
