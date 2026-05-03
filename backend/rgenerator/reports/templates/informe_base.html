@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<style>
+/* ============================================================
+   Replica visual de docs/desarrollo/referencia_informe/SIMCE/formato_informe.tex
+   - letterpaper, top=3.5cm, bottom=2cm, left=2cm, right=2cm, headheight=61pt
+   - Segoe UI (fallback Inter / DejaVu Sans)
+   - header: logo izq + 3 líneas centradas + logo der + regla 0.4pt
+   - footer: regla 0.4pt + autor izq + nº página der
+   ============================================================ */
+
+@page {
+  size: letter;
+  margin: 3.5cm 2cm 2cm 2cm;
+
+  @top-center {
+    content: element(headerBlock);
+    width: 100%;
+    vertical-align: bottom;
+    padding-bottom: 4pt;
+    border-bottom: 0.4pt solid black;
+  }
+
+  @bottom-center {
+    content: element(footerBlock);
+    width: 100%;
+    vertical-align: top;
+    padding-top: 4pt;
+    border-top: 0.4pt solid black;
+  }
+}
+
+html {
+  font-family: "Segoe UI", Inter, "DejaVu Sans", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.25;
+  color: #111;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Header running element ────────────────────────────────── */
+
+#headerBlock {
+  position: running(headerBlock);
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+}
+#headerBlock > .hb-left,
+#headerBlock > .hb-center,
+#headerBlock > .hb-right {
+  display: table-cell;
+  vertical-align: middle;
+}
+#headerBlock .hb-left   { width: 25%; text-align: left; }
+#headerBlock .hb-center {
+  width: 50%;
+  text-align: center;
+  font-size: 9pt;
+  line-height: 1.25;
+  font-weight: 400;
+}
+#headerBlock .hb-right  { width: 25%; text-align: right; }
+#headerBlock img {
+  height: 2cm;
+  width: auto;
+  object-fit: contain;
+}
+
+/* ── Footer running element ────────────────────────────────── */
+
+#footerBlock {
+  position: running(footerBlock);
+  display: table;
+  table-layout: fixed;
+  width: 100%;
+  font-size: 9pt;
+}
+#footerBlock > .fb-left,
+#footerBlock > .fb-right {
+  display: table-cell;
+  vertical-align: middle;
+}
+#footerBlock .fb-left  { width: 80%; text-align: left;  }
+#footerBlock .fb-right { width: 20%; text-align: right; }
+#footerBlock .fb-right::before { content: counter(page); }
+
+/* ── Título (réplica del \huge + \Large LaTeX, centrado) ───── */
+
+h1.document-title {
+  font-size: 18pt;
+  text-align: center;
+  font-weight: 700;
+  margin: 0.6cm 0 0.3cm 0;
+  letter-spacing: -0.3pt;
+  color: #111;
+}
+.document-subtitle {
+  font-size: 12pt;
+  text-align: center;
+  color: #222;
+  margin: 0 0 0.3cm 0;
+}
+.filters-label {
+  font-size: 9.5pt;
+  text-align: center;
+  color: #444;
+  font-style: italic;
+  margin: 0 0 0.8cm 0;
+}
+
+/* ── Heading de sección (réplica del \section* LaTeX) ─────── */
+
+h3.section-title {
+  font-size: 12pt;
+  font-weight: 700;
+  color: #111;
+  margin: 0.6cm 0 0.25cm 0;
+  border: none;
+  padding: 0;
+}
+
+/* ── Tabla report-table (réplica de df_a_latex_loop) ───────── */
+
+table.report-table {
+  border-collapse: collapse;
+  margin: 0.3cm auto 0.6cm auto;
+  font-size: 9pt;
+  page-break-inside: auto;
+}
+table.report-table thead { display: table-header-group; }
+table.report-table th,
+table.report-table td {
+  border: 0.5pt solid #000;
+  padding: 2pt 6pt;
+  vertical-align: middle;
+  color: #000;
+}
+table.report-table th {
+  background: #fff;
+  font-weight: 700;
+  text-align: left;
+}
+table.report-table td.al-right,
+table.report-table th.al-right { text-align: right; }
+table.report-table td.al-left,
+table.report-table th.al-left  { text-align: left; }
+/* Sin zebra; LaTeX no la tiene */
+
+/* ── Figura (gráfico PNG embebido) ─────────────────────────── */
+
+figure.report-figure {
+  margin: 0.4cm auto 0.7cm auto;
+  text-align: center;
+  page-break-inside: avoid;
+}
+figure.report-figure img {
+  display: block;
+  margin: 0 auto;
+  max-width: 16cm;
+}
+
+/* ── Salto de página (\newpage en LaTeX) ───────────────────── */
+
+.page-break { page-break-before: always; }
+
+/* ── Error inline (defensivo, si falta algún df) ───────────── */
+
+p.error {
+  color: #b91c1c;
+  font-size: 9pt;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+
+  {# ──────────────── Running header ──────────────── #}
+  <div id="headerBlock">
+    <div class="hb-left">
+      {%- if branding.left_image_b64 -%}
+      <img src="{{ branding.left_image_b64 }}" alt="logo izquierdo"/>
+      {%- endif -%}
+    </div>
+    <div class="hb-center">
+      {%- for line in branding.center_header or [] -%}
+        {{ line }}{% if not loop.last %}<br/>{% endif %}
+      {%- endfor -%}
+    </div>
+    <div class="hb-right">
+      {%- if branding.right_image_b64 -%}
+      <img src="{{ branding.right_image_b64 }}" alt="logo derecho"/>
+      {%- endif -%}
+    </div>
+  </div>
+
+  {# ──────────────── Running footer ──────────────── #}
+  <div id="footerBlock">
+    <div class="fb-left">{{ branding.left_footer or "" }}</div>
+    <div class="fb-right"></div>
+  </div>
+
+  {# ──────────────── Título y subtítulo ──────────────── #}
+  {% if title %}<h1 class="document-title">{{ title }}</h1>{% endif %}
+  {% if subtitle %}<div class="document-subtitle">{{ subtitle }}</div>{% endif %}
+  {% if filters_label %}<div class="filters-label">{{ filters_label }}</div>{% endif %}
+
+  {# ──────────────── Secciones ──────────────── #}
+  {% for sec in secciones %}
+
+    {% if sec.tipo == "page_break" %}
+    <div class="page-break"></div>
+
+    {% elif sec.tipo == "heading" %}
+    <h3 class="section-title">{{ sec.titulo }}</h3>
+
+    {% elif sec.tipo == "chart" %}
+    {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
+    <figure class="report-figure">
+      <img src="{{ sec.image_b64 }}" alt="{{ sec.titulo }}"/>
+    </figure>
+
+    {% elif sec.tipo == "table" %}
+    {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
+    {{ sec.html | safe }}
+
+    {% elif sec.tipo == "error" %}
+    {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
+    <p class="error">[Error en sección] {{ sec.msg }}</p>
+
+    {% endif %}
+  {% endfor %}
+
+</body>
+</html>

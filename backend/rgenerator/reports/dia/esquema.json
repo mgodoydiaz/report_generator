@@ -1,0 +1,148 @@
+{
+  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje).",
+  "title": "Informe DIA",
+  "subtitle": "Resumen del hito seleccionado",
+  "filters_label": "",
+  "branding": {
+    "left_image": "logo_php.png",
+    "right_image": "pullinque_php.png",
+    "center_header": [
+      "Informe DIA Diagnóstico",
+      "Asignatura Nivel Medio",
+      "Mes Año"
+    ],
+    "left_footer": "Miguel Godoy Díaz",
+    "show_page_number": true
+  },
+  "secciones_fijas": [
+    {
+      "tipo": "table",
+      "titulo": "Cuadro Resumen Logro por Curso",
+      "fn": "resumen_estadistico_basico",
+      "df_input": "estudiantes",
+      "params": {
+        "columna": "Logro",
+        "formato": "percent",
+        "agrupar_por": "Curso"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Nivel",
+      "fn": "grafico_barras_promedio_por",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_por": "Nivel",
+        "titulo": "Logro Promedio por Nivel",
+        "ylabel": "Logro (%)"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Curso",
+      "fn": "grafico_barras_promedio_por",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_por": "Curso",
+        "titulo": "Logro Promedio por Curso",
+        "ylabel": "Logro (%)"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Distribución de Rendimiento por Curso",
+      "fn": "boxplot_valor_por_curso",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_por": "Curso",
+        "titulo_grafico": "Distribución de Rendimiento por Curso",
+        "ylabel": "Rendimiento (%)",
+        "ylims": [0, 1],
+        "formato": "percent"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Eje Temático",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "preguntas",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Eje Temático",
+        "titulo_grafico": "Logro Promedio por Eje Temático",
+        "titulo_leyenda": "Eje Temático",
+        "formato": "percent",
+        "y_lims": [0, 1]
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Habilidad",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "preguntas",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Habilidad",
+        "titulo_grafico": "Logro Promedio por Habilidad",
+        "titulo_leyenda": "Habilidad",
+        "formato": "percent",
+        "y_lims": [0, 1]
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Cantidad de Alumnos por Nivel de Logro",
+      "fn": "alumnos_por_nivel_cualitativo",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_nivel": "NIVEL DE LOGRO",
+        "agrupar_por": "Curso",
+        "lista_niveles": ["Avanzado", "Intermedio", "Inicial"],
+        "titulo_grafico": "Cantidad de Alumnos por Nivel de Logro y Curso",
+        "titulo_leyenda": "Nivel de Logro",
+        "ylabel": "Cantidad"
+      }
+    }
+  ],
+  "secciones_dinamicas": {
+    "_comment": "TODO próximo iter: 2 tablas por curso (alumnos + preguntas)",
+    "iterar_por": "Curso",
+    "df_iterar": "estudiantes",
+    "secciones": [
+      {
+        "tipo": "table",
+        "titulo": "Logro por Alumno - {curso}",
+        "fn": "tabla_logro_por_alumno",
+        "df_input": "estudiantes",
+        "params": {
+          "parametros": {"Curso": "{curso}"},
+          "sort_by": "Logro",
+          "formatos": {"Logro": "percent"},
+          "columnas": ["Número de Lista", "Nombre del Estudiante", "Logro", "NIVEL DE LOGRO"],
+          "columnas_renombrar": {
+            "Número de Lista": "N° Lista",
+            "Nombre del Estudiante": "Estudiante",
+            "NIVEL DE LOGRO": "Nivel"
+          }
+        }
+      },
+      {
+        "tipo": "table",
+        "titulo": "Logro por Pregunta - {curso}",
+        "fn": "tabla_logro_por_pregunta",
+        "df_input": "preguntas",
+        "params": {
+          "valor_agrupacion": "{curso}",
+          "agrupar_por": "Curso",
+          "sort_by": "Logro",
+          "columnas": ["N° Pregunta", "Eje Temático", "Habilidad", "Logro", "Nivel de Logro"]
+        }
+      }
+    ]
+  }
+}
