@@ -86,13 +86,17 @@ def _humanize_column(field_key: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────
 
 def _role_from_metric_name(name: str) -> str:
-    """'Resultados DIA por estudiante' → 'estudiantes'; 'por Pregunta' → 'preguntas'."""
+    """'Resultados DIA por estudiante' → 'estudiantes'; 'por Pregunta' → 'preguntas'.
+
+    Para IDEL/PDL/Woodcock/Cálculo Veloz/Fluidez Lectora donde la única
+    metric reúne todo (1 fila por aplicación al estudiante), se devuelve
+    "estudiantes" como rol unificado.
+    """
     n = (name or "").lower()
-    if "estudiante" in n or "alumno" in n:
-        return "estudiantes"
     if "pregunta" in n:
         return "preguntas"
-    if "fluidez" in n or "velocidad" in n:
+    if any(k in n for k in ("estudiante", "alumno", "idel", "pdl", "woodcock",
+                            "fluidez", "velocidad", "calculo", "cálculo")):
         return "estudiantes"
     return "otros"
 

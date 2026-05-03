@@ -319,7 +319,9 @@ export default function Results() {
                             {(() => {
                                 const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
                                 const nombre = (ind?.name || '').toLowerCase();
-                                const tipoV2 = nombre.includes('simce') ? 'simce' : nombre.includes('dia') ? 'dia' : null;
+                                const tipoV2 = nombre.includes('simce') ? 'simce'
+                                    : nombre.includes('dia') ? 'dia'
+                                    : null;
                                 if (!tipoV2) return null;
                                 // Mapear filtros UI → nombres DB para validar y mandar.
                                 const params = {};

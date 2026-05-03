@@ -334,6 +334,7 @@ def alumnos_por_nivel_cualitativo(
     columna_nivel: str = "Logro",
     agrupar_por: str = "Curso",
     lista_niveles: list = ("Adecuado", "Elemental", "Insuficiente"),
+    lista_paleta: list | None = None,
     titulo_grafico: str = "",
     titulo_leyenda: str = "",
     ylabel: str = "",
@@ -366,12 +367,16 @@ def alumnos_por_nivel_cualitativo(
 
     cursos = pivot.index.tolist()
 
-    # Paleta semáforo (mejor → peor)
-    colores = {
-        lista_niveles[0]: "#1f9e89",  # verde-agua
-        lista_niveles[1]: "#f1a340",  # naranja
-        lista_niveles[2]: "#e64b35",  # rojo
-    }
+    # Paleta semáforo: si no la pasan, default por cantidad de niveles
+    # (mejor → peor). Soporta 3, 4 o 5 niveles.
+    if lista_paleta is None:
+        defaults = {
+            3: ["#1f9e89", "#f1a340", "#e64b35"],
+            4: ["#1f9e89", "#f1ce63", "#f1a340", "#e64b35"],
+            5: ["#1f9e89", "#a6d854", "#f1ce63", "#f1a340", "#e64b35"],
+        }
+        lista_paleta = defaults.get(len(lista_niveles), defaults[3])
+    colores = {nivel: lista_paleta[i % len(lista_paleta)] for i, nivel in enumerate(lista_niveles)}
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
