@@ -18,6 +18,29 @@ export const avg = (arr, key) =>
     arr.length ? arr.reduce((s, r) => s + r[key], 0) / arr.length : 0;
 
 /**
+ * Convierte un string a Title Case respetando el formato canónico que ya
+ * tienen los datos en BD. Equivalente a Python `str.title()`:
+ *   - "INTERPRETAR" → "Interpretar"
+ *   - "interpretar"  → "Interpretar"
+ *   - "Interpretar Y Relacionar" → "Interpretar Y Relacionar"
+ *   - "interpretar y relacionar" → "Interpretar Y Relacionar"
+ *
+ * Reemplaza el patrón legacy `s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()`
+ * que sólo capitalizaba la primera letra y forzaba lowercase en el resto,
+ * lo cual destruía el title case que ya viene normalizado desde el backend.
+ *
+ * Para valores vacíos o null devuelve "—".
+ */
+export const titleCase = (s) => {
+    if (s == null) return "—";
+    const str = String(s).trim();
+    if (!str) return "—";
+    return str.replace(/\w\S*/g, (w) =>
+        w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    );
+};
+
+/**
  * Formatea un valor numérico según un string de formato "F.X".
  *   F = '%'  → multiplica por 100, toFixed(X), agrega '%'   ej. "45.3%"
  *   F = '#'  → número decimal,  toFixed(X)                  ej. "220" / "3.14"

@@ -137,9 +137,14 @@ async def get_indicator_data(
             if dk in dims_map:
                 dims_map[dk]["values"] = sorted(list(vals))
 
-        # 7. Apply dimension filters (single-value o multi-valor con list)
-        # B9: si fv es list/tuple, hace IN; si es str, igualdad. Permite
-        # filtros multi-select desde el frontend ({Curso: ["II A", "II B"]}).
+        # 6.5. Aplicar derived_columns ANTES de filtrar por dimensiones temporales.
+        # Cada entry: {metric_id, temporal_dim_ids: [..], configs: [..]}.
+        # Los filtros estructurales (no-temporales) se aplican PRE-cálculo para
+        # acotar el universo a la asignatura/curso del usuario; los temporales
+        # se respetan POST-cálculo para que slope/delta vean todo el histórico
+        # del estudiante. Mismo patrón que motor v2 PDF (reports.py).
+        derived_columns = _parse_json_field(indicator.derived_columns, [])
+        # `_matches` también lo necesitamos arriba para filtrar pre-cálculo
         def _matches(actual, expected):
             if isinstance(expected, (list, tuple, set)):
                 allowed = {str(v) for v in expected}
@@ -148,6 +153,121 @@ async def get_indicator_data(
                 return str(actual) in allowed
             return str(actual) == str(expected)
 
+        if derived_columns:
+            try:
+                from backend.rgenerator.core.derived_fields_engine import apply_derived_fields
+                import pandas as pd
+
+                # Auto-resolver `time_ordinal_levels` desde el temporal_config del
+                # indicador cuando un config slope/delta NO lo trae explícito. Esto
+                # evita duplicar la lista entre temporal_config y derived_columns
+                # (single source of truth en el indicador). Si el config trae su
+                # propio time_ordinal_levels, ese gana (override por config).
+                _temporal_cfg = _parse_json_field(indicator.temporal_config, {})
+                _temporal_levels_by_label = {}
+                for _lvl in (_temporal_cfg.get("levels") or []):
+                    _label = _lvl.get("label")
+                    _order = _lvl.get("order") or []
+                    if _label and _order:
+                        _temporal_levels_by_label[str(_label).lower()] = list(_order)
+
+                def _enrich_configs(raw_configs):
+                    out = []
+                    for c in raw_configs:
+                        if not isinstance(c, dict):
+                            out.append(c)
+                            continue
+                        if c.get("kind") in ("slope", "delta") and c.get("time_type") == "ordinal" and not c.get("time_ordinal_levels"):
+                            tf = str(c.get("time_field") or "").lower()
+                            order = _temporal_levels_by_label.get(tf)
+                            if order:
+                                c = {**c, "time_ordinal_levels": order}
+                        out.append(c)
+                    return out
+
+                for entry in derived_columns:
+                    target_mid = entry.get("metric_id")
+                    configs = _enrich_configs(entry.get("configs") or [])
+                    temporal_dim_ids = {str(x) for x in (entry.get("temporal_dim_ids") or [])}
+                    if not target_mid or not configs:
+                        continue
+                    rows = data_by_metric.get(int(target_mid), [])
+                    if not rows:
+                        continue
+
+                    # Filtrar SOLO con filtros NO-temporales antes del cálculo
+                    non_temporal_filters = {
+                        k: v for k, v in (dim_filters or {}).items()
+                        if str(k) not in temporal_dim_ids
+                    }
+                    if non_temporal_filters:
+                        pre_filtered = [
+                            r for r in rows
+                            if all(_matches(r.get("dimensions_json", {}).get(fk, ""), fv)
+                                   for fk, fv in non_temporal_filters.items())
+                        ]
+                    else:
+                        pre_filtered = list(rows)
+
+                    if not pre_filtered:
+                        continue
+
+                    # Construir df: value parseado (dict) + columnas con nombre humano
+                    # de cada dimensión.
+                    records = []
+                    for r in pre_filtered:
+                        val = r.get("value")
+                        if isinstance(val, str):
+                            try:
+                                val = json.loads(val)
+                            except Exception:
+                                val = {}
+                        rec = dict(val) if isinstance(val, dict) else {}
+                        for dim_id, dim_val in (r.get("dimensions_json") or {}).items():
+                            dname = dims_map.get(str(dim_id), {}).get("name")
+                            if dname:
+                                rec[dname] = dim_val
+                        records.append(rec)
+                    df = pd.DataFrame(records)
+
+                    try:
+                        df = apply_derived_fields(df, configs)
+                    except Exception:
+                        traceback.print_exc()
+                        continue
+
+                    # Re-inyectar columnas nuevas en value de cada row pre_filtered.
+                    # Usamos posición (los rows mantienen orden con records / df).
+                    new_cols = [c["name"] for c in configs if c.get("name")]
+                    for i, r in enumerate(pre_filtered):
+                        val = r.get("value")
+                        if isinstance(val, str):
+                            try:
+                                val = json.loads(val)
+                            except Exception:
+                                val = {}
+                        if not isinstance(val, dict):
+                            val = {}
+                        for c in new_cols:
+                            if c not in df.columns:
+                                continue
+                            v = df.iloc[i].get(c)
+                            if v is None:
+                                continue
+                            if isinstance(v, float) and pd.isna(v):
+                                continue
+                            try:
+                                val[c] = float(v) if hasattr(v, "item") else v
+                            except Exception:
+                                val[c] = v
+                        r["value"] = val
+            except Exception:
+                # Falla en derived_columns no debe romper el endpoint completo.
+                traceback.print_exc()
+
+        # 7. Apply dimension filters (single-value o multi-valor con list)
+        # B9: si fv es list/tuple, hace IN; si es str, igualdad. Permite
+        # filtros multi-select desde el frontend ({Curso: ["II A", "II B"]}).
         if dim_filters:
             for mid in data_by_metric:
                 filtered = []

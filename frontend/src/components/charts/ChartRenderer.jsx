@@ -32,7 +32,8 @@ export default function ChartRenderer({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const fetchData = useCallback(async () => {
+  // Fetch con AbortController para cancelar requests al desmontar.
+  const fetchData = useCallback(async (signal) => {
     if (!chartId && !draftConfig) return;
     setLoading(true);
     setError(null);
@@ -47,6 +48,7 @@ export default function ChartRenderer({
         res = await fetch(`${API_BASE_URL}/charts/preview`, {
           method: 'POST',
           headers,
+          signal,
           body: JSON.stringify({ config: draftConfig, extra_filters: extraFilters || null }),
         });
       } else {
@@ -54,7 +56,7 @@ export default function ChartRenderer({
         if (extraFilters && Object.keys(extraFilters).length) {
           params.set('extra_filters', JSON.stringify(extraFilters));
         }
-        res = await fetch(`${API_BASE_URL}/charts/${chartId}/data?${params}`, { headers });
+        res = await fetch(`${API_BASE_URL}/charts/${chartId}/data?${params}`, { headers, signal });
       }
       if (!res.ok) {
         const msg = await res.text();
@@ -62,13 +64,18 @@ export default function ChartRenderer({
       }
       setData(await res.json());
     } catch (e) {
+      if (e.name === 'AbortError') return;
       setError(e.message || String(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [chartId, draftConfig, extraFilters]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchData(ctrl.signal);
+    return () => ctrl.abort();
+  }, [fetchData]);
 
   const plotProps = useMemo(() => {
     if (!data || data.dataset?.empty) return null;

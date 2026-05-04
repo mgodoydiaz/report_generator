@@ -3,7 +3,7 @@ import {
     RadarChart, Radar, PolarGrid, PolarAngleAxis, PolarRadiusAxis,
     Legend, Tooltip, ResponsiveContainer,
 } from 'recharts';
-import { CURSO_COLORS, avg, formatValue, formatDomain } from './constants';
+import { CURSO_COLORS, avg, formatValue, formatDomain, titleCase } from './constants';
 
 export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {}, roleFormats = {}, dimension = 'habilidad' }) {
     if (!data || !data.length) {
@@ -25,7 +25,7 @@ export default function GraficoRadarHabilidades({ data, cursos, roleLabels = {},
     // Build chart data: one entry per habilidad axis
     const chartData = habilidades.map(h => {
         const entry = {
-            habilidad: h.charAt(0).toUpperCase() + h.slice(1).toLowerCase(),
+            habilidad: titleCase(h),
         };
         if (showByCurso) {
             cursoList.forEach(curso => {

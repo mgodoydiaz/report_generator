@@ -411,10 +411,17 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'PieComposition': {
             const vp = { showLegend: item.showLegend };
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            const catField = item.categoryField ?? '_logro';
+            // Mismo patrón que StackedCountByGroup: si la categoría no es el
+            // nivel de logro principal, derivar los valores únicos del dataset.
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(recs.map(r => r[catField]).filter(Boolean))].sort();
             return {
-                records: filteredEstudiantes,
-                categoryField: item.categoryField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                records: recs,
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
@@ -426,24 +433,35 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             const grps = gf === '_curso'
                 ? computed.cursos
                 : [...new Set(recs.map(r => r[gf]).filter(Boolean))].sort();
+            const catField = item.categoryField ?? item.levelField ?? '_logro';
+            // Si la categoría es _logro usa achievement_levels (orden semántico).
+            // Si no (ej. _habilidad para Calidad Lectora), saca los valores únicos
+            // del dataset y los ordena alfabéticamente.
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(recs.map(r => r[catField]).filter(Boolean))].sort();
             return {
                 records: recs,
                 groups: grps,
                 groupField: gf,
-                categoryField: item.categoryField ?? item.levelField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
         }
         case 'StackedCountByGroupAndPeriod': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const catField = item.categoryField ?? '_logro';
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(filteredEstudiantes.map(r => r[catField]).filter(Boolean))].sort();
             return {
                 records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
-                categoryField: item.categoryField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
@@ -527,7 +545,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'Histogram': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
             return {
-                records: filteredEstudiantes,
+                records: item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes,
                 valueField: activeValueField,
                 groupField: item.groupField,
                 groups: item.groupField ? computed.cursos : [],

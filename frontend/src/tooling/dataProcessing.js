@@ -277,16 +277,23 @@ export function processDataForDashboard(result) {
             const hab = resolveRoleValue("habilidad", mid, roleMap, val, djson, dimsMap);
             if (hab !== undefined) {
                 const fn = roleFieldMap.habilidad;
-                const normalized = String(hab).charAt(0).toUpperCase() + String(hab).slice(1).toLowerCase();
+                // Title Case: "INTERPRETAR" → "Interpretar", "interpretar y relacionar"
+                // → "Interpretar Y Relacionar". Respeta el formato canónico de BD
+                // (post-normalización Python str.title()).
+                const normalized = String(hab).replace(/\w\S*/g, w =>
+                    w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+                );
                 entry[fn] = normalized;
                 if (fn !== '_habilidad') entry._habilidad = normalized; // backward compat
             }
 
-            // habilidad_2 (normalizado a capitalize)
+            // habilidad_2 (normalizado a Title Case)
             const hab2 = resolveRoleValue("habilidad_2", mid, roleMap, val, djson, dimsMap);
             if (hab2 !== undefined) {
                 const fn = roleFieldMap.habilidad_2;
-                const normalized2 = String(hab2).charAt(0).toUpperCase() + String(hab2).slice(1).toLowerCase();
+                const normalized2 = String(hab2).replace(/\w\S*/g, w =>
+                    w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+                );
                 entry[fn] = normalized2;
                 if (fn !== '_habilidad_2') entry._habilidad_2 = normalized2; // backward compat
             }
@@ -297,6 +304,43 @@ export function processDataForDashboard(result) {
                 const fn = roleFieldMap.evaluacion_num;
                 entry[fn] = evalNum;
                 if (fn !== '_evaluacion_num') entry._evaluacion_num = evalNum; // backward compat
+            }
+
+            // ── Campos derivados calculados por backend (derived_columns) ──
+            // Si el value JSON trae Avance/Mejora_vs_Inicio/Logro_Promedio_Estudiante
+            // (calculados por /api/results vía derived_fields_engine) los exponemos
+            // como _avance/_mejora/_promedio_estudiante para que TablaAlumnos y
+            // otros componentes los consuman directamente. Match case-insensitive
+            // para soportar Avance/avance/AVANCE indistintamente.
+            //
+            // También mapeamos `Correcta` y `Distractor` (campos del value JSON
+            // de metric 5 SIMCE preguntas) → _correcta/_distractor para que
+            // TablaPreguntas muestre la letra correcta sin necesidad de
+            // configurar role_labels.
+            if (val && typeof val === 'object') {
+                for (const k of Object.keys(val)) {
+                    const lk = k.toLowerCase();
+                    if (lk === 'avance' && entry._avance == null) {
+                        const n = parseFloat(val[k]);
+                        if (!isNaN(n)) entry._avance = n;
+                    } else if ((lk === 'mejora_vs_inicio' || lk === 'mejora') && entry._mejora == null) {
+                        const n = parseFloat(val[k]);
+                        if (!isNaN(n)) entry._mejora = n;
+                    } else if ((lk === 'logro_promedio_estudiante' || lk === 'promedio_estudiante') && entry._promedio_estudiante == null) {
+                        const n = parseFloat(val[k]);
+                        if (!isNaN(n)) entry._promedio_estudiante = n;
+                    } else if (lk === 'correcta' && entry._correcta == null) {
+                        const v = val[k];
+                        if (v != null && String(v).trim() !== '' && String(v).toLowerCase() !== 'nan') {
+                            entry._correcta = String(v);
+                        }
+                    } else if (lk === 'distractor' && entry._distractor == null) {
+                        const v = val[k];
+                        if (v != null && String(v).trim() !== '' && String(v).toLowerCase() !== 'nan') {
+                            entry._distractor = String(v);
+                        }
+                    }
+                }
             }
 
             // temporal_label → etiqueta concatenada desde temporal_config (ej. "2024 / AGOSTO")

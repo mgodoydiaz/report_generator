@@ -19,7 +19,7 @@
           "entity_field": ["Curso", "Nombre_Norm"],
           "time_field": "Hito",
           "time_type": "ordinal",
-          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
           "min_points": 2
         },
         {
@@ -29,7 +29,7 @@
           "entity_field": ["Curso", "Nombre_Norm"],
           "time_field": "Hito",
           "time_type": "ordinal",
-          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
           "min_points": 2
         }
       ]
