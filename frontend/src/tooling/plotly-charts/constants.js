@@ -125,6 +125,25 @@ export const levelColors = (levels) =>
         return `hsl(${hue}, 70%, 50%)`;
     });
 
+/**
+ * Convierte un string a Title Case respetando el formato canónico que ya
+ * tienen los datos en BD. Equivalente a Python `str.title()`:
+ *   - "INTERPRETAR" → "Interpretar"
+ *   - "interpretar y relacionar" → "Interpretar Y Relacionar"
+ *
+ * Reemplaza el patrón legacy `s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()`
+ * que sólo capitalizaba la primera letra y forzaba el resto en lowercase,
+ * destruyendo el title case que ya viene normalizado desde el backend.
+ */
+export const titleCase = (s) => {
+    if (s == null) return "—";
+    const str = String(s).trim();
+    if (!str) return "—";
+    return str.replace(/\w\S*/g, (w) =>
+        w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+    );
+};
+
 // ── A11y (S5.3) ──────────────────────────────────────────────────────────────
 // Emojis prefijo por nivel para reforzar la identidad visual sin depender
 // exclusivamente del color (usuarios daltónicos y stakeholders). Se aplica

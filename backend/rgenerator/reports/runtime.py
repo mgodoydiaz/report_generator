@@ -1,0 +1,256 @@
+"""Orquestador del motor PDF v2.
+
+Recibe (esquema + dataframes + params) y produce bytes PDF. No conoce de
+SIMCE/DIA específicos — lee el `esquema.json` del tipo solicitado y ejecuta
+las funciones declaradas usando `CHART_REGISTRY` y `TABLE_REGISTRY`.
+
+Flujo:
+    1) Carga esquema.json del report_type.
+    2) Crea aux_dir temporal para PNGs intermedios.
+    3) Para cada sección fija:
+        - chart → llama charts.fn(df, ..., nombre_grafico=aux_dir/X.png)
+                  → embebe como <img src="data:base64,...">
+        - table → llama tables.fn(df, ...) → DataFrame
+                  → renderiza con helpers.df_a_html_table
+    4) Para secciones_dinamicas (iteración por curso/categoría): idem pero
+       repitiendo por cada valor único (TODO en próximo iter).
+    5) Renderiza informe_base.html con Jinja2.
+    6) WeasyPrint → bytes PDF.
+    7) Limpia aux_dir.
+"""
+from __future__ import annotations
+
+import json
+import tempfile
+from pathlib import Path
+from datetime import date
+from typing import Any
+
+import pandas as pd
+from jinja2 import Environment, FileSystemLoader
+from weasyprint import HTML as WeasyprintHTML
+
+from . import charts, tables
+from .helpers import df_a_html_table, embed_png_b64
+from ..core.derived_fields_engine import apply_derived_fields
+
+REPORTS_DIR = Path(__file__).parent
+TEMPLATES_DIR = REPORTS_DIR / "templates"
+ASSETS_DIR = REPORTS_DIR / "assets"
+
+
+def _resolve_logo_path(name: str | None) -> str | None:
+    """Resuelve un nombre de logo a path absoluto en assets/. None si no existe."""
+    if not name:
+        return None
+    p = ASSETS_DIR / name
+    return str(p) if p.exists() else None
+
+
+def _interpolar(obj: Any, context: dict) -> Any:
+    """Reemplaza placeholders `{clave}` en strings recursivamente.
+
+    Soporta dicts, listas y strings. Otros tipos se devuelven sin tocar.
+    Usado para que un esquema con `{curso}` se concrete por iteración.
+
+    Ejemplo:
+        _interpolar({"titulo": "Logro - {curso}"}, {"curso": "I A"})
+        → {"titulo": "Logro - I A"}
+    """
+    if isinstance(obj, str):
+        try:
+            return obj.format(**context)
+        except (KeyError, IndexError):
+            return obj
+    if isinstance(obj, dict):
+        return {k: _interpolar(v, context) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_interpolar(v, context) for v in obj]
+    return obj
+
+
+def _ejecutar_seccion(
+    seccion: dict,
+    dataframes: dict[str, pd.DataFrame],
+    aux_dir: Path,
+) -> dict:
+    """Ejecuta UNA sección del esquema y devuelve un dict listo para Jinja.
+
+    Args:
+        seccion: dict del esquema con keys `tipo`, `titulo`, `fn`,
+            `df_input`, `params`.
+        dataframes: dict {role: DataFrame} disponibles.
+        aux_dir: Path donde guardar PNGs intermedios.
+
+    Returns:
+        Dict con `tipo` y datos renderizados:
+            chart → {tipo: "chart", titulo, image_b64}
+            table → {tipo: "table", titulo, html}
+            heading → {tipo: "heading", titulo}  (puramente visual)
+    """
+    tipo = seccion.get("tipo")
+    titulo = seccion.get("titulo", "")
+
+    if tipo == "heading":
+        return {"tipo": "heading", "titulo": titulo}
+
+    if tipo == "page_break":
+        return {"tipo": "page_break"}
+
+    fn_name = seccion.get("fn")
+    df_key = seccion.get("df_input")
+    params = dict(seccion.get("params", {}))  # copia, no mutamos el esquema
+
+    if df_key not in dataframes:
+        return {"tipo": "error", "titulo": titulo, "msg": f"DataFrame '{df_key}' no disponible"}
+    df = dataframes[df_key]
+
+    if tipo == "chart":
+        spec = charts.CHART_REGISTRY.get(fn_name)
+        if not spec:
+            return {"tipo": "error", "titulo": titulo, "msg": f"Chart '{fn_name}' no existe"}
+        # Path PNG temporal
+        png_path = aux_dir / f"{fn_name}_{abs(hash(json.dumps(params, sort_keys=True, default=str)))}.png"
+        params["nombre_grafico"] = str(png_path)
+        try:
+            spec["fn"](df, **params)
+        except Exception as e:  # pragma: no cover — defensivo, mostramos error in-place
+            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        return {"tipo": "chart", "titulo": titulo, "image_b64": embed_png_b64(png_path)}
+
+    if tipo == "table":
+        spec = tables.TABLE_REGISTRY.get(fn_name)
+        if not spec:
+            return {"tipo": "error", "titulo": titulo, "msg": f"Table '{fn_name}' no existe"}
+        try:
+            df_out = spec["fn"](df, **params)
+        except Exception as e:  # pragma: no cover
+            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        return {"tipo": "table", "titulo": titulo, "html": df_a_html_table(df_out)}
+
+    return {"tipo": "error", "titulo": titulo, "msg": f"Tipo desconocido: {tipo}"}
+
+
+def construir_pdf(
+    report_type: str,
+    dataframes: dict[str, pd.DataFrame],
+    overrides: dict | None = None,
+) -> bytes:
+    """Punto de entrada: genera bytes PDF para un tipo de informe.
+
+    Args:
+        report_type: "simce" | "dia" | etc. — coincide con el subdirectorio
+            que contiene el esquema.json.
+        dataframes: dict {role: DataFrame}, ej {"estudiantes": df1,
+            "preguntas": df2}. Las keys deben coincidir con las que el
+            esquema declare en `df_input`.
+        overrides: dict opcional para sobreescribir partes del esquema en
+            runtime (ej {"branding": {"center_header": ["...", "...", "..."]}}).
+            Útil para que el endpoint reciba parámetros de UI.
+
+    Returns:
+        Bytes del PDF generado.
+
+    Raises:
+        FileNotFoundError: si no existe el esquema.json del tipo solicitado.
+    """
+    esquema_path = REPORTS_DIR / report_type / "esquema.json"
+    if not esquema_path.exists():
+        raise FileNotFoundError(f"No existe esquema para tipo '{report_type}': {esquema_path}")
+
+    with open(esquema_path, "r", encoding="utf-8") as f:
+        esquema = json.load(f)
+
+    # Aplicar overrides (merge superficial, suficiente para esta versión)
+    if overrides:
+        for key, value in overrides.items():
+            if isinstance(value, dict) and isinstance(esquema.get(key), dict):
+                esquema[key].update(value)
+            else:
+                esquema[key] = value
+
+    # NOTA: las derived_fields del esquema se aplican en crear_informe.py
+    # ANTES del filtro a un solo hito/prueba (las funciones temporales
+    # como slope/delta necesitan ver el histórico completo). Aplicarlas
+    # acá otra vez sobre dfs ya filtrados sobreescribiría con NaN.
+    # Aquí solo se ejecutan si la columna calculada NO existe todavía
+    # en el df (fallback para esquemas que NO tengan un crear_informe.py
+    # custom que las aplique upstream).
+    derived_fields_runtime = esquema.get("derived_fields") or []
+    for entry in derived_fields_runtime:
+        target_key = entry.get("df_input")
+        configs = entry.get("configs") or []
+        if target_key and configs and target_key in dataframes:
+            df_target = dataframes[target_key]
+            pending = [c for c in configs if c.get("name") not in df_target.columns]
+            if pending:
+                dataframes = dict(dataframes)
+                dataframes[target_key] = apply_derived_fields(df_target, pending)
+
+    # Resolver branding (logos a path absoluto + base64)
+    branding = dict(esquema.get("branding", {}))
+    for side in ("left_image", "right_image"):
+        path = _resolve_logo_path(branding.get(side))
+        if path:
+            branding[f"{side}_b64"] = embed_png_b64(path)
+        else:
+            branding[f"{side}_b64"] = None
+
+    # Ejecutar secciones dentro de un aux_dir temporal
+    with tempfile.TemporaryDirectory(prefix=f"report_{report_type}_") as tmp_str:
+        aux_dir = Path(tmp_str)
+
+        rendered = []
+
+        # 1) Secciones fijas. Cualquier sección con `break_before: true`
+        # inserta un page_break antes (útil para tablas anchas que de otro
+        # modo se cortan a media página).
+        for sec in esquema.get("secciones_fijas", []):
+            if sec.get("break_before"):
+                rendered.append({"tipo": "page_break"})
+            rendered.append(_ejecutar_seccion(sec, dataframes, aux_dir))
+
+        # 2) Secciones dinámicas — iteran por valor único de `iterar_por`
+        # del DataFrame `df_iterar`. Cada valor inserta page_break + las
+        # secciones declaradas en `secciones`. Replica el flujo LaTeX:
+        # `for curso in cursos: \newpage \section + tabla + tabla`.
+        din_cfg = esquema.get("secciones_dinamicas") or {}
+        # Filtrar comentarios JSON (keys que arrancan con _)
+        din_cfg = {k: v for k, v in din_cfg.items() if not k.startswith("_")}
+        if din_cfg:
+            iterar_por = din_cfg.get("iterar_por")
+            df_iterar_key = din_cfg.get("df_iterar")
+            secciones_template = din_cfg.get("secciones", [])
+
+            if iterar_por and df_iterar_key in dataframes and secciones_template:
+                df_iterar = dataframes[df_iterar_key]
+                if iterar_por in df_iterar.columns:
+                    valores = df_iterar[iterar_por].dropna().unique().tolist()
+                    # Orden alfanumérico natural (1 A, 1 B, 2 A, ...)
+                    valores = sorted(valores, key=lambda x: str(x))
+
+                    for valor in valores:
+                        # Page break antes de cada valor (igual a \newpage LaTeX)
+                        rendered.append({"tipo": "page_break"})
+                        # Context para interpolar {curso} en titulo y params.
+                        # La key se deriva del nombre de la columna en lowercase
+                        # (Curso → curso, Habilidad → habilidad, etc.).
+                        ctx = {iterar_por.lower(): str(valor), "valor": str(valor)}
+                        for sec_template in secciones_template:
+                            sec_concreta = _interpolar(sec_template, ctx)
+                            rendered.append(_ejecutar_seccion(sec_concreta, dataframes, aux_dir))
+
+        # Renderizar HTML
+        env = Environment(loader=FileSystemLoader(str(TEMPLATES_DIR)), autoescape=False)
+        template = env.get_template("informe_base.html")
+        html_str = template.render(
+            title=esquema.get("title", "Informe"),
+            subtitle=esquema.get("subtitle", ""),
+            filters_label=esquema.get("filters_label", ""),
+            secciones=rendered,
+            branding=branding,
+            report_date=date.today().strftime("%d/%m/%Y"),
+        )
+
+        # WeasyPrint
+        return WeasyprintHTML(string=html_str, base_url=str(REPORTS_DIR)).write_pdf()

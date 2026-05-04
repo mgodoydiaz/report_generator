@@ -2,11 +2,57 @@
 
 # Librerias estandar
 import os
+import re
 import pandas as pd
 from typing import Callable, Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step, WaitingForInputException
+from .derived_fields_engine import apply_derived_fields
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Helpers para metadata_cells (lectura de celdas individuales pre-header)
+# ─────────────────────────────────────────────────────────────────────────
+
+_A1_RE = re.compile(r"^([A-Z]+)(\d+)$")
+
+
+def _parse_a1(cell_ref: str) -> tuple[int, int]:
+    """Convierte una referencia A1 ('B5') a (row_idx, col_idx) 0-indexed.
+
+    'A1' → (0, 0); 'B5' → (4, 1); 'AA10' → (9, 26).
+    """
+    m = _A1_RE.match(cell_ref.strip().upper())
+    if not m:
+        raise ValueError(f"Referencia A1 inválida: '{cell_ref}'")
+    col_letters, row_str = m.group(1), m.group(2)
+    col = 0
+    for ch in col_letters:
+        col = col * 26 + (ord(ch) - ord("A") + 1)
+    return int(row_str) - 1, col - 1
+
+
+def _read_metadata_cells(filepath: str, cells: List[Dict]) -> Dict[str, object]:
+    """Lee celdas individuales del XLS/XLSX antes del header de datos.
+
+    `cells` es una lista de {"column_name": ..., "cell": "B5"}. Devuelve
+    un dict {column_name: valor_de_la_celda}. Pensado para casos como
+    DIA donde las primeras filas traen metadata (Establecimiento en B5,
+    Curso en B6) y los datos arrancan desde una fila más abajo.
+    """
+    if not cells:
+        return {}
+    parsed = [(c["column_name"], _parse_a1(c["cell"])) for c in cells]
+    max_row = max(row for _, (row, _) in parsed)
+    raw = pd.read_excel(filepath, header=None, nrows=max_row + 1)
+    result: Dict[str, object] = {}
+    for col_name, (row_idx, col_idx) in parsed:
+        try:
+            result[col_name] = raw.iat[row_idx, col_idx]
+        except (IndexError, KeyError):
+            result[col_name] = None
+    return result
 
 
 class RunExcelETL(Step):
@@ -18,6 +64,17 @@ class RunExcelETL(Step):
             Si no se entrega, se intenta resolver desde el contexto.
         output_key (opcional): clave en ctx.artifacts para el DataFrame.
             Si no se entrega, se genera como "df_consolidado_{input_key}".
+
+    Parámetros vía ctx.params (o spec config):
+        header_row: int o dict {nombre_archivo: int, "default": int}
+            para distintas filas de header por archivo.
+        select_columns: lista de columnas a mantener.
+        rename_columns: dict {col_original: col_final}.
+        enrich_data: lista de {key, val, user_input?}.
+        metadata_cells: lista de {column_name, cell} para inyectar valores
+            de celdas individuales pre-header como columnas. Pensado para
+            DIA donde Establecimiento vive en B5 y Curso en B6.
+            Ej: [{"column_name": "Curso", "cell": "B6"}].
 
     Efectos:
         - ctx.artifacts[output_key] con DataFrame consolidado (o vacio).
@@ -85,6 +142,8 @@ class RunExcelETL(Step):
         select_columns = _resolve("select_columns", [])
         # Obtenemos el mapeo de columnas (renames)
         column_mapping = _resolve("rename_columns", {})
+        # Celdas individuales pre-header a inyectar como columnas (caso DIA)
+        metadata_cells = _resolve("metadata_cells", [])
 
         # --- PASO 2: Normalizar la configuracion del header ---
         # Si el usuario paso un solo entero, lo convertimos a la estructura de diccionario
@@ -122,6 +181,18 @@ class RunExcelETL(Step):
                 file_user_data = user_inputs_store.get(nombre_archivo, {})
                 for col, val in file_user_data.items():
                     temp_df[col] = val
+
+                # 3.6: Inyectar metadata leída de celdas individuales pre-header
+                # (caso DIA: Establecimiento en B5, Curso en B6, datos desde fila 13).
+                if metadata_cells:
+                    try:
+                        meta_values = _read_metadata_cells(ruta_archivo, metadata_cells)
+                        for col, val in meta_values.items():
+                            temp_df[col] = val
+                    except Exception as e:
+                        self._log(
+                            f"[{self.name}] Error leyendo metadata_cells de {nombre_archivo}: {e}"
+                        )
 
                 df_list.append(temp_df)
 
@@ -632,3 +703,140 @@ class ModifyColumnValues(Step):
         ctx.last_artifact_key = output_key
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
+
+
+class ApplyDerivedFields(Step):
+    """
+    Agrega columnas calculadas (derived_fields) al DataFrame.
+
+    Aplica una lista declarativa de funciones (kinds: agg / slope / delta)
+    al DataFrame que viene del step previo. Las columnas resultantes quedan
+    disponibles para el resto del pipeline (incluido SaveToMetric, que las
+    persiste en metric_data).
+
+    Parámetros:
+        input_key (opcional): clave del artifact de entrada.
+            Default: ctx.last_artifact_key.
+        output_key (opcional): clave del artifact de salida.
+            Default: f"df_derived_{input_key}".
+        derived_fields (opcional): lista de configs.
+            Si no se entrega, busca en ctx.params["derived_fields"].
+
+    Ejemplo de configs:
+        [
+          {"kind": "agg",   "name": "Logro_Promedio_Estudiante",
+           "value_field": "Rend", "entity_field": "Rut", "agg": "mean"},
+          {"kind": "slope", "name": "Avance",
+           "value_field": "Rend", "entity_field": "Rut",
+           "time_field": "Numero_Prueba", "min_points": 2},
+          {"kind": "delta", "name": "Mejora_vs_Inicio",
+           "value_field": "Rend", "entity_field": "Rut",
+           "time_field": "Numero_Prueba"}
+        ]
+
+    Ver `derived_fields_engine.KIND_REGISTRY` para todos los kinds y args.
+    """
+    def __init__(
+        self,
+        input_key: Optional[str] = None,
+        output_key: Optional[str] = None,
+        derived_fields: Optional[List[Dict]] = None,
+    ):
+        resolved_output_key = output_key
+        if input_key and not resolved_output_key:
+            resolved_output_key = f"df_derived_{input_key}"
+
+        super().__init__(
+            name="ApplyDerivedFields",
+            requires=[input_key] if input_key else [],
+            produces=[resolved_output_key] if resolved_output_key else [],
+        )
+        self.input_key = input_key
+        self.output_key = resolved_output_key
+        self.derived_fields = derived_fields or []
+
+    def run(self, ctx):
+        before = self._snapshot_artifacts(ctx)
+
+        # 1. Resolver input/output
+        input_key = self.input_key or ctx.last_artifact_key or ctx.params.get("default_artifact_key")
+        if not input_key:
+            raise ValueError(f"[{self.name}] No se pudo resolver input_key.")
+        output_key = self.output_key or f"df_derived_{input_key}"
+        self.input_key = input_key
+        self.output_key = output_key
+
+        # 2. Obtener DataFrame
+        df = ctx.artifacts.get(input_key)
+        if df is None or (hasattr(df, "empty") and df.empty):
+            self._log(f"[{self.name}] Warning: DataFrame vacío o inexistente en {input_key}")
+            ctx.artifacts[output_key] = pd.DataFrame() if df is None else df.copy()
+            ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3. Resolver lista de derived_fields (init o context)
+        configs = self.derived_fields or ctx.params.get("derived_fields", [])
+        if not configs:
+            self._log(f"[{self.name}] No hay derived_fields configurados; passthrough.")
+            ctx.artifacts[output_key] = df.copy()
+            ctx.last_artifact_key = output_key
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # 3b. Resolver mapping_id en kinds lookup_range / lookup_dict.
+        # Si un config tiene `mapping_id`, levantamos el Spec asociado y
+        # mergeamos su contenido (ranges/mapping/extract/...) en el config
+        # antes de pasar al engine. Permite reusar mapeos guardados desde
+        # /functions sin duplicar la tabla en el JSON del pipeline.
+        configs = self._resolve_mapping_refs(ctx, configs)
+
+        # 4. Aplicar engine
+        try:
+            df_out = apply_derived_fields(df, configs)
+        except Exception as e:
+            raise ValueError(f"[{self.name}] Error aplicando derived_fields: {e}")
+
+        added_cols = [c for c in df_out.columns if c not in df.columns]
+        self._log(f"[{self.name}] Aplicadas {len(configs)} funciones, columnas nuevas: {added_cols}")
+
+        # 5. Guardar
+        ctx.artifacts[output_key] = df_out
+        ctx.last_artifact_key = output_key
+        ctx.last_step = self.name
+        self._log_artifacts_delta(ctx, before)
+
+    # ---------------------------------------------------------------
+    # Helper: resolver mapping_id → config inline para los kinds lookup_*
+    # ---------------------------------------------------------------
+    def _resolve_mapping_refs(self, ctx, configs):
+        """Si un config tiene `mapping_id`, lo reemplaza con los campos
+        del MappingConfig guardado (ranges, mapping, extract, default,
+        match, case_insensitive). Los campos inline del config tienen
+        precedencia (permite override).
+
+        Requiere ctx.db y ctx.org_id. Si no están, devuelve configs
+        sin tocar (modo standalone para tests).
+        """
+        db = getattr(ctx, "db", None)
+        org_id = getattr(ctx, "org_id", None)
+        out = []
+        for c in configs:
+            mid = c.get("mapping_id") if isinstance(c, dict) else None
+            if not mid or db is None or org_id is None:
+                out.append(c)
+                continue
+            try:
+                from backend.routers.mappings import resolve_mapping_to_lookup_config
+                resolved = resolve_mapping_to_lookup_config(db, org_id, int(mid))
+            except Exception as e:
+                self._log(f"[{self.name}] Warning: no se pudo resolver mapping_id={mid}: {e}")
+                out.append(c)
+                continue
+            # Merge: el resolved trae las claves del mapeo, c sobrescribe
+            # cualquier override inline (típicamente kind, name, value_field).
+            merged = {**resolved, **{k: v for k, v in c.items() if k != "mapping_id"}}
+            out.append(merged)
+        return out

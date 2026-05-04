@@ -8,6 +8,8 @@ import Login from "./pages/Login.jsx";
 import Home from "./pages/Home.jsx";
 import Pipelines from "./pages/Pipelines.jsx";
 import Specs from "./pages/Specs.jsx";
+import Tables from "./pages/Tables.jsx";
+import Charts from "./pages/Charts.jsx";
 import Results from "./pages/Results.jsx";
 import ResultsRecharts from "./pages/ResultsRecharts.jsx";
 import Execution from "./pages/Execution.jsx";
@@ -43,6 +45,8 @@ export default function App() {
                   <Route path="/" element={<Home />} />
                   <Route path="/pipelines" element={<Pipelines />} />
                   <Route path="/specs" element={<Specs />} />
+                  <Route path="/tables" element={<Tables />} />
+                  <Route path="/charts" element={<Charts />} />
                   <Route path="/results" element={<Results />} />
                   <Route path="/results-recharts" element={<ResultsRecharts />} />
                   <Route path="/execution" element={<Execution />} />

@@ -1,0 +1,207 @@
+{
+  "pipeline_metadata": {
+    "name": "DIA Lenguaje (IA)",
+    "description": "Procesa XLS por curso (Agencia DIA) + PDFs por curso (preguntas con respuesta correcta detectada por píxeles). Calcula Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel medio/básico, normaliza nombres para join entre hitos. Migra script_consolidar_DIA.py artesanal. (IA)",
+    "input": "EXCEL+PDF",
+    "output": "DB"
+  },
+  "context": {
+    "evaluation": "DIA_Lenguaje",
+    "base_dir": "./data"
+  },
+  "pipeline": [
+    {
+      "step": "InitRun",
+      "params": {
+        "evaluation": "DIA_Lenguaje",
+        "base_dir": "./data"
+      }
+    },
+    {
+      "step": "RequestUserFiles",
+      "description": "Carga simultánea de XLS de estudiantes (uno por curso) y PDFs de la Agencia DIA (uno por curso).",
+      "params": {
+        "file_specs": [
+          {
+            "id": "estudiantes",
+            "label": "Resultados Estudiantes (XLS)",
+            "description": "Un .xls por curso descargado de Agencia DIA. Establecimiento en B5, Curso en B6, header en fila 13.",
+            "multiple": true,
+            "optional": false
+          },
+          {
+            "id": "preguntas",
+            "label": "Resultados por Pregunta (PDF)",
+            "description": "Un PDF por curso (RBD*_DIA_*_diagnostico_2026.pdf). El step detecta automáticamente la sección 'Resultados por pregunta' y extrae las tablas con camelot+fitz.",
+            "multiple": true,
+            "optional": false
+          }
+        ]
+      }
+    },
+    {
+      "step": "EnrichWithUserInput",
+      "description": "Pide el Hito (DIAGNOSTICO/INTERMEDIO/FINAL) para cada XLS de estudiantes.",
+      "params": {
+        "input_key": "estudiantes"
+      }
+    },
+    {
+      "step": "EnrichWithUserInput",
+      "description": "Pide el Hito para cada PDF de preguntas.",
+      "params": {
+        "input_key": "preguntas"
+      }
+    },
+    {
+      "step": "RunExcelETL",
+      "params": {
+        "input_key": "estudiantes",
+        "output_key": "estudiantes_raw",
+        "header_row": 12,
+        "metadata_cells": [
+          {
+            "column_name": "Establecimiento",
+            "cell": "B5"
+          },
+          {
+            "column_name": "Curso",
+            "cell": "B6"
+          }
+        ],
+        "enrich_data": [
+          {
+            "key": "Hito",
+            "val": "DIAGNOSTICO",
+            "user_input": true
+          }
+        ]
+      }
+    },
+    {
+      "step": "RunDIAPDFExtraction",
+      "params": {
+        "input_key": "preguntas",
+        "output_key": "preguntas_raw"
+      }
+    },
+    {
+      "step": "EnrichWithContext",
+      "description": "Inyecta Asignatura y Año para estudiantes.",
+      "params": {
+        "input_key": "estudiantes_raw",
+        "output_key": "estudiantes_enriched",
+        "context_mapping": {
+          "Asignatura": "Lenguaje",
+          "Año": 2026
+        }
+      }
+    },
+    {
+      "step": "EnrichWithContext",
+      "description": "Inyecta Asignatura y Año para preguntas.",
+      "params": {
+        "input_key": "preguntas_raw",
+        "output_key": "preguntas_enriched",
+        "context_mapping": {
+          "Asignatura": "Lenguaje",
+          "Año": 2026
+        }
+      }
+    },
+    {
+      "step": "ApplyDerivedFields",
+      "description": "Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel, Nombre_Norm, Logro Promedio del estudiante.",
+      "params": {
+        "input_key": "estudiantes_enriched",
+        "output_key": "estudiantes_derived",
+        "derived_fields": [
+          {
+            "kind": "row_mean_dynamic",
+            "name": "Logro",
+            "exclude_columns": [
+              "Numero Lista",
+              "Número de Lista",
+              "Nombre del Estudiante",
+              "Establecimiento",
+              "Curso",
+              "Asignatura",
+              "Año",
+              "Hito"
+            ],
+            "scale": 0.01,
+            "replace_decimal_comma": true
+          },
+          {
+            "kind": "lookup_range",
+            "name": "Nivel Logro",
+            "value_field": "Logro",
+            "mapping_id": 35
+          },
+          {
+            "kind": "lookup_dict",
+            "name": "Nivel",
+            "value_field": "Curso",
+            "mapping_id": 36
+          },
+          {
+            "kind": "normalize_name",
+            "name": "Nombre_Norm",
+            "value_field": "Nombre del Estudiante"
+          },
+          {
+            "kind": "agg",
+            "name": "Logro Promedio",
+            "value_field": "Logro",
+            "entity_field": [
+              "Curso",
+              "Nombre_Norm"
+            ],
+            "agg": "mean",
+            "min_points": 1
+          }
+        ]
+      }
+    },
+    {
+      "step": "ApplyDerivedFields",
+      "description": "Para preguntas: Nivel Logro por umbral y Nivel por lookup curso→nivel.",
+      "params": {
+        "input_key": "preguntas_enriched",
+        "output_key": "preguntas_derived",
+        "derived_fields": [
+          {
+            "kind": "lookup_range",
+            "name": "Nivel Logro",
+            "value_field": "Logro",
+            "mapping_id": 35
+          },
+          {
+            "kind": "lookup_dict",
+            "name": "Nivel",
+            "value_field": "Curso",
+            "mapping_id": 36
+          }
+        ]
+      }
+    },
+    {
+      "step": "SaveToMetric",
+      "description": "Guarda estudiantes en metric 6 (Resultados DIA por estudiante).",
+      "params": {
+        "metric_id": 6,
+        "input_key": "estudiantes_derived",
+        "clear_existing": false
+      }
+    },
+    {
+      "step": "SaveToMetric",
+      "description": "Guarda preguntas en metric 7 (Resultados DIA por Pregunta).",
+      "params": {
+        "metric_id": 7,
+        "input_key": "preguntas_derived",
+        "clear_existing": false
+      }
+    }
+  ]
+}

@@ -151,6 +151,8 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
 
 function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, indicator, onItemDragStart, onItemDragEnd, onItemDrop }) {
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showAddTableModal, setShowAddTableModal] = useState(false);
+    const [showAddChartModal, setShowAddChartModal] = useState(false);
     const [dragOverIdx, setDragOverIdx] = useState(null);        // hover sobre item → insertar antes
     const [dragOverRow, setDragOverRow] = useState(false);       // hover sobre el container de la fila → append
 
@@ -310,11 +312,59 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                     Agregar
                 </button>
 
+                {/* Insertar tabla configurada (B7) */}
+                <button
+                    onClick={() => setShowAddTableModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-emerald-300 dark:border-emerald-700 text-xs text-emerald-500 hover:border-emerald-500 hover:text-emerald-600 transition-all"
+                    title="Insertar una tabla configurada desde /tables"
+                >
+                    <Plus size={12} />
+                    Tabla
+                </button>
+
+                {/* Insertar gráfico configurado (B8) */}
+                <button
+                    onClick={() => setShowAddChartModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-violet-300 dark:border-violet-700 text-xs text-violet-500 hover:border-violet-500 hover:text-violet-600 transition-all"
+                    title="Insertar un gráfico configurado desde /charts"
+                >
+                    <Plus size={12} />
+                    Gráfico
+                </button>
+
                 <AddComponentModal
                     isOpen={showAddModal}
                     onClose={() => setShowAddModal(false)}
                     onConfirm={(compMeta, axisSelections) => commitAddItem(compMeta, axisSelections)}
                     indicator={indicator}
+                />
+
+                <PickConfiguredTableModal
+                    isOpen={showAddTableModal}
+                    onClose={() => setShowAddTableModal(false)}
+                    onConfirm={(tbl) => {
+                        const newItem = {
+                            type: 'configured_table',
+                            spec_id: tbl.id_spec,
+                            title: tbl.name,
+                        };
+                        onUpdate({ ...row, items: [...row.items, newItem] });
+                        setShowAddTableModal(false);
+                    }}
+                />
+
+                <PickConfiguredChartModal
+                    isOpen={showAddChartModal}
+                    onClose={() => setShowAddChartModal(false)}
+                    onConfirm={(ch) => {
+                        const newItem = {
+                            type: 'configured_chart',
+                            spec_id: ch.id_spec,
+                            title: ch.name,
+                        };
+                        onUpdate({ ...row, items: [...row.items, newItem] });
+                        setShowAddChartModal(false);
+                    }}
                 />
             </div>
         </div>
@@ -945,6 +995,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
     const [mode, setMode] = useState('dashboard'); // 'dashboard' | 'derived' | 'pdf'
     const [derivedColumns, setDerivedColumns] = useState([]);
     const [pdfLayout, setPdfLayout] = useState({ sections: [] });
+    const [pdfLayoutHistorico, setPdfLayoutHistorico] = useState({ sections: [] });
+    const [pdfTipo, setPdfTipo] = useState('evaluacion'); // 'evaluacion' | 'historico'
 
     useEffect(() => {
         if (!isOpen) return;
@@ -958,6 +1010,8 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
         setMode('dashboard');
         setDerivedColumns(indicator?.derived_columns || []);
         setPdfLayout(indicator?.pdf_layout?.sections ? indicator.pdf_layout : { sections: [] });
+        setPdfLayoutHistorico(indicator?.pdf_layout_historico?.sections ? indicator.pdf_layout_historico : { sections: [] });
+        setPdfTipo('evaluacion');
     }, [isOpen, indicator]);
 
     const handleAddTab = () => {
@@ -1003,11 +1057,18 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     dashboard_layout: layout,
                     derived_columns: derivedColumns,
                     pdf_layout: pdfLayout,
+                    pdf_layout_historico: pdfLayoutHistorico,
                 }),
             });
             if (!res.ok) throw new Error('Error al guardar el layout');
             toast.success('Layout guardado');
-            onSave?.({ ...indicator, dashboard_layout: layout, derived_columns: derivedColumns, pdf_layout: pdfLayout });
+            onSave?.({
+                ...indicator,
+                dashboard_layout: layout,
+                derived_columns: derivedColumns,
+                pdf_layout: pdfLayout,
+                pdf_layout_historico: pdfLayoutHistorico,
+            });
             onClose();
         } catch (err) {
             toast.error(err.message);
@@ -1073,13 +1134,47 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                     >
                         <FileText size={13} />
                         Informe PDF
-                        {(pdfLayout?.sections?.length > 0) && (
+                        {((pdfLayout?.sections?.length || 0) + (pdfLayoutHistorico?.sections?.length || 0)) > 0 && (
                             <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
-                                {pdfLayout.sections.length}
+                                {(pdfLayout?.sections?.length || 0) + (pdfLayoutHistorico?.sections?.length || 0)}
                             </span>
                         )}
                     </button>
                 </div>
+
+                {/* Sub-pestañas Por evaluación / Histórico (solo en mode='pdf') */}
+                {mode === 'pdf' && (
+                    <div className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0 border-b border-slate-100 dark:border-slate-800">
+                        <button
+                            onClick={() => setPdfTipo('evaluacion')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${pdfTipo === 'evaluacion'
+                                ? 'text-rose-600 dark:text-rose-400 border-rose-500 bg-white dark:bg-slate-900'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-transparent'
+                            }`}
+                        >
+                            Por evaluación
+                            {pdfLayout?.sections?.length > 0 && (
+                                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                                    {pdfLayout.sections.length}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setPdfTipo('historico')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs font-semibold transition-all border-b-2 ${pdfTipo === 'historico'
+                                ? 'text-rose-600 dark:text-rose-400 border-rose-500 bg-white dark:bg-slate-900'
+                                : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 border-transparent'
+                            }`}
+                        >
+                            Histórico
+                            {pdfLayoutHistorico?.sections?.length > 0 && (
+                                <span className="ml-0.5 px-1.5 py-0.5 rounded-full bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400 text-[10px] font-bold">
+                                    {pdfLayoutHistorico.sections.length}
+                                </span>
+                            )}
+                        </button>
+                    </div>
+                )}
 
                 {/* Tab bar (dashboard mode only) */}
                 {mode === 'dashboard' && (
@@ -1119,8 +1214,9 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                         />
                     ) : (
                         <PdfLayoutEditor
-                            pdfLayout={pdfLayout}
-                            onChange={setPdfLayout}
+                            key={pdfTipo /* fuerza re-mount al cambiar tipo, evita estado stale */}
+                            pdfLayout={pdfTipo === 'historico' ? pdfLayoutHistorico : pdfLayout}
+                            onChange={pdfTipo === 'historico' ? setPdfLayoutHistorico : setPdfLayout}
                             dashboardLayout={layout}
                             indicatorId={indicator?.id_indicator}
                             fetchAuth={fetchAuth}
@@ -1150,6 +1246,156 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                             {saving ? 'Guardando...' : 'Guardar Layout'}
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// PickConfiguredTableModal — selector de tabla configurada (B7)
+// ─────────────────────────────────────────────────────────────────────────
+
+function PickConfiguredTableModal({ isOpen, onClose, onConfirm }) {
+    const [tables, setTables] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [filter, setFilter] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setLoading(true);
+        const ctrl = new AbortController();
+        const token = localStorage.getItem("rg_token");
+        fetch(`${API_BASE_URL}/tables/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: ctrl.signal,
+        })
+            .then((r) => r.json())
+            .then((d) => setTables(Array.isArray(d) ? d : []))
+            .catch((e) => { if (e.name !== 'AbortError') setTables([]); })
+            .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+        return () => ctrl.abort();
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+    const filtered = filter.trim()
+        ? tables.filter((t) => (t.name || "").toLowerCase().includes(filter.toLowerCase()))
+        : tables;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+                    <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">Insertar tabla configurada</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+                    <input
+                        autoFocus
+                        type="text"
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        placeholder="Buscar tabla por nombre..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                    {loading && <div className="p-4 text-sm text-slate-400 text-center">Cargando…</div>}
+                    {!loading && filtered.length === 0 && (
+                        <div className="p-4 text-sm text-slate-400 text-center">
+                            No hay tablas configuradas. Crea una desde <a href="/tables" className="text-indigo-500 hover:underline">/tables</a>.
+                        </div>
+                    )}
+                    {filtered.map((t) => (
+                        <button
+                            key={t.id_spec}
+                            onClick={() => onConfirm(t)}
+                            className="w-full text-left px-3 py-2 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border-b border-slate-100 dark:border-slate-800"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{t.name}</span>
+                                {t.is_draft && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">draft</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                Métrica {t.metric_id ?? "—"} · {t.n_columns} cols · id {t.id_spec}
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// PickConfiguredChartModal — selector de gráfico configurado (B8)
+// ─────────────────────────────────────────────────────────────────────────
+
+function PickConfiguredChartModal({ isOpen, onClose, onConfirm }) {
+    const [charts, setCharts] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [filter, setFilter] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setLoading(true);
+        const ctrl = new AbortController();
+        const token = localStorage.getItem("rg_token");
+        fetch(`${API_BASE_URL}/charts/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: ctrl.signal,
+        })
+            .then((r) => r.json())
+            .then((d) => setCharts(Array.isArray(d) ? d : []))
+            .catch((e) => { if (e.name !== 'AbortError') setCharts([]); })
+            .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+        return () => ctrl.abort();
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+    const filtered = filter.trim()
+        ? charts.filter((c) => (c.name || "").toLowerCase().includes(filter.toLowerCase()))
+        : charts;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+                    <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">Insertar gráfico configurado</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+                    <input
+                        autoFocus type="text" value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        placeholder="Buscar gráfico por nombre..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                    {loading && <div className="p-4 text-sm text-slate-400 text-center">Cargando…</div>}
+                    {!loading && filtered.length === 0 && (
+                        <div className="p-4 text-sm text-slate-400 text-center">
+                            No hay gráficos. Crea uno desde <a href="/charts" className="text-indigo-500 hover:underline">/charts</a>.
+                        </div>
+                    )}
+                    {filtered.map((c) => (
+                        <button
+                            key={c.id_spec}
+                            onClick={() => onConfirm(c)}
+                            className="w-full text-left px-3 py-2 rounded hover:bg-violet-50 dark:hover:bg-violet-900/20 border-b border-slate-100 dark:border-slate-800"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{c.name}</span>
+                                {c.is_draft && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">draft</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                {c.chart_type ? `${c.chart_type} · ` : ""}Métrica {c.metric_id ?? "—"} · id {c.id_spec}
+                            </div>
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>

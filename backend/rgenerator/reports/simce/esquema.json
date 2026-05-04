@@ -1,0 +1,234 @@
+{
+  "_comment": "Esquema declarativo del informe SIMCE. Cada sección llama a una función de charts.py o tables.py vía CHART_REGISTRY/TABLE_REGISTRY. Los df_input deben matchear las keys que pasa el orquestador (estudiantes_prueba, df_estudiantes, df_preguntas).",
+  "derived_fields": [
+    {
+      "_comment": "Calcular columnas derivadas en runtime sobre el df 'estudiantes' (todas las pruebas del año, no filtrado a una). Usa Mes como eje temporal ordinal.",
+      "df_input": "estudiantes",
+      "configs": [
+        {
+          "kind": "agg",
+          "name": "Logro_Promedio_Estudiante",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "agg": "mean",
+          "min_points": 1
+        },
+        {
+          "kind": "slope",
+          "name": "Avance",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "time_field": "Mes",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "min_points": 2
+        },
+        {
+          "kind": "delta",
+          "name": "Mejora_vs_Inicio",
+          "value_field": "Rend",
+          "entity_field": "Rut",
+          "time_field": "Mes",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "min_points": 2
+        }
+      ]
+    }
+  ],
+  "title": "Informe Ensayo SIMCE",
+  "subtitle": "Resumen de la prueba seleccionada",
+  "filters_label": "",
+  "branding": {
+    "left_image": "logo_php.png",
+    "right_image": "pullinque_php.png",
+    "center_header": [
+      "Informe Ensayo SIMCE",
+      "Asignatura - Curso",
+      "Mes Año"
+    ],
+    "left_footer": "Miguel Godoy Díaz",
+    "show_page_number": true
+  },
+  "secciones_fijas": [
+    {
+      "tipo": "table",
+      "titulo": "Resumen de Logro por Curso",
+      "fn": "resumen_estadistico_basico",
+      "df_input": "estudiantes_prueba",
+      "params": {
+        "columna": "Rend",
+        "formato": "percent",
+        "agrupar_por": "Curso"
+      }
+    },
+    {
+      "tipo": "table",
+      "titulo": "Resumen de Puntaje SIMCE por Curso",
+      "fn": "resumen_estadistico_basico",
+      "df_input": "estudiantes_prueba",
+      "params": {
+        "columna": "Simce",
+        "formato": "number",
+        "agrupar_por": "Curso"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Rendimiento Promedio por Curso",
+      "fn": "grafico_barras_promedio_por",
+      "df_input": "estudiantes_prueba",
+      "params": {
+        "columna_valor": "Rend",
+        "agrupar_por": "Curso",
+        "titulo": "Rendimiento Promedio por Curso",
+        "ylabel": "Rendimiento (%)"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Distribución de Puntaje SIMCE por Curso",
+      "fn": "boxplot_valor_por_curso",
+      "df_input": "estudiantes_prueba",
+      "params": {
+        "columna_valor": "Simce",
+        "agrupar_por": "Curso",
+        "titulo_grafico": "Distribución de Puntaje SIMCE por Curso",
+        "ylabel": "Puntaje SIMCE",
+        "formato": "number"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Evolución del Logro Promedio por Curso y Mes",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_valor": "Rend",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Mes",
+        "titulo_grafico": "Evolución del Logro Promedio por Curso y Mes",
+        "titulo_leyenda": "Mes",
+        "y_lims": [0, 1],
+        "formato": "percent"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Evolución del Puntaje SIMCE Promedio por Curso y Mes",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "estudiantes",
+      "params": {
+        "columna_valor": "Simce",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Mes",
+        "titulo_grafico": "Evolución del Puntaje SIMCE Promedio por Curso y Mes",
+        "titulo_leyenda": "Mes",
+        "formato": "number"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Cantidad de Alumnos por Nivel de Logro y Curso",
+      "fn": "alumnos_por_nivel_cualitativo",
+      "df_input": "estudiantes_prueba",
+      "params": {
+        "columna_nivel": "Logro",
+        "agrupar_por": "Curso",
+        "lista_niveles": ["Adecuado", "Elemental", "Insuficiente"],
+        "titulo_grafico": "Cantidad de Alumnos por Nivel de Logro y Curso",
+        "titulo_leyenda": "Nivel de Logro",
+        "ylabel": "Cantidad de Alumnos"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Habilidad",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "preguntas",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Habilidad",
+        "titulo_grafico": "Logro Promedio por Habilidad",
+        "titulo_leyenda": "Habilidad",
+        "formato": "percent"
+      }
+    },
+    {
+      "tipo": "chart",
+      "titulo": "Logro Promedio por Eje Temático",
+      "fn": "valor_promedio_agrupado_por",
+      "df_input": "preguntas",
+      "params": {
+        "columna_valor": "Logro",
+        "agrupar_principal_por": "Curso",
+        "agrupar_secundario_por": "Eje Temático",
+        "titulo_grafico": "Logro Promedio por Eje Temático",
+        "titulo_leyenda": "Eje Temático",
+        "formato": "percent"
+      }
+    },
+    {
+      "tipo": "table",
+      "titulo": "Estadística por Pregunta del Establecimiento",
+      "fn": "crear_tabla_estadistica_por_pregunta",
+      "df_input": "preguntas_prueba",
+      "break_before": true,
+      "params": {
+        "parametros": {},
+        "columnas_alternativas": ["A", "B", "C", "D", "E"],
+        "columnas_data": ["Pregunta", "Correcta", "Distractor"]
+      }
+    }
+  ],
+  "secciones_dinamicas": {
+    "_comment": "TODO próximo iter: iterar por curso y agregar 2 tablas (alumnos + preguntas) por cada uno",
+    "iterar_por": "Curso",
+    "df_iterar": "estudiantes_prueba",
+    "secciones": [
+      {
+        "tipo": "table",
+        "titulo": "Logro por Alumno - {curso}",
+        "fn": "tabla_logro_por_alumno",
+        "df_input": "estudiantes_prueba",
+        "params": {
+          "parametros": {"Curso": "{curso}"},
+          "sort_by": "Rend",
+          "formatos": {
+            "Rend": "percent",
+            "Simce": "number",
+            "Logro_Promedio_Estudiante": "percent",
+            "Avance": "percent",
+            "Mejora_vs_Inicio": "percent"
+          },
+          "columnas": ["Nombre", "Rend", "Simce", "Logro", "Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"],
+          "columnas_renombrar": {
+            "Nombre": "Estudiante",
+            "Rend": "Logro",
+            "Simce": "SIMCE",
+            "Logro": "Nivel",
+            "Logro_Promedio_Estudiante": "Promedio Año",
+            "Avance": "Avance",
+            "Mejora_vs_Inicio": "Mejora"
+          }
+        }
+      },
+      {
+        "tipo": "table",
+        "titulo": "Logro por Pregunta - {curso}",
+        "fn": "tabla_logro_por_pregunta",
+        "df_input": "preguntas_prueba",
+        "params": {
+          "valor_agrupacion": "{curso}",
+          "agrupar_por": "Curso",
+          "sort_by": "Logro",
+          "columnas": ["Pregunta", "Habilidad", "Eje Temático", "Logro"],
+          "columnas_renombrar": {
+            "Pregunta": "N° Pregunta"
+          }
+        }
+      }
+    ]
+  }
+}

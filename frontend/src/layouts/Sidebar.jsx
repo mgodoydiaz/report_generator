@@ -11,6 +11,8 @@ import {
   Layers,       // Dimensions
   Box,          // Metrics
   Notebook,     // Templates
+  Table,        // Tables
+  ChartArea,    // Charts
   Workflow,     // Pipelines
   Microscope,   // Indicators
   SquareFunction, // Functions
@@ -79,6 +81,14 @@ export default function Sidebar() {
         <NavLink to="/functions" className={linkClass}>
           <SquareFunction size={18} />
           Funciones
+        </NavLink>
+        <NavLink to="/tables" className={linkClass}>
+          <Table size={18} />
+          Tablas
+        </NavLink>
+        <NavLink to="/charts" className={linkClass}>
+          <ChartArea size={18} />
+          Gráficos
         </NavLink>
         <NavLink to="/specs" className={linkClass}>
           <Notebook size={18} />

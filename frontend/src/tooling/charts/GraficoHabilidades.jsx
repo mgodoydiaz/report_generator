@@ -3,7 +3,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer,
 } from 'recharts';
-import { avg, formatValue, formatDomain } from './constants';
+import { avg, formatValue, formatDomain, titleCase } from './constants';
 
 export default function GraficoHabilidades({ data, roleLabels={}, roleFormats={}, dimension='habilidad' }) {
     if (!data.length) return <p className="text-slate-400 text-sm">Sin datos de habilidades</p>;
@@ -13,7 +13,7 @@ export default function GraficoHabilidades({ data, roleLabels={}, roleFormats={}
     const habilidades = [...new Set(data.map(r => r[field]).filter(Boolean))];
     if (!habilidades.length) return <p className="text-slate-400 text-sm">Sin datos para la dimensión seleccionada</p>;
     const chartData = habilidades.map(h => ({
-        habilidad: h.charAt(0).toUpperCase() + h.slice(1).toLowerCase(),
+        habilidad: titleCase(h),
         logro: avg(data.filter(r => r[field] === h), "_logro_pregunta"),
     }));
     return (

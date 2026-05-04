@@ -39,6 +39,8 @@ import {
 } from './plotly-charts';
 import { microcopyFor } from './plotly-charts/microcopy';
 import { EmptyState, emptyReason } from './plotly-charts/emptyState';
+import { TableRenderer } from '../components/tables';
+import { ChartRenderer } from '../components/charts';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
 // No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
@@ -66,7 +68,16 @@ export const SIMCE_PRESET_LAYOUT = {
             label: 'Detalle Curso',
             rows: [
                 { cols: 1, items: [{ type: 'course_selector' }] },
-                { cols: 1, items: [{ type: 'chart', component: 'GraficoHabilidades', requires: ['habilidad'] }] },
+                // Vista equivalente a las páginas por curso del informe PDF:
+                // ~6 gráficos + tablas que muestran los datos del curso seleccionado.
+                { cols: 2, items: [
+                    { type: 'chart', component: 'GraficoLogroPorCurso',     requires: ['logro_1'], filter: 'cursoActivo' },
+                    { type: 'chart', component: 'GraficoDistribucionNiveles', requires: ['nivel_de_logro'], filter: 'cursoActivo' },
+                ]},
+                { cols: 2, items: [
+                    { type: 'chart', component: 'GraficoHabilidades',        requires: ['habilidad'] },
+                    { type: 'chart', component: 'GraficoBoxplotPorCurso',    requires: ['logro_1'], filter: 'cursoActivo' },
+                ]},
                 { cols: 1, items: [{ type: 'table', component: 'TablaAlumnos' }] },
                 { cols: 1, items: [{ type: 'table', component: 'TablaPreguntas' }] },
             ],
@@ -400,10 +411,17 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         }
         case 'PieComposition': {
             const vp = { showLegend: item.showLegend };
+            const recs = item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes;
+            const catField = item.categoryField ?? '_logro';
+            // Mismo patrón que StackedCountByGroup: si la categoría no es el
+            // nivel de logro principal, derivar los valores únicos del dataset.
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(recs.map(r => r[catField]).filter(Boolean))].sort();
             return {
-                records: filteredEstudiantes,
-                categoryField: item.categoryField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                records: recs,
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
@@ -415,24 +433,35 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
             const grps = gf === '_curso'
                 ? computed.cursos
                 : [...new Set(recs.map(r => r[gf]).filter(Boolean))].sort();
+            const catField = item.categoryField ?? item.levelField ?? '_logro';
+            // Si la categoría es _logro usa achievement_levels (orden semántico).
+            // Si no (ej. _habilidad para Calidad Lectora), saca los valores únicos
+            // del dataset y los ordena alfabéticamente.
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(recs.map(r => r[catField]).filter(Boolean))].sort();
             return {
                 records: recs,
                 groups: grps,
                 groupField: gf,
-                categoryField: item.categoryField ?? item.levelField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 ...vp,
             };
         }
         case 'StackedCountByGroupAndPeriod': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend, showValues: item.showValues };
+            const catField = item.categoryField ?? '_logro';
+            const catLevels = catField === '_logro'
+                ? (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean)
+                : [...new Set(filteredEstudiantes.map(r => r[catField]).filter(Boolean))].sort();
             return {
                 records: filteredEstudiantes,
                 groups: computed.cursos,
                 groupField: item.groupField ?? '_curso',
-                categoryField: item.categoryField ?? '_logro',
-                categoryLevels: (computed.achievement_levels || []).map(al => typeof al === 'string' ? al : al.name).filter(Boolean),
+                categoryField: catField,
+                categoryLevels: catLevels,
                 achievement_levels: computed.achievement_levels || [],
                 periodField: item.periodField ?? '_evaluacion_num',
                 periodLabels: temporalLabels,
@@ -516,7 +545,7 @@ function buildComponentProps(componentId, ctx, item, activeValueIdx = 0) {
         case 'Histogram': {
             const vp = { labelX: item.labelX, labelY: item.labelY, showLegend: item.showLegend };
             return {
-                records: filteredEstudiantes,
+                records: item.dataSource === 'cursoEstudiantes' ? filteredCursoEstudiantes : filteredEstudiantes,
                 valueField: activeValueField,
                 groupField: item.groupField,
                 groups: item.groupField ? computed.cursos : [],
@@ -909,6 +938,53 @@ export function ItemRenderer({ item, ctx, tabContext }) {
                         {s}
                     </button>
                 ))}
+            </div>
+        );
+    }
+
+    // Gráfico configurado (Spec type=Gráficos) — render directo con ChartRenderer.
+    // Item shape: {type: 'configured_chart', spec_id: 9, title?, height?}
+    if (item.type === 'configured_chart' && item.spec_id) {
+        const extra = {};
+        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
+        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        return (
+            <div>
+                {item.title && (
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+                        {item.title}
+                    </h3>
+                )}
+                <ChartRenderer
+                    chartId={item.spec_id}
+                    extraFilters={Object.keys(extra).length ? extra : null}
+                    height={item.height || 360}
+                />
+            </div>
+        );
+    }
+
+    // Tabla configurada (Spec type=Tablas) — render directo con TableRenderer.
+    // Item shape: {type: 'configured_table', spec_id: 9, title?, pageSize?}
+    if (item.type === 'configured_table' && item.spec_id) {
+        // Inyecta filtros activos del dashboard (curso, habilidad) como
+        // extra_filters de la tabla. El backend valida si esas
+        // dimensiones existen en la métrica subyacente.
+        const extra = {};
+        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
+        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        return (
+            <div>
+                {item.title && (
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+                        {item.title}
+                    </h3>
+                )}
+                <TableRenderer
+                    tableId={item.spec_id}
+                    extraFilters={Object.keys(extra).length ? extra : null}
+                    pageSize={item.pageSize || 50}
+                />
             </div>
         );
     }

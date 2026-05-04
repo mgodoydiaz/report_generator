@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { ChartColumn, Download, RefreshCcw, X } from 'lucide-react';
+import { ChartColumn, Download, RefreshCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
+import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
+import MultiSelectFilters from '../components/MultiSelectFilters';
 
 export default function Results() {
     const { fetchAuth } = useAuth();
@@ -29,6 +31,8 @@ export default function Results() {
 
     // ── Estado: modal de generación de PDF ──
     const [showReportModal, setShowReportModal] = useState(false);
+    const [showReportV2Modal, setShowReportV2Modal] = useState(false);
+    const [reportV2Context, setReportV2Context] = useState(null); // {tipoV2, indicatorId, filtros}
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -156,11 +160,23 @@ export default function Results() {
         }
     };
 
-    const handleClearFilters = () => {
-        setSelectedFilters({});
+    // ── Helper: filtros normalizados a arrays ──
+    // Desde B9 selectedFilters tiene shape {dimId: string[]}. Ese helper
+    // permite recibir formato viejo (single string) sin romper.
+    const normalizeFilters = (raw) => {
+        const out = {};
+        Object.entries(raw || {}).forEach(([k, v]) => {
+            if (v == null || v === '') return;
+            if (Array.isArray(v)) {
+                if (v.length) out[k] = v;
+            } else {
+                out[k] = [String(v)];
+            }
+        });
+        return out;
     };
 
-    const hasActiveFilters = Object.keys(selectedFilters).length > 0;
+    const hasActiveFilters = Object.keys(selectedFilters).some((k) => (selectedFilters[k] || []).length > 0);
 
     // ── Indicador actualmente seleccionado + disponibilidad de informe PDF ──
     const currentIndicator = useMemo(() => {
@@ -233,9 +249,9 @@ export default function Results() {
             </div>
 
             {/* ── Panel de selectores ── */}
-            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6">
+            <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 p-6 space-y-4">
+                {/* Selector de indicador */}
                 <div className="flex flex-wrap items-end gap-4">
-                    {/* Selector de indicador */}
                     <div className="flex-1 min-w-50">
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">Indicador</label>
                         <select
@@ -251,68 +267,79 @@ export default function Results() {
                         </select>
                     </div>
 
-                    {/* Filtros de dimensión */}
-                    {sortedDimKeys.map(dimId => {
-                        const dim = indicatorDims[dimId];
-                        if (!dim || !dim.values || dim.values.length === 0) return null;
-                        return (
-                            <div key={dimId} className="flex-1 min-w-40">
-                                <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">{dim.name}</label>
-                                <select
-                                    className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-                                    value={selectedFilters[dimId] || ""}
-                                    onChange={(e) => {
-                                        const val = e.target.value;
-                                        setSelectedFilters(prev => {
-                                            const next = { ...prev };
-                                            if (val) next[dimId] = val;
-                                            else delete next[dimId];
-                                            return next;
-                                        });
-                                    }}
-                                >
-                                    <option value="">Todos</option>
-                                    {dim.values.filter(v => {
-                                        if (v === null || v === undefined) return false;
-                                        const s = String(v).trim().toLowerCase();
-                                        return s && s !== 'nan' && s !== 'nat' && s !== 'none' && s !== 'null';
-                                    }).map(v => (
-                                        <option key={v} value={v}>{v}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        );
-                    })}
-
-                    {/* Botón limpiar filtros */}
-                    {hasActiveFilters && (
-                        <div className="flex items-end">
-                            <button
-                                onClick={handleClearFilters}
-                                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition-all"
-                            >
-                                <X size={14} />
-                                Limpiar filtros
-                            </button>
-                        </div>
-                    )}
-
                     {/* Botón generar informe PDF */}
                     {selectedIndicator && (
-                        <div className="flex items-end">
+                        <div className="flex items-end gap-2">
                             <button
                                 onClick={() => setShowReportModal(true)}
                                 disabled={!pdfConfigured || loadingDashboard}
                                 title={
                                     !pdfConfigured
                                         ? 'Configura el informe PDF en el Editor de Layout → pestaña Informe PDF'
-                                        : 'Abrir el modal de generación de informe'
+                                        : 'Abrir el modal de generación de informe (motor v1)'
                                 }
                                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
                             >
                                 <Download size={14} />
                                 Generar Reporte
                             </button>
+                            {/* Botón motor v2 (paridad LaTeX). Detecta tipo por el nombre del indicador.
+                                Solo se muestra para indicators DIA / SIMCE — el motor v2 todavía no
+                                soporta IDEL/CV/FL. */}
+                            {(() => {
+                                const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
+                                const nombre = (ind?.name || '').toLowerCase();
+                                const tipoV2 = nombre.includes('simce') ? 'simce'
+                                    : nombre.includes('dia') ? 'dia'
+                                    : null;
+                                if (!tipoV2) return null;
+                                // Mapear filtros UI (multi-valor) → nombres DB.
+                                // Para motor v2: si una dimensión tiene 1 solo valor lo
+                                // pasa como string (compatible con el código viejo);
+                                // si tiene >1 valor lo pasa como array (backend lo maneja).
+                                // Pero para los temporales el motor REQUIERE 1 solo punto.
+                                const params = {};
+                                Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
+                                    const dimName = indicatorDims[dimId]?.name;
+                                    const arr = Array.isArray(vals) ? vals : (vals ? [vals] : []);
+                                    if (!dimName || arr.length === 0) return;
+                                    params[dimName] = arr.length === 1 ? arr[0] : arr;
+                                });
+                                // El motor v2 requiere al menos UN filtro temporal por tipo.
+                                const filtrosTemporales = tipoV2 === 'simce'
+                                    ? ['Mes', 'N Prueba', 'Numero_Prueba']
+                                    : ['Hito', 'Año'];
+                                const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
+                                // Si el filtro temporal tiene >1 valor, motor v2 no puede
+                                // (sería un comparativo, no soportado todavía).
+                                const temporalMulti = filtrosTemporales.some(k => Array.isArray(params[k]) && params[k].length > 1);
+                                const disabled = loadingDashboard || !tieneFiltroTemporal || temporalMulti;
+                                const titleMsg = temporalMulti
+                                    ? `El motor v2 requiere UN solo punto temporal. Selecciona un único valor en ${filtrosTemporales.slice(0, 2).join(' o ')}.`
+                                    : !tieneFiltroTemporal
+                                        ? `Aplica un filtro de ${filtrosTemporales.slice(0, 2).join(' o ')} antes de generar el informe v2 (un punto en el tiempo)`
+                                        : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            // Abrir modal v2 con contexto actual.
+                                            // El modal arma overrides de branding y llama el endpoint.
+                                            setReportV2Context({
+                                                tipoV2,
+                                                indicatorId: parseInt(selectedIndicator, 10),
+                                                filtros: params,
+                                            });
+                                            setShowReportV2Modal(true);
+                                        }}
+                                        disabled={disabled}
+                                        title={titleMsg}
+                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
+                                    >
+                                        <Download size={14} />
+                                        Generar v2 ({tipoV2.toUpperCase()})
+                                    </button>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -323,6 +350,21 @@ export default function Results() {
                         </div>
                     )}
                 </div>
+
+                {/* Filtros multi-valor (B9) — toolbar Linear/Notion style */}
+                {selectedIndicator && sortedDimKeys.length > 0 && (
+                    <div className="border-t border-slate-100 dark:border-slate-800 pt-4">
+                        <div className="text-[11px] font-bold uppercase tracking-widest text-slate-400 mb-2">
+                            Filtros
+                        </div>
+                        <MultiSelectFilters
+                            dimensions={indicatorDims}
+                            sortedDimIds={sortedDimKeys}
+                            value={selectedFilters}
+                            onChange={setSelectedFilters}
+                        />
+                    </div>
+                )}
             </div>
 
             {/* ── Dashboard ── */}
@@ -370,6 +412,15 @@ export default function Results() {
                 sortedDimKeys={sortedDimKeys}
                 onSaved={fetchInitialData}
             />
+            {reportV2Context && (
+                <GenerateReportV2Modal
+                    open={showReportV2Modal}
+                    onClose={() => setShowReportV2Modal(false)}
+                    tipoV2={reportV2Context.tipoV2}
+                    indicatorId={reportV2Context.indicatorId}
+                    filtros={reportV2Context.filtros}
+                />
+            )}
         </div>
     );
 }
