@@ -9,6 +9,7 @@ from backend.routers import auth, users, superadmin, organizations
 from backend.routers import reports as reports_v2
 from backend.routers import tables
 from backend.routers import charts
+from backend.routers import mappings
 from backend.database import init_db
 
 app = FastAPI()
@@ -36,6 +37,7 @@ app.include_router(organizations.router)
 app.include_router(reports_v2.router)
 app.include_router(tables.router)
 app.include_router(charts.router)
+app.include_router(mappings.router)
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def root():
