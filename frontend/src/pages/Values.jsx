@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen } from 'lucide-react';
+import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen, ShieldCheck } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -25,6 +25,9 @@ export default function Values() {
     const [currentPage, setCurrentPage] = useState(1);
     const [totalRecords, setTotalRecords] = useState(0);
     const PAGE_SIZE = 50;
+
+    // Auditoría
+    const [showAudit, setShowAudit] = useState(false);
 
     // UI States
     const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -53,7 +56,7 @@ export default function Values() {
             loadMetricData(selectedMetric.id_metric, currentPage);
             setSelectedIds(new Set());
         }
-    }, [selectedMetric, currentPage]);
+    }, [selectedMetric, currentPage, showAudit]);
 
     const loadInitialData = async () => {
         setLoadingMetrics(true);
@@ -102,7 +105,8 @@ export default function Values() {
     const loadMetricData = async (metricId, page = 1) => {
         setLoadingData(true);
         try {
-            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}`);
+            const auditParam = showAudit ? '&include_audit=true' : '';
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}${auditParam}`);
             const data = await res.json();
             if (data.error) throw new Error(data.error);
             setMetricData(data.items);
@@ -214,9 +218,10 @@ export default function Values() {
         setIsExportModalOpen(true);
     };
 
-    const handleExportConfirm = async (format, fileName) => {
+    const handleExportConfirm = async (format, fileName, includeAudit = false) => {
         try {
-            const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}`);
+            const auditParam = includeAudit ? '&include_audit=true' : '';
+            const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}${auditParam}`);
             if (!response.ok) throw new Error("Error en la exportación");
 
             // Convertir respuesta a Blob y descargar
@@ -326,8 +331,24 @@ export default function Values() {
             cols.push({ key: 'value', label: 'Valor', isValue: true });
         }
 
+        // 3. Columnas de Auditoría (toggle "Mostrar auditoría")
+        if (showAudit) {
+            cols.push({ key: 'audit_email', label: 'Cargado por',  isAudit: true, auditField: 'created_by_email' });
+            cols.push({ key: 'audit_via',   label: 'Vía',          isAudit: true, auditField: 'created_via' });
+            cols.push({ key: 'audit_at',    label: 'Fecha carga',  isAudit: true, auditField: 'created_at' });
+            cols.push({ key: 'audit_ip',    label: 'IP',           isAudit: true, auditField: 'created_from_ip' });
+        }
+
         return cols;
-    }, [selectedMetric, dimensionsMap]);
+    }, [selectedMetric, dimensionsMap, showAudit]);
+
+    const VIA_LABEL = {
+        pipeline: 'Pipeline',
+        pipeline_cron: 'Cron',
+        import_csv: 'Importación',
+        manual_single: 'Manual',
+        api_direct: 'API',
+    };
 
     return (
         <div className="h-[calc(100vh-100px)] flex gap-6 animate-in fade-in duration-500">
@@ -398,11 +419,22 @@ export default function Values() {
                             {/* Fila 2: Filtros y Botones */}
                             <div className="flex flex-wrap justify-between items-center gap-4">
                                 <div className="flex gap-2">
-                                    <button 
-                                        onClick={() => toast("Filtros próximamente", { icon: '🚧' })} 
+                                    <button
+                                        onClick={() => toast("Filtros próximamente", { icon: '🚧' })}
                                         className="flex items-center gap-2 px-4 py-2.5 text-slate-500 hover:text-indigo-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold transition-all"
                                     >
                                         <Filter size={18} /> Filtros
+                                    </button>
+                                    <button
+                                        onClick={() => setShowAudit(s => !s)}
+                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                                            showAudit
+                                                ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300'
+                                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-amber-600'
+                                        }`}
+                                        title="Mostrar quién cargó cada dato y con qué proceso"
+                                    >
+                                        <ShieldCheck size={18} /> {showAudit ? 'Ocultar auditoría' : 'Mostrar auditoría'}
                                     </button>
                                 </div>
 
@@ -516,7 +548,19 @@ export default function Values() {
                                                 </td>
                                                 {dynamicColumns.map(col => {
                                                     let cellContent = '-';
-                                                    if (col.isDim) {
+                                                    if (col.isAudit) {
+                                                        const audit = row.audit || {};
+                                                        let val = audit[col.auditField];
+                                                        if (col.auditField === 'created_at') {
+                                                            val = row.created_at;
+                                                            if (val) {
+                                                                try { val = new Date(val).toLocaleString(); } catch {}
+                                                            }
+                                                        } else if (col.auditField === 'created_via' && val) {
+                                                            val = VIA_LABEL[val] || val;
+                                                        }
+                                                        cellContent = val || <span className="text-slate-300 italic">legacy</span>;
+                                                    } else if (col.isDim) {
                                                         // Extraer valor del JSON de dimensiones
                                                         const raw = row.dimensions_json?.[String(col.dimId)];
                                                         const cleaned = sanitizeDisplayValue(raw);

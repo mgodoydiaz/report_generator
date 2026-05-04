@@ -173,7 +173,13 @@ class MetricDimension(Base):
 
 
 class MetricData(Base):
-    """Datos guardados para una métrica (filas de valores con dimensiones en JSON)."""
+    """Datos guardados para una métrica (filas de valores con dimensiones en JSON).
+
+    Auditoría: cada inserción registra `created_by_user_id`, `created_via` y
+    opcionalmente `created_from_ip`. Las filas previas a la migración
+    (`f6a7b8c9d0e1`) quedan con esos 3 campos en NULL y la UI las muestra
+    como "(legacy)".
+    """
     __tablename__ = "metric_data"
 
     id_data         = Column(Integer, primary_key=True, index=True)
@@ -183,7 +189,13 @@ class MetricData(Base):
     created_at      = Column(DateTime, default=datetime.utcnow)
     org_id          = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
 
-    metric = relationship("Metric", back_populates="data_points")
+    # Auditoría de carga — ver `backend/auditing.py` para el helper
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_via        = Column(String(20), nullable=True)   # 'pipeline'|'pipeline_cron'|'import_csv'|'manual_single'|'api_direct'
+    created_from_ip    = Column(String(45), nullable=True)   # IPv4 (15) o IPv6 (45 max)
+
+    metric       = relationship("Metric", back_populates="data_points")
+    created_by   = relationship("User", foreign_keys=[created_by_user_id])
 
 
 # =============================================================================
