@@ -28,6 +28,14 @@ Kinds soportados:
   nombre para producir una clave estable. Resuelve el bug DIA donde el
   mismo estudiante aparece como "Nombre Apellido" en un hito y
   "Apellido Nombre" en otro, dando 0 matches al hacer join.
+- `lookup_range`: BUSCARV con tramos (Excel "rango verdadero"). Para
+  cada valor numérico, devuelve la label cuyo rango {min, max} lo
+  contiene. Útil para asignar Nivel a partir de Logro cuando los
+  umbrales son configurables por establecimiento.
+- `lookup_dict`: lookup discreto valor → label vía dict, con extracción
+  opcional por regex/split antes de buscar. Resuelve el caso DIA
+  curso → nivel ("1° básico A" → "Primeros") sin necesidad de cargar
+  un spec separado.
 
 Soporta `value_type: ordinal`: si los valores son cualitativos
 (ej: Insuficiente, Elemental, Adecuado), se mapean a 1..N usando
@@ -36,6 +44,7 @@ formato numérico (no se revierte porque la salida típicamente es numérica).
 """
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import Any, Callable
 
@@ -528,6 +537,185 @@ def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Kind: lookup_range (BUSCARV con tramos / "rango verdadero" Excel)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_lookup_range(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Lookup por tramos: devuelve la label del rango que contiene el valor.
+
+    Equivalente al BUSCARV con coincidencia aproximada de Excel: para
+    cada valor numérico de `value_field`, busca el primer tramo de
+    `ranges` cuyo intervalo lo contiene y devuelve su `label`. Tramos
+    sin `min` (o `min=null`) actúan como límite inferior abierto;
+    tramos sin `max` (o `max=null`) como límite superior abierto.
+
+    Por defecto usa `match='left_inclusive'`: `min <= v < max`. El
+    último tramo (sin max) es inclusivo en ambos lados.
+
+    Diferencia con `row_threshold`: éste es declarativo por TRAMO
+    (con min/max explícito), no por umbral acumulativo. Soporta
+    saltos, rangos abiertos y "fuera de tabla". Pensado para tablas
+    cargadas desde un spec/UI configurable por establecimiento.
+
+    Config esperado:
+        name: columna nueva.
+        value_field: columna numérica a evaluar.
+        ranges: lista de {min, max, label}. Cada límite es opcional
+            (None = abierto).
+        match: 'left_inclusive' (default, `min <= v < max`) |
+               'right_inclusive' (`min < v <= max`) |
+               'both_inclusive' (`min <= v <= max`).
+        default: label cuando ningún tramo matchea (default None).
+
+    Ejemplo:
+        ranges: [
+          {"min": null, "max": 0.4,  "label": "Insuficiente"},
+          {"min": 0.4,  "max": 0.7,  "label": "Adecuado"},
+          {"min": 0.7,  "max": null, "label": "Avanzado"}
+        ]
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    ranges = config.get("ranges") or []
+    match = config.get("match", "left_inclusive")
+    default = config.get("default")
+
+    if value_field not in df.columns:
+        raise KeyError(
+            f"lookup_range '{name}': value_field '{value_field}' no existe en el DataFrame"
+        )
+    if not ranges:
+        raise ValueError(f"lookup_range '{name}': ranges no puede estar vacío")
+    if match not in ("left_inclusive", "right_inclusive", "both_inclusive"):
+        raise ValueError(
+            f"lookup_range '{name}': match debe ser left_inclusive | right_inclusive | both_inclusive"
+        )
+
+    df = df.copy()
+    series_num = pd.to_numeric(df[value_field], errors="coerce")
+
+    def _in_range(v, mn, mx) -> bool:
+        if mn is not None:
+            try:
+                mn_f = float(mn)
+            except (TypeError, ValueError):
+                return False
+            if match == "right_inclusive":
+                if not (v > mn_f):
+                    return False
+            else:
+                if not (v >= mn_f):
+                    return False
+        if mx is not None:
+            try:
+                mx_f = float(mx)
+            except (TypeError, ValueError):
+                return False
+            if match == "left_inclusive":
+                if not (v < mx_f):
+                    return False
+            else:
+                if not (v <= mx_f):
+                    return False
+        return True
+
+    def _classify(v):
+        if pd.isna(v):
+            return default
+        for r in ranges:
+            if _in_range(v, r.get("min"), r.get("max")):
+                return r.get("label")
+        return default
+
+    df[name] = series_num.map(_classify)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kind: lookup_dict (mapping discreto valor → label, con extract opcional)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_lookup_dict(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Mapping discreto valor → label, con extracción opcional previa.
+
+    Para cada valor de `value_field`, opcionalmente extrae una sub-string
+    (por regex o split + índice) y luego mira si la clave resultante
+    está en `mapping`. Si está, devuelve el valor del dict; si no, usa
+    `default`.
+
+    Resuelve el caso DIA `obtener_nivel`:
+        curso = "1° básico A" → split " " idx 0 → "1°" (no útil)
+        curso = "1 A" → split " " idx 0 → "1" → "Primeros"
+
+    Config esperado:
+        name: columna nueva.
+        value_field: columna fuente.
+        mapping: dict {clave: label}.
+        extract: opcional. Si dict, una de:
+            {"split": " ", "index": 0}  → split por sep, toma índice
+            {"regex": "^([IVX]+|\\d+)"} → primer match de regex (group 0)
+        case_insensitive: bool (default False) — match en mapping
+            ignorando mayúsculas.
+        default: label cuando no hay match (default None).
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    mapping = config.get("mapping") or {}
+    extract = config.get("extract")
+    case_insensitive = bool(config.get("case_insensitive", False))
+    default = config.get("default")
+
+    if value_field not in df.columns:
+        raise KeyError(
+            f"lookup_dict '{name}': value_field '{value_field}' no existe en el DataFrame"
+        )
+    if not mapping:
+        raise ValueError(f"lookup_dict '{name}': mapping no puede estar vacío")
+
+    if case_insensitive:
+        mapping_norm = {str(k).lower(): v for k, v in mapping.items()}
+    else:
+        mapping_norm = {str(k): v for k, v in mapping.items()}
+
+    extract_split = None
+    extract_idx = 0
+    extract_regex = None
+    if isinstance(extract, dict):
+        if "split" in extract:
+            extract_split = extract.get("split", " ")
+            extract_idx = int(extract.get("index", 0))
+        elif "regex" in extract:
+            extract_regex = re.compile(extract["regex"])
+
+    def _extract_key(v):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            return None
+        s = str(v)
+        if extract_split is not None:
+            parts = s.split(extract_split)
+            if extract_idx < len(parts):
+                s = parts[extract_idx]
+            else:
+                return None
+        elif extract_regex is not None:
+            m = extract_regex.search(s)
+            if not m:
+                return None
+            s = m.group(0)
+        return s.lower() if case_insensitive else s
+
+    def _lookup(v):
+        key = _extract_key(v)
+        if key is None:
+            return default
+        return mapping_norm.get(key, default)
+
+    df = df.copy()
+    df[name] = df[value_field].map(_lookup)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Registry + orquestador
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -573,6 +761,20 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Ordena alfabéticamente las palabras de un nombre para producir clave estable. Resuelve el bug DIA de 'Nombre Apellido' vs 'Apellido Nombre' entre hitos.",
         "required_args": ["name", "value_field"],
         "optional_args": ["case", "strip_accents"],
+    },
+    "lookup_range": {
+        "fn": apply_lookup_range,
+        "display_name": "BUSCARV por tramos",
+        "description": "Para cada valor numérico, devuelve la label del rango {min, max} que lo contiene. Equivalente al BUSCARV con 'rango verdadero' de Excel. Tramos pueden tener límites abiertos (None).",
+        "required_args": ["name", "value_field", "ranges"],
+        "optional_args": ["match", "default"],
+    },
+    "lookup_dict": {
+        "fn": apply_lookup_dict,
+        "display_name": "Mapeo discreto valor → label",
+        "description": "Lookup por clave exacta en un dict. Soporta extracción previa (split por separador o regex). Pensado para mappings cortos hardcoded en el pipeline (curso → nivel, código → categoría).",
+        "required_args": ["name", "value_field", "mapping"],
+        "optional_args": ["extract", "case_insensitive", "default"],
     },
 }
 

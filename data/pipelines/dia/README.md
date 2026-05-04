@@ -17,11 +17,12 @@ referencia: [`docs/desarrollo/script_dia_artesanal_referencia.md`](../../../docs
 - ✅ Limpieza de prefijos en `Curso` ("1° básico A" → "1A").
 - ✅ Pausa interactiva para que el usuario indique el `Hito` por archivo (DIAGNOSTICO / INTERMEDIO / FINAL).
 
-## Qué falta — ver ROADMAP B6b
+## Estado tras cierre B6b (2026-05-04)
 
-- ⏳ **Step `RunDIAPDFExtraction`**: extracción del PDF de preguntas con camelot+fitz y detección de bold por análisis de píxeles. Diferido hasta tener acceso al script artesanal del cliente; no se debe reescribir de cero porque el cliente lo depuró durante meses.
-- ⏳ Re-habilitación de `Avance` y `Mejora_vs_Inicio` en `backend/rgenerator/reports/dia/esquema.json` usando `Nombre_Norm` como entity_field — viable apenas se cargue data 2026 con el `Hito` correctamente registrado.
-- ⏳ Resolución de `metric_id` real para `SaveToMetric`. Hoy quedó como string-placeholder para forzar la edición consciente.
+- ✅ **Step `RunDIAPDFExtraction`**: portado del script artesanal con las 5 funciones helper (camelot+fitz+análisis de píxeles para detectar bold). Validado contra PDF real (Panguipulli 7°A): 28 preguntas extraídas, Logro [0.20-0.80], Curso "7 A" detectado.
+- ✅ **`Avance` y `Mejora_vs_Inicio`** activados en `backend/rgenerator/reports/dia/esquema.json` con `entity_field=["Curso","Nombre_Norm"]` y `time_field=Hito` ordinal. Funcionarán con ≥2 hitos cargados.
+- ✅ **`metric_id`** resueltos (6 = estudiantes, 7 = preguntas).
+- ✅ Pipelines DIA Matemáticas (id=19) y DIA Lenguaje (id=21) publicados en la DB.
 
 ## Cómo cargar a la DB
 

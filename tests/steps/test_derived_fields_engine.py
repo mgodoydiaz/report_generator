@@ -18,6 +18,8 @@ from rgenerator.core.derived_fields_engine import (
     apply_agg,
     apply_delta,
     apply_derived_fields,
+    apply_lookup_dict,
+    apply_lookup_range,
     apply_normalize_name,
     apply_row_mean_dynamic,
     apply_row_threshold,
@@ -637,11 +639,173 @@ class TestNormalizeName:
         assert out["Mejora"].iloc[1] == pytest.approx(0.20)
 
 
+class TestLookupRange:
+    """BUSCARV con tramos (rango verdadero Excel)."""
+
+    def test_basico_3_tramos(self):
+        df = pd.DataFrame({"Logro": [0.30, 0.50, 0.85]})
+        out = apply_lookup_range(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "Insuficiente"},
+                {"min": 0.4, "max": 0.7, "label": "Adecuado"},
+                {"min": 0.7, "max": 1.0, "label": "Avanzado"},
+            ],
+        })
+        assert out["Nivel"].tolist() == ["Insuficiente", "Adecuado", "Avanzado"]
+
+    def test_tramos_abiertos_min_y_max(self):
+        df = pd.DataFrame({"x": [-100, 0.5, 1000]})
+        out = apply_lookup_range(df, {
+            "name": "label",
+            "value_field": "x",
+            "ranges": [
+                {"min": None, "max": 0,    "label": "neg"},
+                {"min": 0,    "max": 1,    "label": "med"},
+                {"min": 1,    "max": None, "label": "pos"},
+            ],
+        })
+        assert out["label"].tolist() == ["neg", "med", "pos"]
+
+    def test_match_left_inclusive_default(self):
+        # min <= v < max
+        df = pd.DataFrame({"x": [0.4, 0.7]})  # bordes
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "A"},
+                {"min": 0.4, "max": 0.7, "label": "B"},
+                {"min": 0.7, "max": 1.0, "label": "C"},
+            ],
+        })
+        # 0.4 cae en B (left_inclusive), 0.7 cae en C
+        assert out["L"].tolist() == ["B", "C"]
+
+    def test_match_both_inclusive(self):
+        df = pd.DataFrame({"x": [0.4, 0.7]})
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "match": "both_inclusive",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "A"},
+                {"min": 0.4, "max": 0.7, "label": "B"},
+            ],
+        })
+        # 0.4 cae en el primer rango que matchea (A), 0.7 cae en B
+        assert out["L"].tolist() == ["A", "B"]
+
+    def test_default_para_fuera_de_rango_y_nan(self):
+        df = pd.DataFrame({"x": [0.5, np.nan, 99.0]})
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "default": "fuera",
+            "ranges": [
+                {"min": 0, "max": 1, "label": "in"},
+            ],
+        })
+        assert out["L"].tolist() == ["in", "fuera", "fuera"]
+
+    def test_ranges_vacios_lanza(self):
+        df = pd.DataFrame({"x": [1]})
+        with pytest.raises(ValueError, match="ranges"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x", "ranges": [],
+            })
+
+    def test_match_invalido_lanza(self):
+        df = pd.DataFrame({"x": [1]})
+        with pytest.raises(ValueError, match="match"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x", "match": "weird",
+                "ranges": [{"min": 0, "max": 2, "label": "a"}],
+            })
+
+    def test_value_field_inexistente_lanza(self):
+        df = pd.DataFrame({"otra": [1]})
+        with pytest.raises(KeyError, match="value_field"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x",
+                "ranges": [{"min": 0, "max": 1, "label": "a"}],
+            })
+
+
+class TestLookupDict:
+    """Mapping discreto valor → label, opcionalmente con extract previo."""
+
+    def test_basico_sin_extract(self):
+        df = pd.DataFrame({"Codigo": ["A", "B", "C", "Z"]})
+        out = apply_lookup_dict(df, {
+            "name": "Etiqueta",
+            "value_field": "Codigo",
+            "mapping": {"A": "Alfa", "B": "Beta", "C": "Gamma"},
+            "default": "Otro",
+        })
+        assert out["Etiqueta"].tolist() == ["Alfa", "Beta", "Gamma", "Otro"]
+
+    def test_extract_split_basico_dia_curso_nivel(self):
+        """Caso real DIA: 'curso = 1 A' → split por ' ' idx 0 → '1' → 'Primeros'."""
+        df = pd.DataFrame({"Curso": ["1 A", "2 B", "I A", "III C"]})
+        out = apply_lookup_dict(df, {
+            "name": "Nivel",
+            "value_field": "Curso",
+            "mapping": {
+                "1": "Primeros", "2": "Segundos",
+                "I": "Primeros Medios", "III": "Terceros Medios",
+            },
+            "extract": {"split": " ", "index": 0},
+        })
+        assert out["Nivel"].tolist() == [
+            "Primeros", "Segundos", "Primeros Medios", "Terceros Medios",
+        ]
+
+    def test_extract_regex(self):
+        df = pd.DataFrame({"x": ["1° básico A", "II° medio B"]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"1": "Primeros", "II": "Segundos Medios"},
+            "extract": {"regex": r"^[IVX]+|^\d+"},
+        })
+        assert out["L"].tolist() == ["Primeros", "Segundos Medios"]
+
+    def test_case_insensitive(self):
+        df = pd.DataFrame({"x": ["Abc", "DEF"]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"abc": "uno", "def": "dos"},
+            "case_insensitive": True,
+        })
+        assert out["L"].tolist() == ["uno", "dos"]
+
+    def test_default_para_no_match_y_nan(self):
+        df = pd.DataFrame({"x": ["A", "Z", None]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"A": "uno"},
+            "default": "x",
+        })
+        assert out["L"].tolist() == ["uno", "x", "x"]
+
+    def test_mapping_vacio_lanza(self):
+        df = pd.DataFrame({"x": ["A"]})
+        with pytest.raises(ValueError, match="mapping"):
+            apply_lookup_dict(df, {
+                "name": "L", "value_field": "x", "mapping": {},
+            })
+
+
 class TestRegistry:
     def test_kinds_esperados(self):
         assert set(KIND_REGISTRY.keys()) == {
             "agg", "slope", "delta",
             "row_mean_dynamic", "row_threshold", "normalize_name",
+            "lookup_range", "lookup_dict",
         }
 
     def test_metadata_introspection_first_check(self):

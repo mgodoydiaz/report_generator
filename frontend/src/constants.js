@@ -12,50 +12,39 @@ export const FORMAT_OPTIONS = ["", "EXCEL", "PDF", "DOC", "IMG", "DB"];
 // Lista de pasos disponibles
 export const STEP_OPTIONS = [
   "InitRun",
-  // "LoadConfig",  // DEPRECADO: usar LoadConfigFromSpec
   "LoadConfigFromSpec",
-  "DiscoverInputs",
   "RequestUserFiles",
   "RunExcelETL",
+  "RunDIAPDFExtraction",
   "EnrichWithUserInput",
   "EnrichWithContext",
   "EnrichWithLookup",
   "ModifyColumnValues",
   "ApplyDerivedFields",
+  "ValidateDataframe",
   "LoadMetricToDF",
   "SaveToMetric",
-  "ExportConsolidatedExcel",
-  "GenerateGraphics",
-  "GenerateTables",
-  "RenderReport",
+  "RenderHtmlReport",
   "RenderPDFReport",
-  "GenerateDocxReport",
-  "DeleteTempFiles",
-
 ];
 
 // Traducciones a lenguaje humano para los pasos técnicos
 export const STEP_TRANSLATIONS = {
   "InitRun": "Inicializar Proceso",
-  // "LoadConfig": "Cargar Configuración",  // DEPRECADO
   "LoadConfigFromSpec": "Cargar Especificación",
-  "DiscoverInputs": "Identificar Archivos",
   "RequestUserFiles": "Solicitar Archivos",
-  "RunExcelETL": "Procesar Datos",
+  "RunExcelETL": "Procesar Excel",
+  "RunDIAPDFExtraction": "Procesar PDFs DIA",
   "EnrichWithUserInput": "Enriquecer por Usuario",
   "EnrichWithContext": "Enriquecer por Contexto",
   "EnrichWithLookup": "Enriquecer con Lookup",
   "ModifyColumnValues": "Modificar Valores",
   "ApplyDerivedFields": "Aplicar Campos Derivados",
+  "ValidateDataframe": "Validar DataFrame",
   "LoadMetricToDF": "Cargar Métrica como DataFrame",
   "SaveToMetric": "Cargar Métricas",
-  "ExportConsolidatedExcel": "Exportar Datos",
-  "GenerateGraphics": "Crear Gráficos",
-  "GenerateTables": "Preparar Tablas",
-  "RenderReport": "Generar Informe (LaTeX)",
-  "RenderPDFReport": "Generar Informe PDF",
-  "GenerateDocxReport": "Generar Documento DOCX",
-  "DeleteTempFiles": "Limpiar Archivos"
+  "RenderHtmlReport": "Generar Informe HTML→PDF",
+  "RenderPDFReport": "Generar Informe Indicador",
 };
 
 // Mapeo de colores y estilos para los formatos de archivo
@@ -109,21 +98,12 @@ export const STEP_DEFAULT_PARAMS = {
 
   "InitRun": `{
   "evaluation": "nombre_evaluacion", // Nombre de la evaluación
-  "base_dir": "./backend/tests" // Directorio base de trabajo
+  "base_dir": "./data" // Directorio base de trabajo
 }`,
 
-  // "LoadConfig": DEPRECADO - usar LoadConfigFromSpec
   "LoadConfigFromSpec": `{
-  "spec_id": 1 // ID del spec/template en la base de datos (obligatorio)
-}`,
-
-  "DiscoverInputs": `{
-  "rules": {
-    "tipo_archivo": {
-      "extension": ".xlsx", // Extensión del archivo
-      "contains": "texto_en_nombre" // Texto que debe contener el nombre
-    }
-  }
+  "spec_id": 1, // ID del spec/template en la base de datos (obligatorio)
+  "config_key": "estudiantes" // (opcional) aísla la config por artifact (estudiantes/preguntas/...)
 }`,
 
   "RequestUserFiles": `{
@@ -203,7 +183,8 @@ export const STEP_DEFAULT_PARAMS = {
   "input_key": "nombre_input", // Clave del artifact (DataFrame)
   "output_key": "nombre_output", // Clave del artifact resultante
   "derived_fields": [
-    // Kinds disponibles: agg | slope | delta | row_mean_dynamic | row_threshold | normalize_name
+    // Kinds disponibles: agg | slope | delta | row_mean_dynamic | row_threshold |
+    //                    normalize_name | lookup_range | lookup_dict
     // Ejemplos:
     // {"kind": "agg",   "name": "Logro_Promedio_Estudiante",
     //  "value_field": "Logro", "entity_field": "Rut", "agg": "mean"},
@@ -220,7 +201,17 @@ export const STEP_DEFAULT_PARAMS = {
     //    {"max": 0.6,  "label": "Intermedio"},
     //    {"max": null, "label": "Avanzado"}
     //  ]},
-    // {"kind": "normalize_name", "name": "Nombre_Norm", "value_field": "Nombre"}
+    // {"kind": "normalize_name", "name": "Nombre_Norm", "value_field": "Nombre"},
+    // {"kind": "lookup_range", "name": "Nivel Establecimiento",
+    //  "value_field": "Logro",
+    //  "ranges": [
+    //    {"min": null, "max": 0.4,  "label": "Insuficiente"},
+    //    {"min": 0.4,  "max": 0.7,  "label": "Adecuado"},
+    //    {"min": 0.7,  "max": null, "label": "Avanzado"}
+    //  ]},
+    // {"kind": "lookup_dict", "name": "Nivel", "value_field": "Curso",
+    //  "extract": {"split": " ", "index": 0},
+    //  "mapping": {"1": "Primeros", "I": "Primeros Medios"}}
   ]
 }`,
 
@@ -239,51 +230,38 @@ export const STEP_DEFAULT_PARAMS = {
   "clear_existing": false // Borrar datos previos antes de insertar
 }`,
 
-  "ExportConsolidatedExcel": `{
-  "input_key": "nombre_input", // Clave del artifact de entrada
-  "output_filename": "archivo_salida.xlsx" // Nombre del archivo Excel de salida
-}`,
-
-  "GenerateGraphics": `{
-  // Lee charts_schema desde ctx.params (cargado por un step previo)
-  // No requiere parámetros directos
-}`,
-
-  "GenerateTables": `{
-  // Se puede pasar tables_schema directo, o dejar vacío si LoadConfigFromSpec
-  // ya cargó tables_list en ctx.params
-  "tables_schema": [
-    {
-      "id": "resumen_logro",
-      "title": "Resumen Logro por Curso",
-      "type": "resumen_estadistico_basico", // Función de report_tools.py
-      "input_key": "df_estudiantes", // Artifact del contexto
-      "output_filename": "resumen_logro.xlsx",
-      // iterate_by (opcional): genera una tabla por valor único de la columna
-      // "iterate_by": "Curso",
-      // iterate_param (opcional): nombre del kwarg donde inyectar el valor iterado
-      // "iterate_param": "valor_agrupacion",
-      "params": {
-        "columna": "Rend",
-        "formato": "percent", // "percent" o "number"
-        "agrupar_por": "Curso"
-      }
+  "ValidateDataframe": `{
+  "input_key": "nombre_input", // Clave del artifact (DataFrame) a validar
+  "mode": "strict", // strict (lanza ValueError) | warn (loguea y pasa)
+  "schema": {
+    "required_columns": ["Logro", "Curso", "Hito"],
+    "min_rows": 1,
+    "columns": {
+      "Logro": {"type": "float", "min": 0, "max": 1, "nullable": false},
+      "Curso": {"type": "str", "regex": "^[1-9I]+ ?[A-Z]?$"},
+      "Hito":  {"type": "str", "allowed": ["DIAGNOSTICO","INTERMEDIO","FINAL"]}
     }
-  ]
+  }
 }`,
 
-  "RenderReport": `{
-  "report_schema": {} // Estructura del informe PDF
+  "RunDIAPDFExtraction": `{
+  "input_key": "preguntas", // Clave del artifact con los PDFs DIA (un PDF por curso)
+  "output_key": "preguntas_raw" // Clave del DataFrame resultante
+  // El step detecta automáticamente la sección 'Resultados por pregunta',
+  // extrae las tablas con camelot+fitz, identifica la respuesta correcta
+  // por análisis de píxeles (texto en negrita) y produce un df con columnas
+  // [N Pregunta, Eje Temático, Habilidad, Indicador, % respuestas, Logro,
+  //  Establecimiento, Curso].
 }`,
 
-  "GenerateDocxReport": `{
-  "template_name": "plantilla.docx", // Nombre de la plantilla Word
-  "output_filename": "informe.docx", // Nombre del archivo de salida
-  "convert_to_pdf": true // Convertir a PDF después de generar
+  "RenderHtmlReport": `{
+  "report_schema": {}, // Estructura del informe (variables_documento + secciones_*)
+  "output_filename": "informe.pdf",
+  "template_name": "report_latex_paridad.html"
 }`,
 
-  "DeleteTempFiles": `{
-  // Este paso no requiere parámetros
-}`
+  "RenderPDFReport": `{
+  "indicator_id": 1 // ID del indicador con pdf_layout configurado
+}`,
 
 };
