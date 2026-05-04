@@ -1,0 +1,648 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Filtros multi-valor — patrones UI</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .demo-section { scroll-margin-top: 4rem; }
+  details summary { cursor: pointer; }
+  details summary::-webkit-details-marker { display: none; }
+  /* Animación leve cuando aparece chip activo */
+  @keyframes pop-in { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .pop-in { animation: pop-in 0.15s ease-out; }
+</style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+
+<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+    <div>
+      <h1 class="text-lg font-bold">Filtros multi-valor — 5 patrones UI</h1>
+      <p class="text-xs text-slate-500">Elegí el que más te guste. Datos de ejemplo: indicador DIA Lectura.</p>
+    </div>
+    <nav class="flex gap-1 text-xs">
+      <a href="#opt1" class="px-2 py-1 rounded hover:bg-slate-100">1. Chips</a>
+      <a href="#opt2" class="px-2 py-1 rounded hover:bg-slate-100">2. Dropdowns + chips</a>
+      <a href="#opt3" class="px-2 py-1 rounded hover:bg-slate-100">3. Sidebar</a>
+      <a href="#opt4" class="px-2 py-1 rounded hover:bg-slate-100">4. Faceted</a>
+      <a href="#opt5" class="px-2 py-1 rounded hover:bg-slate-100">5. Combobox</a>
+    </nav>
+  </div>
+</header>
+
+<main class="max-w-6xl mx-auto px-6 py-8 space-y-12">
+
+  <!-- ============================================================ -->
+  <!-- DATOS DE EJEMPLO -->
+  <!-- ============================================================ -->
+  <section class="bg-white rounded-2xl border border-slate-200 p-6">
+    <h2 class="text-base font-bold mb-2">Datos del indicador de prueba</h2>
+    <p class="text-xs text-slate-500 mb-4">Para que se sienta real al probar. Cada patrón usa estas mismas dimensiones.</p>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+      <div>
+        <div class="font-semibold text-slate-700 mb-1">Curso (19 valores)</div>
+        <div class="text-slate-500">1A, 2A, 3A, 4A, 5A, 6A, 7A, I A (TPI-510), I A (TPT-610), I B (TPA-710), I B (TPT-610), I C (TPA-710), I C (TPT-610), I D (TPI-510), I E (TPI-510), II A (TPI-510), II B (TPA-710), II C (TPA-710), II D (TPI-510)</div>
+      </div>
+      <div>
+        <div class="font-semibold text-slate-700 mb-1">Hito (3)</div>
+        <div class="text-slate-500">DIAGNOSTICO, INTERMEDIO, FINAL</div>
+      </div>
+      <div>
+        <div class="font-semibold text-slate-700 mb-1">Habilidad (3)</div>
+        <div class="text-slate-500">Localizar, Interpretar y relacionar, Reflexionar</div>
+      </div>
+      <div>
+        <div class="font-semibold text-slate-700 mb-1">Nivel Logro (3)</div>
+        <div class="text-slate-500">Inicial, Intermedio, Avanzado</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- OPCIÓN 1: Chips horizontales clickeables                       -->
+  <!-- ============================================================ -->
+  <section id="opt1" class="demo-section">
+    <header class="mb-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold">1. Chips horizontales clickeables</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">Más simple</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Todos los valores como pills. Click toggle. Funciona bien con &lt;10 valores por dimensión.</p>
+    </header>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div data-pattern="1" class="space-y-3 text-sm">
+        <div>
+          <div class="text-xs font-semibold text-slate-600 mb-1.5">Hito</div>
+          <div class="flex flex-wrap gap-1.5" data-dim="Hito">
+            <button class="chip" data-v="DIAGNOSTICO">DIAGNOSTICO</button>
+            <button class="chip" data-v="INTERMEDIO">INTERMEDIO</button>
+            <button class="chip" data-v="FINAL">FINAL</button>
+          </div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-slate-600 mb-1.5">Habilidad</div>
+          <div class="flex flex-wrap gap-1.5" data-dim="Habilidad">
+            <button class="chip" data-v="Localizar">Localizar</button>
+            <button class="chip" data-v="Interpretar y relacionar">Interpretar y relacionar</button>
+            <button class="chip" data-v="Reflexionar">Reflexionar</button>
+          </div>
+        </div>
+        <div>
+          <div class="text-xs font-semibold text-slate-600 mb-1.5">Curso</div>
+          <div class="flex flex-wrap gap-1.5" data-dim="Curso">
+            <!-- 19 chips, hace ruido visual -->
+          </div>
+        </div>
+        <div class="border-t border-slate-100 pt-3 text-xs">
+          <span class="text-slate-500">Filtros activos:</span>
+          <span class="font-mono text-slate-700" data-out="1">{}</span>
+        </div>
+      </div>
+    </div>
+    <details class="mt-3 text-xs text-slate-500">
+      <summary class="hover:text-slate-700">Pros / Cons</summary>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <div><strong class="text-emerald-700">Pros:</strong> 0 clicks para ver opciones. Velocidad de operación máxima. Cero JS pesado.</div>
+        <div><strong class="text-rose-700">Cons:</strong> Con 19 cursos se ve abrumador (ver fila Curso). Sin búsqueda. Sin operadores (igual / distinto / contiene).</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- OPCIÓN 2: Multi-select dropdowns + chips activos              -->
+  <!-- ============================================================ -->
+  <section id="opt2" class="demo-section">
+    <header class="mb-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold">2. Multi-select dropdowns + chips activos</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-indigo-100 text-indigo-700">Recomendado</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Toolbar con dropdowns por dimensión. Cada uno abre popover con search + checkboxes. Estilo Linear/Notion.</p>
+    </header>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div data-pattern="2" class="text-sm">
+        <!-- Dropdowns -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="dropdown-wrap relative" data-dim="Hito">
+            <button class="dd-btn">Hito <span class="dd-count"></span></button>
+            <div class="dd-pop hidden">
+              <input type="text" class="dd-search" placeholder="Buscar hito...">
+              <div class="dd-options"></div>
+            </div>
+          </div>
+          <div class="dropdown-wrap relative" data-dim="Curso">
+            <button class="dd-btn">Curso <span class="dd-count"></span></button>
+            <div class="dd-pop hidden">
+              <input type="text" class="dd-search" placeholder="Buscar curso...">
+              <div class="dd-options"></div>
+            </div>
+          </div>
+          <div class="dropdown-wrap relative" data-dim="Habilidad">
+            <button class="dd-btn">Habilidad <span class="dd-count"></span></button>
+            <div class="dd-pop hidden">
+              <input type="text" class="dd-search" placeholder="Buscar habilidad...">
+              <div class="dd-options"></div>
+            </div>
+          </div>
+          <div class="dropdown-wrap relative" data-dim="Nivel Logro">
+            <button class="dd-btn">Nivel Logro <span class="dd-count"></span></button>
+            <div class="dd-pop hidden">
+              <input type="text" class="dd-search" placeholder="Buscar nivel...">
+              <div class="dd-options"></div>
+            </div>
+          </div>
+          <button class="text-xs text-slate-500 hover:text-rose-600 ml-2" data-clear="2">Limpiar</button>
+        </div>
+        <!-- Chips activos -->
+        <div class="flex flex-wrap gap-1.5 mt-3 min-h-[26px]" data-active="2"></div>
+        <div class="border-t border-slate-100 pt-3 mt-3 text-xs">
+          <span class="text-slate-500">Filtros activos:</span>
+          <span class="font-mono text-slate-700" data-out="2">{}</span>
+        </div>
+      </div>
+    </div>
+    <details class="mt-3 text-xs text-slate-500">
+      <summary class="hover:text-slate-700">Pros / Cons</summary>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <div><strong class="text-emerald-700">Pros:</strong> Compacto independiente del N° de valores. Búsqueda inline. Chips activos visibles (estado claro). Patrón conocido (Linear, Notion, Github).</div>
+        <div><strong class="text-rose-700">Cons:</strong> 1 click extra para abrir el dropdown (+0.5s vs chips). Más código.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- OPCIÓN 3: Sidebar persistente                                 -->
+  <!-- ============================================================ -->
+  <section id="opt3" class="demo-section">
+    <header class="mb-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold">3. Sidebar persistente colapsable</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-slate-200 text-slate-700">Estilo e-commerce</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Panel lateral con todas las dimensiones expandidas. Tipo filtros de Mercado Libre / Airbnb.</p>
+    </header>
+    <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div class="grid grid-cols-12">
+        <aside class="col-span-3 bg-slate-50 border-r border-slate-200 p-3 max-h-96 overflow-y-auto" data-pattern="3">
+          <div class="text-xs font-semibold text-slate-700 mb-2 uppercase">Filtros</div>
+          <div data-side-dim="Hito" class="mb-3">
+            <details open>
+              <summary class="text-xs font-semibold text-slate-600 mb-1.5">Hito</summary>
+              <div class="space-y-1 mt-2"></div>
+            </details>
+          </div>
+          <div data-side-dim="Curso" class="mb-3">
+            <details>
+              <summary class="text-xs font-semibold text-slate-600 mb-1.5">Curso (19)</summary>
+              <input type="text" class="w-full px-2 py-1 text-xs border border-slate-200 rounded mt-2 mb-1" placeholder="Buscar...">
+              <div class="space-y-1 max-h-40 overflow-y-auto"></div>
+            </details>
+          </div>
+          <div data-side-dim="Habilidad" class="mb-3">
+            <details open>
+              <summary class="text-xs font-semibold text-slate-600 mb-1.5">Habilidad</summary>
+              <div class="space-y-1 mt-2"></div>
+            </details>
+          </div>
+          <div data-side-dim="Nivel Logro" class="mb-3">
+            <details>
+              <summary class="text-xs font-semibold text-slate-600 mb-1.5">Nivel Logro</summary>
+              <div class="space-y-1 mt-2"></div>
+            </details>
+          </div>
+          <button class="text-xs text-rose-600 hover:underline" data-clear="3">Limpiar todos</button>
+        </aside>
+        <div class="col-span-9 p-6">
+          <div class="text-sm text-slate-500 mb-2">Acá iría el dashboard.</div>
+          <div class="bg-slate-100 rounded h-48 flex items-center justify-center text-slate-400 text-xs">[ Gráficos / Tablas ]</div>
+          <div class="border-t border-slate-100 pt-3 mt-3 text-xs">
+            <span class="text-slate-500">Filtros activos:</span>
+            <span class="font-mono text-slate-700" data-out="3">{}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <details class="mt-3 text-xs text-slate-500">
+      <summary class="hover:text-slate-700">Pros / Cons</summary>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <div><strong class="text-emerald-700">Pros:</strong> Todas las opciones a la vista (sin clicks para descubrir). Búsqueda dentro de cada grupo. Bueno cuando los filtros son la actividad principal.</div>
+        <div><strong class="text-rose-700">Cons:</strong> Roba ~25% del ancho de la pantalla siempre. Mal para dashboards con foco en visualización. Puede ser demasiado para indicadores con pocas dimensiones.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- OPCIÓN 4: Faceted con operadores                              -->
+  <!-- ============================================================ -->
+  <section id="opt4" class="demo-section">
+    <header class="mb-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold">4. Faceted filters con operadores</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700">Más potente</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Estilo Notion/Airtable. Cada filtro es un chip que se construye paso a paso: dimensión → operador → valores. Soporta "es / no es / contiene / entre".</p>
+    </header>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div data-pattern="4" class="text-sm">
+        <div class="flex flex-wrap items-center gap-2 min-h-[34px]" data-faceted-active="4">
+          <button class="text-xs px-3 py-1.5 rounded-lg border border-dashed border-slate-300 text-slate-500 hover:border-indigo-400 hover:text-indigo-500" data-add="4">+ Agregar filtro</button>
+        </div>
+        <div class="border-t border-slate-100 pt-3 mt-3 text-xs">
+          <span class="text-slate-500">Filtros activos:</span>
+          <span class="font-mono text-slate-700" data-out="4">{}</span>
+        </div>
+      </div>
+    </div>
+    <details class="mt-3 text-xs text-slate-500">
+      <summary class="hover:text-slate-700">Pros / Cons</summary>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <div><strong class="text-emerald-700">Pros:</strong> Más expresivo (operadores: es / no es / contiene / entre / vacío). Construcción explícita de queries. Power-user friendly.</div>
+        <div><strong class="text-rose-700">Cons:</strong> Curva de aprendizaje (no es obvio). Más complejo de implementar (3-4× más código que opción 2). Quizá overkill para PHP.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- OPCIÓN 5: Combobox global tipo Cmd-K                          -->
+  <!-- ============================================================ -->
+  <section id="opt5" class="demo-section">
+    <header class="mb-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-xl font-bold">5. Combobox global tipo Cmd-K</h2>
+        <span class="text-xs px-2 py-1 rounded-full bg-violet-100 text-violet-700">Power user</span>
+      </div>
+      <p class="text-sm text-slate-500 mt-1">Una sola caja de búsqueda + chips activos. Tipeás "Curso II" y aparecen sugerencias de todas las dimensiones. Tipo command palette.</p>
+    </header>
+    <div class="bg-white rounded-xl border border-slate-200 p-4">
+      <div data-pattern="5" class="text-sm">
+        <div class="relative">
+          <div class="flex flex-wrap items-center gap-1.5 px-2 py-1.5 border border-slate-300 rounded-lg" data-combo-wrap="5">
+            <span class="text-slate-400 mr-1">⌕</span>
+            <input type="text" placeholder="Filtrar… (ej: Hito DIAG)" class="flex-1 min-w-[120px] outline-none text-sm bg-transparent" data-combo-input="5">
+          </div>
+          <div class="absolute left-0 right-0 mt-1 bg-white border border-slate-200 rounded-lg shadow-lg z-10 hidden max-h-72 overflow-y-auto" data-combo-suggest="5"></div>
+        </div>
+        <div class="border-t border-slate-100 pt-3 mt-3 text-xs">
+          <span class="text-slate-500">Filtros activos:</span>
+          <span class="font-mono text-slate-700" data-out="5">{}</span>
+        </div>
+      </div>
+    </div>
+    <details class="mt-3 text-xs text-slate-500">
+      <summary class="hover:text-slate-700">Pros / Cons</summary>
+      <div class="mt-2 grid grid-cols-2 gap-3">
+        <div><strong class="text-emerald-700">Pros:</strong> 1 sola caja para todo. Súper rápido si conocés los nombres. Look minimalista. Tipo Linear inline.</div>
+        <div><strong class="text-rose-700">Cons:</strong> Requiere conocer las dimensiones de memoria (poco descubrible). Sin checkboxes, no se ven las opciones disponibles. Mal para usuarios nuevos.</div>
+      </div>
+    </details>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- COMPARACIÓN FINAL -->
+  <!-- ============================================================ -->
+  <section class="bg-white rounded-2xl border border-slate-200 p-6">
+    <h2 class="text-base font-bold mb-3">Comparativa rápida</h2>
+    <table class="w-full text-xs border border-slate-200 rounded overflow-hidden">
+      <thead class="bg-slate-50 text-slate-600">
+        <tr>
+          <th class="text-left px-3 py-2 border-b border-slate-200 w-44">Patrón</th>
+          <th class="text-left px-3 py-2 border-b border-slate-200">Aprendizaje</th>
+          <th class="text-left px-3 py-2 border-b border-slate-200">Espacio</th>
+          <th class="text-left px-3 py-2 border-b border-slate-200">Escalabilidad</th>
+          <th class="text-left px-3 py-2 border-b border-slate-200">Esfuerzo impl.</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        <tr><td class="px-3 py-2 font-semibold">1. Chips</td><td>Mínimo</td><td>Crece con N° valores</td><td>Mala (&gt;10 valores)</td><td>Bajo (3h)</td></tr>
+        <tr class="bg-indigo-50/50"><td class="px-3 py-2 font-semibold">2. Dropdowns + chips</td><td>Bajo</td><td>Compacto fijo</td><td>Alta</td><td>Medio (5h)</td></tr>
+        <tr><td class="px-3 py-2 font-semibold">3. Sidebar</td><td>Mínimo</td><td>Roba ~25% ancho</td><td>Alta</td><td>Medio (5h)</td></tr>
+        <tr><td class="px-3 py-2 font-semibold">4. Faceted</td><td>Alto</td><td>Compacto</td><td>Alta</td><td>Alto (10h+)</td></tr>
+        <tr><td class="px-3 py-2 font-semibold">5. Combobox global</td><td>Alto</td><td>Mínimo</td><td>Alta</td><td>Alto (8h)</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+</main>
+
+<style>
+.chip { padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; border: 1px solid #cbd5e1; background: white; color: #475569; transition: all 0.1s; }
+.chip:hover { border-color: #6366f1; color: #4338ca; }
+.chip.active { background: #6366f1; color: white; border-color: #6366f1; }
+
+.dd-btn { padding: 0.375rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; border: 1px solid #cbd5e1; background: white; color: #475569; display: inline-flex; align-items: center; gap: 0.25rem; }
+.dd-btn:hover { border-color: #6366f1; color: #4338ca; }
+.dd-btn.has-active { border-color: #6366f1; background: #eef2ff; color: #4338ca; font-weight: 600; }
+.dd-count:not(:empty) { background: #6366f1; color: white; padding: 0 6px; border-radius: 9999px; font-size: 10px; font-weight: 700; }
+.dd-pop { position: absolute; top: 100%; left: 0; margin-top: 0.25rem; background: white; border: 1px solid #cbd5e1; border-radius: 0.5rem; padding: 0.5rem; min-width: 240px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); z-index: 20; }
+.dd-search { width: 100%; padding: 0.375rem 0.5rem; font-size: 0.75rem; border: 1px solid #e2e8f0; border-radius: 0.25rem; }
+.dd-options { max-height: 240px; overflow-y: auto; margin-top: 0.5rem; }
+.dd-options label { display: flex; align-items: center; gap: 0.5rem; padding: 0.25rem 0.375rem; border-radius: 0.25rem; font-size: 0.75rem; cursor: pointer; }
+.dd-options label:hover { background: #f1f5f9; }
+
+.active-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.25rem 0.625rem; border-radius: 9999px; background: #eef2ff; color: #4338ca; font-size: 0.7rem; font-weight: 600; }
+.active-chip button { color: #6366f1; cursor: pointer; }
+.active-chip button:hover { color: #ef4444; }
+</style>
+
+<script>
+// ─────────────────────────────────────────────────────────────────────
+// Data de ejemplo
+// ─────────────────────────────────────────────────────────────────────
+const DIMS = {
+  "Hito": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+  "Curso": ["1A", "2A", "3A", "4A", "5A", "6A", "7A",
+            "I A (TPI-510)", "I A (TPT-610)", "I B (TPA-710)", "I B (TPT-610)",
+            "I C (TPA-710)", "I C (TPT-610)", "I D (TPI-510)", "I E (TPI-510)",
+            "II A (TPI-510)", "II B (TPA-710)", "II C (TPA-710)", "II D (TPI-510)"],
+  "Habilidad": ["Localizar", "Interpretar y relacionar", "Reflexionar"],
+  "Nivel Logro": ["Inicial", "Intermedio", "Avanzado"],
+};
+
+// Estado por patrón: {patternId: {dim: [valores]}}
+const STATE = { 1: {}, 2: {}, 3: {}, 4: [], 5: {} };
+
+function refreshOut(p) {
+  const el = document.querySelector(`[data-out="${p}"]`);
+  if (el) el.textContent = JSON.stringify(STATE[p], null, 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PATRÓN 1: Chips horizontales
+// ─────────────────────────────────────────────────────────────────────
+function setupPattern1() {
+  const root = document.querySelector('[data-pattern="1"]');
+  if (!root) return;
+  STATE[1] = {};
+  // Render chips de Curso (19)
+  const cursoCtn = root.querySelector('[data-dim="Curso"]');
+  DIMS.Curso.forEach((v) => {
+    const b = document.createElement('button');
+    b.className = 'chip'; b.dataset.v = v; b.textContent = v;
+    cursoCtn.appendChild(b);
+  });
+  root.querySelectorAll('[data-dim]').forEach((dimEl) => {
+    const dim = dimEl.dataset.dim;
+    dimEl.querySelectorAll('button.chip').forEach((b) => {
+      b.addEventListener('click', () => {
+        b.classList.toggle('active');
+        const sel = Array.from(dimEl.querySelectorAll('button.chip.active')).map((x) => x.dataset.v);
+        if (sel.length === 0) delete STATE[1][dim];
+        else STATE[1][dim] = sel;
+        refreshOut(1);
+      });
+    });
+  });
+  refreshOut(1);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PATRÓN 2: Dropdowns + chips activos
+// ─────────────────────────────────────────────────────────────────────
+function setupPattern2() {
+  const root = document.querySelector('[data-pattern="2"]');
+  if (!root) return;
+  STATE[2] = {};
+  const activeCtn = root.querySelector('[data-active="2"]');
+
+  function renderActive() {
+    activeCtn.innerHTML = '';
+    Object.entries(STATE[2]).forEach(([dim, vals]) => {
+      vals.forEach((v) => {
+        const c = document.createElement('span');
+        c.className = 'active-chip pop-in';
+        c.innerHTML = `<span><strong>${dim}:</strong> ${v}</span><button>×</button>`;
+        c.querySelector('button').addEventListener('click', () => {
+          STATE[2][dim] = STATE[2][dim].filter((x) => x !== v);
+          if (!STATE[2][dim].length) delete STATE[2][dim];
+          renderAll2();
+        });
+        activeCtn.appendChild(c);
+      });
+    });
+    refreshOut(2);
+  }
+
+  function renderDropdownOptions(wrap) {
+    const dim = wrap.dataset.dim;
+    const opts = wrap.querySelector('.dd-options');
+    const search = wrap.querySelector('.dd-search').value.toLowerCase();
+    const sel = new Set(STATE[2][dim] || []);
+    opts.innerHTML = '';
+    DIMS[dim]
+      .filter((v) => v.toLowerCase().includes(search))
+      .forEach((v) => {
+        const id = `dd-${dim}-${v}`.replace(/[^a-z0-9]/gi, '-');
+        const lbl = document.createElement('label');
+        lbl.innerHTML = `<input type="checkbox" id="${id}" ${sel.has(v) ? 'checked' : ''}><span>${v}</span>`;
+        lbl.querySelector('input').addEventListener('change', (e) => {
+          if (!STATE[2][dim]) STATE[2][dim] = [];
+          if (e.target.checked) STATE[2][dim].push(v);
+          else STATE[2][dim] = STATE[2][dim].filter((x) => x !== v);
+          if (!STATE[2][dim].length) delete STATE[2][dim];
+          renderAll2();
+        });
+        opts.appendChild(lbl);
+      });
+    const btn = wrap.querySelector('.dd-btn');
+    const count = STATE[2][dim]?.length || 0;
+    btn.querySelector('.dd-count').textContent = count > 0 ? count : '';
+    btn.classList.toggle('has-active', count > 0);
+  }
+
+  function renderAll2() {
+    root.querySelectorAll('.dropdown-wrap').forEach(renderDropdownOptions);
+    renderActive();
+  }
+
+  root.querySelectorAll('.dropdown-wrap').forEach((wrap) => {
+    const btn = wrap.querySelector('.dd-btn');
+    const pop = wrap.querySelector('.dd-pop');
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      // cerrar otros
+      root.querySelectorAll('.dd-pop').forEach((p) => { if (p !== pop) p.classList.add('hidden'); });
+      pop.classList.toggle('hidden');
+    });
+    wrap.querySelector('.dd-search').addEventListener('input', () => renderDropdownOptions(wrap));
+  });
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-pattern="2"] .dropdown-wrap')) {
+      root.querySelectorAll('.dd-pop').forEach((p) => p.classList.add('hidden'));
+    }
+  });
+  document.querySelector('[data-clear="2"]').addEventListener('click', () => {
+    STATE[2] = {};
+    renderAll2();
+  });
+
+  renderAll2();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PATRÓN 3: Sidebar
+// ─────────────────────────────────────────────────────────────────────
+function setupPattern3() {
+  const root = document.querySelector('[data-pattern="3"]');
+  if (!root) return;
+  STATE[3] = {};
+  Object.entries(DIMS).forEach(([dim, values]) => {
+    const sec = root.querySelector(`[data-side-dim="${dim}"]`);
+    if (!sec) return;
+    const list = sec.querySelector('details > div:last-child');
+    const search = sec.querySelector('input[type="text"]');
+    function render() {
+      const q = (search?.value || '').toLowerCase();
+      list.innerHTML = '';
+      values.filter((v) => v.toLowerCase().includes(q)).forEach((v) => {
+        const lbl = document.createElement('label');
+        lbl.className = 'flex items-center gap-2 text-xs cursor-pointer hover:bg-slate-100 px-1.5 py-0.5 rounded';
+        const checked = (STATE[3][dim] || []).includes(v);
+        lbl.innerHTML = `<input type="checkbox" ${checked ? 'checked' : ''}><span class="truncate">${v}</span>`;
+        lbl.querySelector('input').addEventListener('change', (e) => {
+          if (!STATE[3][dim]) STATE[3][dim] = [];
+          if (e.target.checked) STATE[3][dim].push(v);
+          else STATE[3][dim] = STATE[3][dim].filter((x) => x !== v);
+          if (!STATE[3][dim].length) delete STATE[3][dim];
+          refreshOut(3);
+        });
+        list.appendChild(lbl);
+      });
+    }
+    render();
+    if (search) search.addEventListener('input', render);
+  });
+  document.querySelector('[data-clear="3"]').addEventListener('click', () => {
+    STATE[3] = {};
+    setupPattern3();
+  });
+  refreshOut(3);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PATRÓN 4: Faceted con operadores
+// ─────────────────────────────────────────────────────────────────────
+function setupPattern4() {
+  const root = document.querySelector('[data-pattern="4"]');
+  if (!root) return;
+  STATE[4] = []; // [{dim, op, values}]
+  const activeCtn = root.querySelector('[data-faceted-active="4"]');
+  const addBtn = activeCtn.querySelector('[data-add="4"]');
+
+  function renderActive() {
+    // Limpiar todo excepto el botón
+    activeCtn.querySelectorAll('.facet-chip').forEach((c) => c.remove());
+    STATE[4].forEach((f, idx) => {
+      const c = document.createElement('span');
+      c.className = 'facet-chip inline-flex items-center gap-1 text-xs px-2 py-1 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-800';
+      const valTxt = f.values.length === 0 ? '(vacío)' : f.values.length === 1 ? f.values[0] : `${f.values.length} valores`;
+      c.innerHTML = `<strong>${f.dim}</strong> <span class="text-indigo-500">${f.op}</span> <span>${valTxt}</span> <button class="text-indigo-400 hover:text-rose-600 ml-0.5">×</button>`;
+      c.querySelector('button').addEventListener('click', () => {
+        STATE[4].splice(idx, 1);
+        renderActive();
+      });
+      activeCtn.insertBefore(c, addBtn);
+    });
+    refreshOut(4);
+  }
+
+  addBtn.addEventListener('click', () => {
+    // Mini wizard: pedir dimensión por prompt simulado
+    const dim = window.prompt(`Dimensión:\n\n${Object.keys(DIMS).join(', ')}`);
+    if (!dim || !DIMS[dim]) return;
+    const op = window.prompt('Operador:\n\nes / no es / contiene', 'es');
+    if (!op) return;
+    const valuesStr = window.prompt(`Valores (separados por coma):\n\n${DIMS[dim].slice(0, 5).join(', ')}…`);
+    if (!valuesStr) return;
+    const values = valuesStr.split(',').map((v) => v.trim()).filter(Boolean);
+    STATE[4].push({ dim, op, values });
+    renderActive();
+  });
+
+  renderActive();
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// PATRÓN 5: Combobox global
+// ─────────────────────────────────────────────────────────────────────
+function setupPattern5() {
+  const root = document.querySelector('[data-pattern="5"]');
+  if (!root) return;
+  STATE[5] = {};
+  const wrap = root.querySelector('[data-combo-wrap="5"]');
+  const input = root.querySelector('[data-combo-input="5"]');
+  const sug = root.querySelector('[data-combo-suggest="5"]');
+
+  function renderChips() {
+    wrap.querySelectorAll('.combo-chip').forEach((c) => c.remove());
+    Object.entries(STATE[5]).forEach(([dim, vals]) => {
+      vals.forEach((v) => {
+        const c = document.createElement('span');
+        c.className = 'combo-chip inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-violet-100 text-violet-800 mr-1';
+        c.innerHTML = `<strong>${dim}:</strong> ${v} <button class="text-violet-500 hover:text-rose-600 ml-1">×</button>`;
+        c.querySelector('button').addEventListener('click', () => {
+          STATE[5][dim] = STATE[5][dim].filter((x) => x !== v);
+          if (!STATE[5][dim].length) delete STATE[5][dim];
+          renderChips();
+          refreshOut(5);
+        });
+        wrap.insertBefore(c, input);
+      });
+    });
+  }
+
+  function renderSuggestions() {
+    const q = input.value.toLowerCase().trim();
+    sug.innerHTML = '';
+    if (!q) { sug.classList.add('hidden'); return; }
+    const items = [];
+    Object.entries(DIMS).forEach(([dim, values]) => {
+      values.forEach((v) => {
+        const text = `${dim} ${v}`.toLowerCase();
+        if (text.includes(q)) items.push({ dim, v });
+      });
+    });
+    if (!items.length) { sug.classList.add('hidden'); return; }
+    items.slice(0, 12).forEach(({ dim, v }) => {
+      const isSelected = (STATE[5][dim] || []).includes(v);
+      const it = document.createElement('button');
+      it.className = `w-full text-left px-3 py-2 text-xs hover:bg-violet-50 flex items-center justify-between ${isSelected ? 'bg-violet-50' : ''}`;
+      it.innerHTML = `<span><strong>${dim}:</strong> ${v}</span>${isSelected ? '<span class="text-violet-500">✓</span>' : ''}`;
+      it.addEventListener('click', () => {
+        if (!STATE[5][dim]) STATE[5][dim] = [];
+        if (isSelected) STATE[5][dim] = STATE[5][dim].filter((x) => x !== v);
+        else STATE[5][dim].push(v);
+        if (!STATE[5][dim].length) delete STATE[5][dim];
+        renderChips();
+        refreshOut(5);
+        input.value = '';
+        renderSuggestions();
+        input.focus();
+      });
+      sug.appendChild(it);
+    });
+    sug.classList.remove('hidden');
+  }
+
+  input.addEventListener('input', renderSuggestions);
+  input.addEventListener('focus', renderSuggestions);
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('[data-pattern="5"]')) sug.classList.add('hidden');
+  });
+  refreshOut(5);
+}
+
+// Boot
+document.addEventListener('DOMContentLoaded', () => {
+  setupPattern1();
+  setupPattern2();
+  setupPattern3();
+  setupPattern4();
+  setupPattern5();
+});
+</script>
+
+</body>
+</html>
