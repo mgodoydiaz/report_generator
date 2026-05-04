@@ -43,12 +43,13 @@ export default function Tables() {
 
   const [metrics, setMetrics] = useState([]);
   const [indicators, setIndicators] = useState([]);
-  const [metricColumns, setMetricColumns] = useState([]);
+  const [dimensions, setDimensions] = useState([]);
 
   // ── Catálogos ───────────────────────────────────────────────────────
   useEffect(() => {
     apiGet('/metrics/').then((r) => setMetrics(r || [])).catch(() => {});
     apiGet('/indicators/').then((r) => setIndicators(r || [])).catch(() => {});
+    apiGet('/dimensions/').then((r) => setDimensions(r || [])).catch(() => {});
   }, []);
 
   // ── Lista de tablas ─────────────────────────────────────────────────
@@ -76,21 +77,27 @@ export default function Tables() {
   }, [selectedId]);
 
   // ── Columnas disponibles según métrica seleccionada ────────────────
-  useEffect(() => {
+  // Resuelve localmente desde los catálogos ya cargados (metrics + dimensions).
+  // Evita llamada extra a /api/metrics/{id} que NO existe en el backend.
+  const metricColumns = useMemo(() => {
     const mid = draftConfig?.data_source?.metric_id;
-    if (!mid) { setMetricColumns([]); return; }
-    apiGet(`/metrics/${mid}`).then((m) => {
-      const cols = [];
-      // Dimensiones
-      (m.dimensions || []).forEach((d) => cols.push({ key: d.name, kind: 'dimension', type: d.data_type }));
-      // Fields del meta_json
-      try {
-        const meta = typeof m.meta_json === 'string' ? JSON.parse(m.meta_json || '{}') : (m.meta_json || {});
-        (meta.fields || []).forEach((f) => cols.push({ key: f.name, kind: 'field', type: f.type }));
-      } catch (e) {}
-      setMetricColumns(cols);
-    }).catch(() => setMetricColumns([]));
-  }, [draftConfig?.data_source?.metric_id]);
+    if (!mid) return [];
+    const m = metrics.find((x) => x.id_metric === mid);
+    if (!m) return [];
+    const cols = [];
+    // Dimensiones — resolver nombre desde el catálogo global
+    const dimById = new Map(dimensions.map((d) => [d.id_dimension, d]));
+    (m.dimension_ids || []).forEach((id) => {
+      const d = dimById.get(id);
+      if (d) cols.push({ key: d.name, kind: 'dimension', type: d.data_type });
+    });
+    // Fields del meta_json (data_type=object → meta.fields[*])
+    try {
+      const meta = typeof m.meta_json === 'string' ? JSON.parse(m.meta_json || '{}') : (m.meta_json || {});
+      (meta.fields || []).forEach((f) => cols.push({ key: f.name, kind: 'field', type: f.type }));
+    } catch (e) {}
+    return cols;
+  }, [draftConfig?.data_source?.metric_id, metrics, dimensions]);
 
   // ── Helpers de mutación ─────────────────────────────────────────────
   const updateConfig = (updater) => {
@@ -813,7 +820,7 @@ function BehaviorTab({ cfg, metricColumns, onChange }) {
 // ─────────────────────────────────────────────────────────────────────
 
 async function apiGet(path) {
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem('rg_token');
   const r = await fetch(`${API_BASE_URL}${path}`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -821,7 +828,7 @@ async function apiGet(path) {
   return r.json();
 }
 async function apiPost(path, body) {
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem('rg_token');
   const r = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -831,7 +838,7 @@ async function apiPost(path, body) {
   return r.json();
 }
 async function apiPut(path, body) {
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem('rg_token');
   const r = await fetch(`${API_BASE_URL}${path}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
@@ -841,7 +848,7 @@ async function apiPut(path, body) {
   return r.json();
 }
 async function apiDelete(path) {
-  const token = localStorage.getItem('access_token');
+  const token = localStorage.getItem('rg_token');
   const r = await fetch(`${API_BASE_URL}${path}`, {
     method: 'DELETE',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
