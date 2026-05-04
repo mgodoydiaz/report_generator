@@ -12,7 +12,10 @@
   "pipeline": [
     {
       "step": "InitRun",
-      "params": {"evaluation": "DIA_Matematicas", "base_dir": "./data"}
+      "params": {
+        "evaluation": "DIA_Matematicas",
+        "base_dir": "./data"
+      }
     },
     {
       "step": "RequestUserFiles",
@@ -39,12 +42,16 @@
     {
       "step": "EnrichWithUserInput",
       "description": "Pide el Hito (DIAGNOSTICO/INTERMEDIO/FINAL) para cada XLS de estudiantes.",
-      "params": {"input_key": "estudiantes"}
+      "params": {
+        "input_key": "estudiantes"
+      }
     },
     {
       "step": "EnrichWithUserInput",
       "description": "Pide el Hito para cada PDF de preguntas.",
-      "params": {"input_key": "preguntas"}
+      "params": {
+        "input_key": "preguntas"
+      }
     },
     {
       "step": "RunExcelETL",
@@ -53,11 +60,21 @@
         "output_key": "estudiantes_raw",
         "header_row": 12,
         "metadata_cells": [
-          {"column_name": "Establecimiento", "cell": "B5"},
-          {"column_name": "Curso",           "cell": "B6"}
+          {
+            "column_name": "Establecimiento",
+            "cell": "B5"
+          },
+          {
+            "column_name": "Curso",
+            "cell": "B6"
+          }
         ],
         "enrich_data": [
-          {"key": "Hito", "val": "DIAGNOSTICO", "user_input": true}
+          {
+            "key": "Hito",
+            "val": "DIAGNOSTICO",
+            "user_input": true
+          }
         ]
       }
     },
@@ -74,7 +91,10 @@
       "params": {
         "input_key": "estudiantes_raw",
         "output_key": "estudiantes_enriched",
-        "context_mapping": {"Asignatura": "Matemáticas", "Año": 2026}
+        "context_mapping": {
+          "Asignatura": "Matemáticas",
+          "Año": 2026
+        }
       }
     },
     {
@@ -83,7 +103,10 @@
       "params": {
         "input_key": "preguntas_raw",
         "output_key": "preguntas_enriched",
-        "context_mapping": {"Asignatura": "Matemáticas", "Año": 2026}
+        "context_mapping": {
+          "Asignatura": "Matemáticas",
+          "Año": 2026
+        }
       }
     },
     {
@@ -97,34 +120,29 @@
             "kind": "row_mean_dynamic",
             "name": "Logro",
             "exclude_columns": [
-              "Numero Lista", "Número de Lista", "Nombre del Estudiante",
-              "Establecimiento", "Curso", "Asignatura", "Año", "Hito"
+              "Numero Lista",
+              "Número de Lista",
+              "Nombre del Estudiante",
+              "Establecimiento",
+              "Curso",
+              "Asignatura",
+              "Año",
+              "Hito"
             ],
             "scale": 0.01,
             "replace_decimal_comma": true
           },
           {
-            "kind": "row_threshold",
+            "kind": "lookup_range",
             "name": "Nivel Logro",
             "value_field": "Logro",
-            "thresholds": [
-              {"max": 0.4,  "label": "Inicial"},
-              {"max": 0.6,  "label": "Intermedio"},
-              {"max": null, "label": "Avanzado"}
-            ]
+            "mapping_id": 35
           },
           {
             "kind": "lookup_dict",
             "name": "Nivel",
             "value_field": "Curso",
-            "extract": {"split": " ", "index": 0},
-            "mapping": {
-              "1": "Primeros",   "2": "Segundos", "3": "Terceros",
-              "4": "Cuartos",    "5": "Quintos",  "6": "Sextos",
-              "7": "Septimos",   "8": "Octavos",
-              "I": "Primeros Medios",  "II": "Segundos Medios",
-              "III": "Terceros Medios", "IV": "Cuartos Medios"
-            }
+            "mapping_id": 36
           },
           {
             "kind": "normalize_name",
@@ -135,7 +153,10 @@
             "kind": "agg",
             "name": "Logro Promedio",
             "value_field": "Logro",
-            "entity_field": ["Curso", "Nombre_Norm"],
+            "entity_field": [
+              "Curso",
+              "Nombre_Norm"
+            ],
             "agg": "mean",
             "min_points": 1
           }
@@ -150,27 +171,16 @@
         "output_key": "preguntas_derived",
         "derived_fields": [
           {
-            "kind": "row_threshold",
+            "kind": "lookup_range",
             "name": "Nivel Logro",
             "value_field": "Logro",
-            "thresholds": [
-              {"max": 0.4,  "label": "Inicial"},
-              {"max": 0.6,  "label": "Intermedio"},
-              {"max": null, "label": "Avanzado"}
-            ]
+            "mapping_id": 35
           },
           {
             "kind": "lookup_dict",
             "name": "Nivel",
             "value_field": "Curso",
-            "extract": {"split": " ", "index": 0},
-            "mapping": {
-              "1": "Primeros",   "2": "Segundos", "3": "Terceros",
-              "4": "Cuartos",    "5": "Quintos",  "6": "Sextos",
-              "7": "Septimos",   "8": "Octavos",
-              "I": "Primeros Medios",  "II": "Segundos Medios",
-              "III": "Terceros Medios", "IV": "Cuartos Medios"
-            }
+            "mapping_id": 36
           }
         ]
       }

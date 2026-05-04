@@ -133,46 +133,16 @@
             "replace_decimal_comma": true
           },
           {
-            "kind": "row_threshold",
+            "kind": "lookup_range",
             "name": "Nivel Logro",
             "value_field": "Logro",
-            "thresholds": [
-              {
-                "max": 0.4,
-                "label": "Inicial"
-              },
-              {
-                "max": 0.6,
-                "label": "Intermedio"
-              },
-              {
-                "max": null,
-                "label": "Avanzado"
-              }
-            ]
+            "mapping_id": 35
           },
           {
             "kind": "lookup_dict",
             "name": "Nivel",
             "value_field": "Curso",
-            "extract": {
-              "split": " ",
-              "index": 0
-            },
-            "mapping": {
-              "1": "Primeros",
-              "2": "Segundos",
-              "3": "Terceros",
-              "4": "Cuartos",
-              "5": "Quintos",
-              "6": "Sextos",
-              "7": "Septimos",
-              "8": "Octavos",
-              "I": "Primeros Medios",
-              "II": "Segundos Medios",
-              "III": "Terceros Medios",
-              "IV": "Cuartos Medios"
-            }
+            "mapping_id": 36
           },
           {
             "kind": "normalize_name",
@@ -201,46 +171,16 @@
         "output_key": "preguntas_derived",
         "derived_fields": [
           {
-            "kind": "row_threshold",
+            "kind": "lookup_range",
             "name": "Nivel Logro",
             "value_field": "Logro",
-            "thresholds": [
-              {
-                "max": 0.4,
-                "label": "Inicial"
-              },
-              {
-                "max": 0.6,
-                "label": "Intermedio"
-              },
-              {
-                "max": null,
-                "label": "Avanzado"
-              }
-            ]
+            "mapping_id": 35
           },
           {
             "kind": "lookup_dict",
             "name": "Nivel",
             "value_field": "Curso",
-            "extract": {
-              "split": " ",
-              "index": 0
-            },
-            "mapping": {
-              "1": "Primeros",
-              "2": "Segundos",
-              "3": "Terceros",
-              "4": "Cuartos",
-              "5": "Quintos",
-              "6": "Sextos",
-              "7": "Septimos",
-              "8": "Octavos",
-              "I": "Primeros Medios",
-              "II": "Segundos Medios",
-              "III": "Terceros Medios",
-              "IV": "Cuartos Medios"
-            }
+            "mapping_id": 36
           }
         ]
       }
