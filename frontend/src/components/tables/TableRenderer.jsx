@@ -51,7 +51,12 @@ export default function TableRenderer({
   const [error, setError] = useState(null);
 
   // ── Fetch ───────────────────────────────────────────────────────────
-  const fetchData = useCallback(async () => {
+  // Usa AbortController para cancelar requests en vuelo cuando el componente
+  // se desmonta o cambian las dependencias. Sin esto, en sesiones largas con
+  // navegación rápida entre indicadores, los .then(setState) terminan
+  // ejecutándose sobre componentes desmontados — generando warnings y
+  // pequeños leaks de memoria que se acumulan.
+  const fetchData = useCallback(async (signal) => {
     if (!tableId && !draftConfig) return;
     setLoading(true);
     setError(null);
@@ -67,6 +72,7 @@ export default function TableRenderer({
         res = await fetch(`${API_BASE_URL}/tables/preview`, {
           method: 'POST',
           headers,
+          signal,
           body: JSON.stringify({
             config: draftConfig,
             limit: pageSize,
@@ -84,7 +90,7 @@ export default function TableRenderer({
         if (extraFilters && Object.keys(extraFilters).length) {
           params.set('extra_filters', JSON.stringify(extraFilters));
         }
-        res = await fetch(`${API_BASE_URL}/tables/${tableId}/data?${params}`, { headers });
+        res = await fetch(`${API_BASE_URL}/tables/${tableId}/data?${params}`, { headers, signal });
       }
       if (!res.ok) {
         const msg = await res.text();
@@ -95,13 +101,18 @@ export default function TableRenderer({
       setRows(data.rows || []);
       setTotalRows(data.total_rows || 0);
     } catch (e) {
+      if (e.name === 'AbortError') return;  // unmount o cambio de deps — silencioso
       setError(e.message || String(e));
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) setLoading(false);
     }
   }, [tableId, draftConfig, page, pageSize, extraFilters]);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchData(ctrl.signal);
+    return () => ctrl.abort();
+  }, [fetchData]);
 
   // Reset page cuando cambian filters externos
   useEffect(() => { setPage(0); }, [extraFilters, tableId]);

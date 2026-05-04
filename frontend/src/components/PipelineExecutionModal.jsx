@@ -194,14 +194,20 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
             let finalState = false;
 
             if (effectiveMode === 'fast') {
-                // Modo rápido
+                // Modo rápido — el intervalo simula avance visual mientras el
+                // backend ejecuta el pipeline. Lo envolvemos en try/finally para
+                // que `clearInterval` se ejecute aún si fetchAuth lanza, evitando
+                // que el timer quede colgado hasta el unmount del componente.
                 const progressInterval = setInterval(() => {
                     setCurrentStepIndex(prev => (prev < steps.length - 1 ? prev + 1 : prev));
                 }, 400);
 
-                const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
-                result = await response.json();
-                clearInterval(progressInterval);
+                try {
+                    const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
+                    result = await response.json();
+                } finally {
+                    clearInterval(progressInterval);
+                }
 
                 // Si el pipeline se detuvo porque necesita input del usuario
                 if (result.status === 'waiting_input') {

@@ -1265,14 +1265,17 @@ function PickConfiguredTableModal({ isOpen, onClose, onConfirm }) {
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
+        const ctrl = new AbortController();
         const token = localStorage.getItem("rg_token");
         fetch(`${API_BASE_URL}/tables/`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: ctrl.signal,
         })
             .then((r) => r.json())
             .then((d) => setTables(Array.isArray(d) ? d : []))
-            .catch(() => setTables([]))
-            .finally(() => setLoading(false));
+            .catch((e) => { if (e.name !== 'AbortError') setTables([]); })
+            .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+        return () => ctrl.abort();
     }, [isOpen]);
 
     if (!isOpen) return null;
@@ -1338,14 +1341,17 @@ function PickConfiguredChartModal({ isOpen, onClose, onConfirm }) {
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
+        const ctrl = new AbortController();
         const token = localStorage.getItem("rg_token");
         fetch(`${API_BASE_URL}/charts/`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: ctrl.signal,
         })
             .then((r) => r.json())
             .then((d) => setCharts(Array.isArray(d) ? d : []))
-            .catch(() => setCharts([]))
-            .finally(() => setLoading(false));
+            .catch((e) => { if (e.name !== 'AbortError') setCharts([]); })
+            .finally(() => { if (!ctrl.signal.aborted) setLoading(false); });
+        return () => ctrl.abort();
     }, [isOpen]);
 
     if (!isOpen) return null;
