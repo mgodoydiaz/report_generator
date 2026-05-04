@@ -83,8 +83,24 @@ class RunExcelETL(Step):
     Ejemplo:
         RunExcelETL(input_key="estudiantes", output_key="df_estudiantes_raw")
     """
-    def __init__(self, input_key: Optional[str] = None, output_key: Optional[str] = None):
-        """Configura claves de entrada/salida y el nombre del step."""
+    def __init__(
+        self,
+        input_key: Optional[str] = None,
+        output_key: Optional[str] = None,
+        header_row=None,
+        select_columns=None,
+        rename_columns=None,
+        enrich_data=None,
+        metadata_cells=None,
+    ):
+        """Configura claves de entrada/salida y los parámetros ETL inline.
+
+        Los parámetros ETL (`header_row`, `select_columns`, `rename_columns`,
+        `enrich_data`, `metadata_cells`) pueden venir tanto desde un Spec via
+        `LoadConfigFromSpec` (en `ctx.params["_config"][input_key]`) como
+        directamente en la config del step en el pipeline (kwargs aquí).
+        Los kwargs tienen precedencia sobre el Spec/ctx.params si se entregan.
+        """
         resolved_output_key = output_key
         if input_key and not resolved_output_key:
             resolved_output_key = f"df_consolidado_{input_key}"
@@ -95,6 +111,17 @@ class RunExcelETL(Step):
         )
         self.input_key = input_key
         self.output_key = resolved_output_key
+        # Config inline: solo guardamos los que el usuario entregó (no None)
+        # para que `run()` pueda fallback al Spec/ctx.params cuando falten.
+        self._inline_config = {
+            k: v for k, v in {
+                "header_row": header_row,
+                "select_columns": select_columns,
+                "rename_columns": rename_columns,
+                "enrich_data": enrich_data,
+                "metadata_cells": metadata_cells,
+            }.items() if v is not None
+        }
 
     def run(self, ctx):
         """Lee Excels, aplica select/rename y consolida en un DataFrame."""
@@ -128,10 +155,13 @@ class RunExcelETL(Step):
             return
 
         # Buscar config aislada por input_key (cargada con config_key en LoadConfigFromSpec)
-        # Si no existe, caer al ctx.params global como fallback
+        # Si no existe, caer al ctx.params global como fallback.
+        # Precedencia: inline kwargs (constructor) > spec/ctx.params._config > ctx.params global.
         _artifact_config = ctx.params.get("_config", {}).get(input_key, {})
 
         def _resolve(key, default):
+            if key in self._inline_config:
+                return self._inline_config[key]
             return _artifact_config.get(key, ctx.params.get(key, default))
 
         # Obtenemos la config de headers (puede venir del json cargado en LoadConfig)
@@ -219,34 +249,82 @@ class EnrichWithUserInput(Step):
     identifica los archivos a procesar, y pausa la ejecución para solicitar
     valores específicos por archivo al usuario.
 
-    Debe colocarse ANTES de RunExcelETL en el pipeline.
+    Debe colocarse ANTES de RunExcelETL / RunDIAPDFExtraction en el pipeline.
+
+    Parámetros:
+        input_key: clave única en ctx.inputs cuyos archivos se procesan.
+        input_keys: lista de claves en ctx.inputs. Junta todos sus archivos
+            en una sola pausa (útil cuando el mismo Hito/Asignatura aplica
+            a estudiantes y preguntas a la vez).
+        apply_to_all: si True (y no se da input_key/input_keys), aplica a
+            todos los archivos disponibles en ctx.inputs.
+        enrich_data: lista de campos {key, val, user_input}. Si se entrega
+            inline, tiene precedencia sobre el Spec/ctx.params. Marca los
+            campos con `user_input=True` para los que pide al usuario.
 
     Flujo:
-        1. Lee enrich_data de ctx.params y filtra campos con user_input=True.
-        2. Descubre los archivos subidos en ctx.inputs.
-        3. Verifica si ctx.user_inputs ya tiene los valores necesarios.
-        4. Si faltan valores -> lanza WaitingForInputException (pausa el pipeline).
-        5. Si todos los valores están -> pasa sin hacer nada (RunExcelETL los aplicará).
+        1. Resuelve la lista de archivos según input_key/input_keys/apply_to_all.
+        2. Detecta campos enrich_data con user_input=True.
+        3. Si faltan valores -> WaitingForInputException (pausa el pipeline).
+        4. Si todos los valores están -> los guarda en ctx.user_inputs.enrich_per_file
+           para que RunExcelETL/RunDIAPDFExtraction los inyecten en el DataFrame.
     """
-    def __init__(self, input_key: Optional[str] = None):
+    def __init__(
+        self,
+        input_key: Optional[str] = None,
+        input_keys: Optional[List[str]] = None,
+        apply_to_all: bool = False,
+        enrich_data: Optional[List[Dict]] = None,
+    ):
         super().__init__(
             name="EnrichWithUserInput",
             description="Solicita datos de enriquecimiento por archivo al usuario"
         )
         self.input_key = input_key
+        self.input_keys = input_keys
+        self.apply_to_all = apply_to_all
+        self._inline_enrich_data = enrich_data
+
+    def _resolve_input_keys(self, ctx) -> List[str]:
+        """Devuelve la lista de input_keys a procesar según los modos disponibles."""
+        if self.input_keys:
+            return list(self.input_keys)
+        if self.input_key:
+            return [self.input_key]
+        if self.apply_to_all:
+            return list(getattr(ctx, "inputs", {}).keys())
+        # Fallback: si solo hay 1 input_key cargado, usalo
+        if hasattr(ctx, "inputs") and len(ctx.inputs) == 1:
+            return [next(iter(ctx.inputs.keys()))]
+        return []
 
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
 
-        # 1. Obtener campos que requieren input del usuario
-        # Buscar primero en config aislada por input_key, luego caer al global
-        _artifact_config = ctx.params.get("_config", {}).get(self.input_key, {})
-        enrich_data = _artifact_config.get("enrich_data", ctx.params.get("enrich_data", []))
+        # 1. Resolver lista de input_keys
+        keys = self._resolve_input_keys(ctx)
+        if not keys:
+            raise ValueError(
+                f"[{self.name}] No se pudo resolver input_key/input_keys. "
+                f"Pasá `input_key`, `input_keys=[...]` o `apply_to_all=True`."
+            )
+
+        # 2. Resolver enrich_data: inline > spec del primer input_key > ctx.params global
+        if self._inline_enrich_data is not None:
+            enrich_data = self._inline_enrich_data
+        else:
+            cfgs = ctx.params.get("_config", {})
+            enrich_data = None
+            for k in keys:
+                if k in cfgs and "enrich_data" in cfgs[k]:
+                    enrich_data = cfgs[k]["enrich_data"]
+                    break
+            if enrich_data is None:
+                enrich_data = ctx.params.get("enrich_data", [])
 
         if isinstance(enrich_data, list):
             user_input_fields = [p for p in enrich_data if isinstance(p, dict) and p.get("user_input")]
         else:
-            # Fallback seguro
             user_input_fields = []
 
         if not user_input_fields:
@@ -255,17 +333,10 @@ class EnrichWithUserInput(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        # 2. Descubrir archivos a procesar
-        input_key = self.input_key
-        if not input_key:
-            input_key = ctx.params.get("input_key") or ctx.params.get("default_input_key")
-            if not input_key and hasattr(ctx, "inputs") and len(ctx.inputs) == 1:
-                input_key = next(iter(ctx.inputs.keys()))
-
-        if not input_key or input_key not in getattr(ctx, "inputs", {}):
-            raise ValueError(f"[{self.name}] No se encontró input_key '{input_key}' en ctx.inputs.")
-
-        archivos = ctx.inputs.get(input_key, [])
+        # 3. Juntar archivos de todos los input_keys
+        archivos: List[str] = []
+        for k in keys:
+            archivos.extend(getattr(ctx, "inputs", {}).get(k, []))
         file_names = [os.path.basename(f) for f in archivos]
 
         if not file_names:
