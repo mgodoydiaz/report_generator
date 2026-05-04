@@ -786,6 +786,13 @@ class ApplyDerivedFields(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
+        # 3b. Resolver mapping_id en kinds lookup_range / lookup_dict.
+        # Si un config tiene `mapping_id`, levantamos el Spec asociado y
+        # mergeamos su contenido (ranges/mapping/extract/...) en el config
+        # antes de pasar al engine. Permite reusar mapeos guardados desde
+        # /functions sin duplicar la tabla en el JSON del pipeline.
+        configs = self._resolve_mapping_refs(ctx, configs)
+
         # 4. Aplicar engine
         try:
             df_out = apply_derived_fields(df, configs)
@@ -800,3 +807,36 @@ class ApplyDerivedFields(Step):
         ctx.last_artifact_key = output_key
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
+
+    # ---------------------------------------------------------------
+    # Helper: resolver mapping_id → config inline para los kinds lookup_*
+    # ---------------------------------------------------------------
+    def _resolve_mapping_refs(self, ctx, configs):
+        """Si un config tiene `mapping_id`, lo reemplaza con los campos
+        del MappingConfig guardado (ranges, mapping, extract, default,
+        match, case_insensitive). Los campos inline del config tienen
+        precedencia (permite override).
+
+        Requiere ctx.db y ctx.org_id. Si no están, devuelve configs
+        sin tocar (modo standalone para tests).
+        """
+        db = getattr(ctx, "db", None)
+        org_id = getattr(ctx, "org_id", None)
+        out = []
+        for c in configs:
+            mid = c.get("mapping_id") if isinstance(c, dict) else None
+            if not mid or db is None or org_id is None:
+                out.append(c)
+                continue
+            try:
+                from backend.routers.mappings import resolve_mapping_to_lookup_config
+                resolved = resolve_mapping_to_lookup_config(db, org_id, int(mid))
+            except Exception as e:
+                self._log(f"[{self.name}] Warning: no se pudo resolver mapping_id={mid}: {e}")
+                out.append(c)
+                continue
+            # Merge: el resolved trae las claves del mapeo, c sobrescribe
+            # cualquier override inline (típicamente kind, name, value_field).
+            merged = {**resolved, **{k: v for k, v in c.items() if k != "mapping_id"}}
+            out.append(merged)
+        return out
