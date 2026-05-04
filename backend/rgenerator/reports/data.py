@@ -186,13 +186,22 @@ def _records_for_metric(
 
         records.append(rec)
 
-    # 4) Filtros (después de armar records — operan sobre los nombres humanos)
+    # 4) Filtros (después de armar records — operan sobre los nombres humanos).
+    # Soporta multi-valor desde B9: cuando fv es list/tuple, hace IN.
+    def _matches(actual, expected):
+        if isinstance(expected, (list, tuple, set)):
+            allowed = {str(v) for v in expected}
+            if not allowed:
+                return True
+            return str(actual) in allowed
+        return str(actual) == str(expected)
+
     if filtros:
         # Convertir filtros a sus _field_name equivalentes
         filtros_field = {_to_field_name(k): v for k, v in filtros.items()}
         records = [
             r for r in records
-            if all(str(r.get(fk, "")) == str(fv) for fk, fv in filtros_field.items())
+            if all(_matches(r.get(fk, ""), fv) for fk, fv in filtros_field.items())
         ]
 
     return records

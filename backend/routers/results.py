@@ -137,14 +137,24 @@ async def get_indicator_data(
             if dk in dims_map:
                 dims_map[dk]["values"] = sorted(list(vals))
 
-        # 7. Apply dimension filters
+        # 7. Apply dimension filters (single-value o multi-valor con list)
+        # B9: si fv es list/tuple, hace IN; si es str, igualdad. Permite
+        # filtros multi-select desde el frontend ({Curso: ["II A", "II B"]}).
+        def _matches(actual, expected):
+            if isinstance(expected, (list, tuple, set)):
+                allowed = {str(v) for v in expected}
+                if not allowed:
+                    return True  # filtro vacío = sin restricción
+                return str(actual) in allowed
+            return str(actual) == str(expected)
+
         if dim_filters:
             for mid in data_by_metric:
                 filtered = []
                 for item in data_by_metric[mid]:
                     dims = item.get("dimensions_json", {})
                     match = all(
-                        str(dims.get(fk, "")) == str(fv)
+                        _matches(dims.get(fk, ""), fv)
                         for fk, fv in dim_filters.items()
                     )
                     if match:

@@ -162,10 +162,19 @@ def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
 
     df = pd.DataFrame(flat)
 
-    # Filtros por igualdad
+    # Filtros: igualdad simple (str) o IN (list de valores).
+    # Soporta multi-valor desde B9: cuando val es list/tuple, hace
+    # df[col].isin([...]) para retener cualquier coincidencia.
     if filters:
         for col, val in filters.items():
-            if col in df.columns:
+            if col not in df.columns:
+                continue
+            if isinstance(val, (list, tuple, set)):
+                allowed = {str(v) for v in val}
+                if not allowed:
+                    continue
+                df = df[df[col].astype(str).isin(allowed)]
+            else:
                 df = df[df[col].astype(str) == str(val)]
 
     return df
