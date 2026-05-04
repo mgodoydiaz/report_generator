@@ -8,9 +8,29 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.auth import get_current_user
-from backend.models import User, Indicator, IndicatorMetric
+from backend.models import User, Indicator, IndicatorMetric, Metric
 
 router = APIRouter(prefix="/api/indicators", tags=["indicators"])
+
+
+def _validate_metric_ids(db: Session, metric_ids: List[int], org_id: int) -> None:
+    """Verifica que todos los metric_ids existen y pertenecen a la org del usuario.
+
+    Sin esta validación, un editor podría enlazar su indicador a métricas de otra
+    organización (FKs cross-org) y verlas vía /api/results y /api/reports.
+    """
+    if not metric_ids:
+        return
+    unique_ids = set(metric_ids)
+    valid = db.query(Metric.id_metric).filter(
+        Metric.id_metric.in_(unique_ids),
+        Metric.org_id == org_id,
+    ).count()
+    if valid != len(unique_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Una o más métricas no existen o no pertenecen a tu organización.",
+        )
 
 
 # --- Models ---
@@ -148,6 +168,8 @@ async def create_indicator(
             updated_at=datetime.utcnow(),
             org_id=user.org_id,
         )
+        _validate_metric_ids(db, indicator.metric_ids, user.org_id)
+
         db.add(new_ind)
         db.flush()  # get id_indicator
 
@@ -205,6 +227,7 @@ async def update_indicator(
         record.updated_at = datetime.utcnow()
 
         if indicator.metric_ids is not None:
+            _validate_metric_ids(db, indicator.metric_ids, user.org_id)
             # Delete previous relations
             db.query(IndicatorMetric).filter(
                 IndicatorMetric.id_indicator == indicator_id

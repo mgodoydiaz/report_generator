@@ -298,10 +298,11 @@ def _render_chart_data(
 
 
 @router.get("/types")
-async def list_chart_types():
+async def list_chart_types(user: User = Depends(get_current_user)):
     """Devuelve la metadata de los tipos de gráfico disponibles. El
     frontend la usa para popular el selector y mostrar la lista de
-    fields requeridos por tipo."""
+    fields requeridos por tipo. Requiere autenticación (todos los
+    endpoints autenticados, aunque no use org_id)."""
     return CHART_TYPE_META
 
 
