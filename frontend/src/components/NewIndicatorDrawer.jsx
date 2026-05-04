@@ -5,6 +5,33 @@ import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import { getLevelPalette } from '../tooling/plotly-charts/constants';
 
+// Orden cronológico de meses en español. Soporta valores como "OCTUBRE 2"
+// (segunda aplicación del mes) ordenando por mes primero y por sufijo después.
+// Pensado para "Buscar en valores cargados" cuando la columna temporal son meses
+// — el endpoint backend devuelve los valores sorted() alfabéticamente, lo que
+// confunde el orden cronológico en evaluaciones SIMCE/DIA. Si los valores no
+// parecen meses, el sort cae al alfabético original.
+const SPANISH_MONTHS = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO',
+                       'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'SETIEMBRE',
+                       'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+
+function smartSortTemporalValues(values) {
+    if (!Array.isArray(values) || !values.length) return values;
+    const monthIdx = (v) => {
+        const upper = String(v || '').trim().toUpperCase();
+        return SPANISH_MONTHS.findIndex(m => upper.startsWith(m));
+    };
+    const allMonths = values.every(v => monthIdx(v) >= 0);
+    if (!allMonths) return values;
+    return [...values].sort((a, b) => {
+        const ai = monthIdx(a);
+        const bi = monthIdx(b);
+        if (ai !== bi) return ai - bi;
+        // Mismo mes — ordenar por sufijo numérico (ej "OCTUBRE 2" después de "OCTUBRE")
+        return String(a).localeCompare(String(b));
+    });
+}
+
 // Color por defecto para un nivel dado (hex).
 // 1) si el nombre está en la paleta central (PDL/SIMCE), usa ese color
 // 2) si no, genera un hex degradado rojo→verde según posición
@@ -268,9 +295,14 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
             const data = await res.json();
             
             if (data.values && data.values.length > 0) {
+                // Mezcla con valores ya ingresados manualmente, preservándolos.
                 const currentOrder = new Set(level.order || []);
                 data.values.forEach(v => currentOrder.add(v));
-                handleUpdateTemporalLevel(index, 'order', Array.from(currentOrder));
+                // Aplica orden cronológico si los valores son meses
+                // (ABRIL, JUNIO, AGOSTO, ...). El backend los entrega sorted()
+                // alfabéticamente, lo que rompe el orden temporal correcto.
+                const sorted = smartSortTemporalValues(Array.from(currentOrder));
+                handleUpdateTemporalLevel(index, 'order', sorted);
                 toast.success(`Se recuperaron ${data.values.length} valores distintos`);
             } else {
                 toast.error("No hay datos cargados para esta columna");

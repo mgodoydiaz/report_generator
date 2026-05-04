@@ -93,7 +93,7 @@ DIR_COLORS = {
 CURSOS_ORDER = ["1° BÁSICO", "2° BÁSICO", "3° BÁSICO", "4° BÁSICO", "5° BÁSICO", "6° BÁSICO"]
 SUBPRUEBAS_ORDER = ["CT", "FLO", "FNL", "FSF", "ILP", "VSD"]
 SUBPRUEBAS_LABEL = {
-    "CT":  "Conciencia de texto",
+    "CT":  "Comprensión de texto",
     "FLO": "Fluidez lectora",
     "FNL": "Segmentación fonémica",
     "FSF": "Fluidez síl./fon.",
