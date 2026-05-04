@@ -152,6 +152,7 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
 function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, indicator, onItemDragStart, onItemDragEnd, onItemDrop }) {
     const [showAddModal, setShowAddModal] = useState(false);
     const [showAddTableModal, setShowAddTableModal] = useState(false);
+    const [showAddChartModal, setShowAddChartModal] = useState(false);
     const [dragOverIdx, setDragOverIdx] = useState(null);        // hover sobre item → insertar antes
     const [dragOverRow, setDragOverRow] = useState(false);       // hover sobre el container de la fila → append
 
@@ -321,6 +322,16 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                     Tabla
                 </button>
 
+                {/* Insertar gráfico configurado (B8) */}
+                <button
+                    onClick={() => setShowAddChartModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-violet-300 dark:border-violet-700 text-xs text-violet-500 hover:border-violet-500 hover:text-violet-600 transition-all"
+                    title="Insertar un gráfico configurado desde /charts"
+                >
+                    <Plus size={12} />
+                    Gráfico
+                </button>
+
                 <AddComponentModal
                     isOpen={showAddModal}
                     onClose={() => setShowAddModal(false)}
@@ -339,6 +350,20 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                         };
                         onUpdate({ ...row, items: [...row.items, newItem] });
                         setShowAddTableModal(false);
+                    }}
+                />
+
+                <PickConfiguredChartModal
+                    isOpen={showAddChartModal}
+                    onClose={() => setShowAddChartModal(false)}
+                    onConfirm={(ch) => {
+                        const newItem = {
+                            type: 'configured_chart',
+                            spec_id: ch.id_spec,
+                            title: ch.name,
+                        };
+                        onUpdate({ ...row, items: [...row.items, newItem] });
+                        setShowAddChartModal(false);
                     }}
                 />
             </div>
@@ -1240,7 +1265,7 @@ function PickConfiguredTableModal({ isOpen, onClose, onConfirm }) {
     useEffect(() => {
         if (!isOpen) return;
         setLoading(true);
-        const token = localStorage.getItem("access_token");
+        const token = localStorage.getItem("rg_token");
         fetch(`${API_BASE_URL}/tables/`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
         })
@@ -1291,6 +1316,77 @@ function PickConfiguredTableModal({ isOpen, onClose, onConfirm }) {
                             </div>
                             <div className="text-[11px] text-slate-500 mt-0.5">
                                 Métrica {t.metric_id ?? "—"} · {t.n_columns} cols · id {t.id_spec}
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// PickConfiguredChartModal — selector de gráfico configurado (B8)
+// ─────────────────────────────────────────────────────────────────────────
+
+function PickConfiguredChartModal({ isOpen, onClose, onConfirm }) {
+    const [charts, setCharts] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [filter, setFilter] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setLoading(true);
+        const token = localStorage.getItem("rg_token");
+        fetch(`${API_BASE_URL}/charts/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+            .then((r) => r.json())
+            .then((d) => setCharts(Array.isArray(d) ? d : []))
+            .catch(() => setCharts([]))
+            .finally(() => setLoading(false));
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+    const filtered = filter.trim()
+        ? charts.filter((c) => (c.name || "").toLowerCase().includes(filter.toLowerCase()))
+        : charts;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+                    <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">Insertar gráfico configurado</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+                    <input
+                        autoFocus type="text" value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        placeholder="Buscar gráfico por nombre..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                    {loading && <div className="p-4 text-sm text-slate-400 text-center">Cargando…</div>}
+                    {!loading && filtered.length === 0 && (
+                        <div className="p-4 text-sm text-slate-400 text-center">
+                            No hay gráficos. Crea uno desde <a href="/charts" className="text-indigo-500 hover:underline">/charts</a>.
+                        </div>
+                    )}
+                    {filtered.map((c) => (
+                        <button
+                            key={c.id_spec}
+                            onClick={() => onConfirm(c)}
+                            className="w-full text-left px-3 py-2 rounded hover:bg-violet-50 dark:hover:bg-violet-900/20 border-b border-slate-100 dark:border-slate-800"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{c.name}</span>
+                                {c.is_draft && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">draft</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                {c.chart_type ? `${c.chart_type} · ` : ""}Métrica {c.metric_id ?? "—"} · id {c.id_spec}
                             </div>
                         </button>
                     ))}

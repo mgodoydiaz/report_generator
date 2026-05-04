@@ -40,6 +40,7 @@ import {
 import { microcopyFor } from './plotly-charts/microcopy';
 import { EmptyState, emptyReason } from './plotly-charts/emptyState';
 import { TableRenderer } from '../components/tables';
+import { ChartRenderer } from '../components/charts';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
 // No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
@@ -919,6 +920,28 @@ export function ItemRenderer({ item, ctx, tabContext }) {
                         {s}
                     </button>
                 ))}
+            </div>
+        );
+    }
+
+    // Gráfico configurado (Spec type=Gráficos) — render directo con ChartRenderer.
+    // Item shape: {type: 'configured_chart', spec_id: 9, title?, height?}
+    if (item.type === 'configured_chart' && item.spec_id) {
+        const extra = {};
+        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
+        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        return (
+            <div>
+                {item.title && (
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+                        {item.title}
+                    </h3>
+                )}
+                <ChartRenderer
+                    chartId={item.spec_id}
+                    extraFilters={Object.keys(extra).length ? extra : null}
+                    height={item.height || 360}
+                />
             </div>
         );
     }
