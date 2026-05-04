@@ -11,6 +11,7 @@ y mapeo línea-a-línea.
 """
 from __future__ import annotations
 
+import os
 import re
 from typing import List, Optional
 
@@ -339,40 +340,49 @@ class RunDIAPDFExtraction(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        resultados = pd.DataFrame()
+        # Datos cargados por el usuario vía EnrichWithUserInput (Hito,
+        # Asignatura, etc.) — se inyectan por archivo después del rename
+        # de columnas (antes rompía el `df.columns = [...]` con length mismatch).
+        user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
+
+        # Nombres alineados con las dimensiones registradas en la métrica
+        # DIA por Pregunta (id=7).
+        BASE_COLS = [
+            "N Pregunta", "Eje Temático", "Habilidad",
+            "Indicador", "% respuestas", "Logro",
+            "Establecimiento", "Curso",
+        ]
+
+        rendered_dfs: List[pd.DataFrame] = []
         for pdf in pdfs:
             try:
                 df_pdf = self._process_pdf(pdf)
-                resultados = pd.concat([resultados, df_pdf], ignore_index=True)
+                # 1. Renombrar columnas posicionales (las 8 estándar)
+                df_pdf.columns = BASE_COLS
+                # 2. Limpiar saltos de línea / capitalizar
+                for col in ("Eje Temático", "Habilidad", "Indicador", "% respuestas"):
+                    df_pdf[col] = (
+                        df_pdf[col]
+                        .astype(str)
+                        .str.replace("-\n", "", regex=False)
+                        .str.replace("\n", "", regex=False)
+                        .str.strip()
+                    )
+                df_pdf["Eje Temático"] = (
+                    df_pdf["Eje Temático"]
+                    .str.title()
+                    .str.replace(" Y ", " y ", regex=False)
+                )
+                # 3. Inyectar user_inputs específicos de este PDF (Hito, Asignatura)
+                fname = os.path.basename(pdf)
+                for col, val in user_inputs_store.get(fname, {}).items():
+                    df_pdf[col] = val
+                rendered_dfs.append(df_pdf)
             except Exception as e:
                 self._log(f"[{self.name}] Error procesando {pdf}: {e}")
                 raise
 
-        if not resultados.empty:
-            # Nombres alineados con las dimensiones registradas en la
-            # métrica DIA por Pregunta (id=7): N Pregunta, Eje Temático,
-            # Habilidad, Indicador, Establecimiento, Curso. Logro queda
-            # como field numérico. % respuestas se conserva como
-            # auxiliar (no es dimensión ni field, pasa silencioso por
-            # SaveToMetric).
-            resultados.columns = [
-                "N Pregunta", "Eje Temático", "Habilidad",
-                "Indicador", "% respuestas", "Logro",
-                "Establecimiento", "Curso",
-            ]
-            for col in ("Eje Temático", "Habilidad", "Indicador", "% respuestas"):
-                resultados[col] = (
-                    resultados[col]
-                    .str.replace("-\n", "", regex=False)
-                    .str.replace("\n", "", regex=False)
-                    .str.strip()
-                )
-            # Normalizar capitalización del Eje Temático
-            resultados["Eje Temático"] = (
-                resultados["Eje Temático"]
-                .str.title()
-                .str.replace(" Y ", " y ", regex=False)
-            )
+        resultados = pd.concat(rendered_dfs, ignore_index=True) if rendered_dfs else pd.DataFrame()
 
         ctx.artifacts[output_key] = resultados
         ctx.last_artifact_key = output_key
