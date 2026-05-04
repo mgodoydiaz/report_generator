@@ -57,6 +57,7 @@ class RequestUserFiles(Step):
                     raise WaitingForInputException(self.name, {"input_key": spec.get("id"), "spec": spec})
             return
 
+        consumed_subdirs = []
         for spec in self.file_specs:
             input_key = spec.get("id")
             source_dir = uploads_root / input_key
@@ -77,15 +78,19 @@ class RequestUserFiles(Step):
                 if discovered_files:
                     ctx.inputs[input_key] = discovered_files
                     self._log(f"Registrados {len(discovered_files)} archivos para '{input_key}'")
+                    consumed_subdirs.append(source_dir)
             else:
                 if not spec.get("optional", False):
                     self._log(f"Solicitando input usuario para '{input_key}'")
                     raise WaitingForInputException(self.name, {"input_key": input_key, "spec": spec})
 
-        # Limpiar uploads temporales después de copiar exitosamente
-        if uploads_root.exists():
-            shutil.rmtree(uploads_root)
-            self._log(f"Limpiado directorio de uploads temporales: {uploads_root}")
+        # Limpiar SOLO los subdirectorios que este step consumió (no toda
+        # uploads_root, así otros RequestUserFiles posteriores pueden leer
+        # sus propios subdirectorios si fueron pre-cargados).
+        for sd in consumed_subdirs:
+            if sd.exists():
+                shutil.rmtree(sd)
+                self._log(f"Limpiado subdir consumido: {sd}")
 
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)
