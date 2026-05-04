@@ -11,10 +11,11 @@
 import { useState } from 'react';
 import { Map as MapIcon, Wrench, Wand2 } from 'lucide-react';
 import MappingsManager from '../components/functions/MappingsManager';
+import BulkOpsManager from '../components/functions/BulkOpsManager';
 
 const SECTIONS = [
   { id: 'mappings', label: 'Mapeos', icon: MapIcon, description: 'Tablas valor → categoría reusables (rangos o discreto)' },
-  { id: 'bulk', label: 'Operaciones masivas', icon: Wand2, description: 'Buscar/reemplazar y recalcular columnas (próx.)' },
+  { id: 'bulk', label: 'Operaciones masivas', icon: Wand2, description: 'Buscar/reemplazar y recalcular columnas con mapeos' },
   { id: 'derived', label: 'Funciones derivadas', icon: Wrench, description: 'Wrappers de agg/slope/delta (próx.)' },
 ];
 
@@ -35,7 +36,7 @@ export default function Functions() {
         {SECTIONS.map((s) => {
           const Icon = s.icon;
           const active = section === s.id;
-          const disabled = s.id !== 'mappings';
+          const disabled = s.id === 'derived';
           return (
             <button
               key={s.id}
@@ -59,7 +60,8 @@ export default function Functions() {
 
       {/* Contenido */}
       {section === 'mappings' && <MappingsManager />}
-      {section !== 'mappings' && (
+      {section === 'bulk' && <BulkOpsManager />}
+      {section === 'derived' && (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-12 text-center text-slate-400">
           Sección en desarrollo
         </div>

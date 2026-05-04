@@ -36,6 +36,10 @@ Kinds soportados:
   opcional por regex/split antes de buscar. Resuelve el caso DIA
   curso → nivel ("1° básico A" → "Primeros") sin necesidad de cargar
   un spec separado.
+- `piecewise_linear`: función segmentada lineal `y = a*x + b` por tramos.
+  Caso CV: Nota = 0.0167*Puntaje + 1 si Puntaje<60, else 0.075*Puntaje
+  - 0.5. Útil cuando hay rectas distintas para distintos rangos del
+  valor de entrada.
 
 Soporta `value_type: ordinal`: si los valores son cualitativos
 (ej: Insuficiente, Elemental, Adecuado), se mapean a 1..N usando
@@ -716,6 +720,97 @@ def apply_lookup_dict(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Kind: piecewise_linear (función segmentada y = a*x + b por tramos)
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def apply_piecewise_linear(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Aplica una función lineal segmentada al value_field y guarda el
+    resultado en `name`.
+
+    Cada tramo define {min, max, slope, intercept}; para `value` en el
+    tramo se calcula `slope*value + intercept`. Equivalente a la
+    fórmula CV "Puntaje → Nota":
+        Nota = 0.0167*Puntaje + 1   si  Puntaje < 60
+             = 0.075*Puntaje - 0.5  si  Puntaje >= 60
+
+    Config esperado:
+        name: columna nueva.
+        value_field: columna numérica fuente.
+        segments: lista ordenada de {min, max, slope, intercept}. Cada
+            límite es opcional (None = abierto). El primer match se
+            aplica.
+        match: 'left_inclusive' (default, min<=v<max) | 'right_inclusive' |
+               'both_inclusive'.
+        round_to: opcional, redondea el resultado a n decimales.
+        clamp_min / clamp_max: opcional, recorta el resultado al rango.
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    segments = config.get("segments") or []
+    match = config.get("match", "left_inclusive")
+    round_to = config.get("round_to")
+    clamp_min = config.get("clamp_min")
+    clamp_max = config.get("clamp_max")
+
+    if value_field not in df.columns:
+        raise KeyError(
+            f"piecewise_linear '{name}': value_field '{value_field}' no existe"
+        )
+    if not segments:
+        raise ValueError(f"piecewise_linear '{name}': segments no puede estar vacío")
+
+    df = df.copy()
+    series_num = pd.to_numeric(df[value_field], errors="coerce")
+
+    def _in_segment(v: float, seg: dict) -> bool:
+        mn, mx = seg.get("min"), seg.get("max")
+        if mn is not None:
+            try:
+                mn_f = float(mn)
+            except (TypeError, ValueError):
+                return False
+            if match == "right_inclusive":
+                if not (v > mn_f):
+                    return False
+            else:
+                if not (v >= mn_f):
+                    return False
+        if mx is not None:
+            try:
+                mx_f = float(mx)
+            except (TypeError, ValueError):
+                return False
+            if match == "left_inclusive":
+                if not (v < mx_f):
+                    return False
+            else:
+                if not (v <= mx_f):
+                    return False
+        return True
+
+    def _calc(v):
+        if pd.isna(v):
+            return None
+        for seg in segments:
+            if _in_segment(v, seg):
+                slope = float(seg.get("slope", 0))
+                intercept = float(seg.get("intercept", 0))
+                y = slope * v + intercept
+                if clamp_min is not None:
+                    y = max(y, float(clamp_min))
+                if clamp_max is not None:
+                    y = min(y, float(clamp_max))
+                if round_to is not None:
+                    y = round(y, int(round_to))
+                return y
+        return None
+
+    df[name] = series_num.map(_calc)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Registry + orquestador
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -775,6 +870,13 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "Lookup por clave exacta en un dict. Soporta extracción previa (split por separador o regex). Pensado para mappings cortos hardcoded en el pipeline (curso → nivel, código → categoría).",
         "required_args": ["name", "value_field", "mapping"],
         "optional_args": ["extract", "case_insensitive", "default"],
+    },
+    "piecewise_linear": {
+        "fn": apply_piecewise_linear,
+        "display_name": "Función lineal segmentada",
+        "description": "y = slope*x + intercept por tramos. Caso CV: Puntaje → Nota con dos rectas según rango. Soporta clamp y redondeo.",
+        "required_args": ["name", "value_field", "segments"],
+        "optional_args": ["match", "round_to", "clamp_min", "clamp_max"],
     },
 }
 
