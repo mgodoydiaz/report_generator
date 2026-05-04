@@ -151,6 +151,7 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
 
 function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, isFirst, isLast, indicator, onItemDragStart, onItemDragEnd, onItemDrop }) {
     const [showAddModal, setShowAddModal] = useState(false);
+    const [showAddTableModal, setShowAddTableModal] = useState(false);
     const [dragOverIdx, setDragOverIdx] = useState(null);        // hover sobre item → insertar antes
     const [dragOverRow, setDragOverRow] = useState(false);       // hover sobre el container de la fila → append
 
@@ -310,11 +311,35 @@ function RowEditor({ row, rowIndex, onUpdate, onDelete, onMoveUp, onMoveDown, is
                     Agregar
                 </button>
 
+                {/* Insertar tabla configurada (B7) */}
+                <button
+                    onClick={() => setShowAddTableModal(true)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-emerald-300 dark:border-emerald-700 text-xs text-emerald-500 hover:border-emerald-500 hover:text-emerald-600 transition-all"
+                    title="Insertar una tabla configurada desde /tables"
+                >
+                    <Plus size={12} />
+                    Tabla
+                </button>
+
                 <AddComponentModal
                     isOpen={showAddModal}
                     onClose={() => setShowAddModal(false)}
                     onConfirm={(compMeta, axisSelections) => commitAddItem(compMeta, axisSelections)}
                     indicator={indicator}
+                />
+
+                <PickConfiguredTableModal
+                    isOpen={showAddTableModal}
+                    onClose={() => setShowAddTableModal(false)}
+                    onConfirm={(tbl) => {
+                        const newItem = {
+                            type: 'configured_table',
+                            spec_id: tbl.id_spec,
+                            title: tbl.name,
+                        };
+                        onUpdate({ ...row, items: [...row.items, newItem] });
+                        setShowAddTableModal(false);
+                    }}
                 />
             </div>
         </div>
@@ -1196,6 +1221,79 @@ export default function LayoutEditorModal({ isOpen, onClose, indicator, onSave }
                             {saving ? 'Guardando...' : 'Guardar Layout'}
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// PickConfiguredTableModal — selector de tabla configurada (B7)
+// ─────────────────────────────────────────────────────────────────────────
+
+function PickConfiguredTableModal({ isOpen, onClose, onConfirm }) {
+    const [tables, setTables] = useState([]);
+    const [loading, setLoading] = useState(false);
+    const [filter, setFilter] = useState("");
+
+    useEffect(() => {
+        if (!isOpen) return;
+        setLoading(true);
+        const token = localStorage.getItem("access_token");
+        fetch(`${API_BASE_URL}/tables/`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+            .then((r) => r.json())
+            .then((d) => setTables(Array.isArray(d) ? d : []))
+            .catch(() => setTables([]))
+            .finally(() => setLoading(false));
+    }, [isOpen]);
+
+    if (!isOpen) return null;
+    const filtered = filter.trim()
+        ? tables.filter((t) => (t.name || "").toLowerCase().includes(filter.toLowerCase()))
+        : tables;
+
+    return (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={onClose}>
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800">
+                    <h3 className="text-base font-bold text-slate-700 dark:text-slate-200">Insertar tabla configurada</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-slate-600"><X size={18} /></button>
+                </div>
+                <div className="p-3 border-b border-slate-100 dark:border-slate-800">
+                    <input
+                        autoFocus
+                        type="text"
+                        value={filter}
+                        onChange={(e) => setFilter(e.target.value)}
+                        placeholder="Buscar tabla por nombre..."
+                        className="w-full px-3 py-2 text-sm border border-slate-200 dark:border-slate-700 dark:bg-slate-800 rounded"
+                    />
+                </div>
+                <div className="flex-1 overflow-y-auto p-2">
+                    {loading && <div className="p-4 text-sm text-slate-400 text-center">Cargando…</div>}
+                    {!loading && filtered.length === 0 && (
+                        <div className="p-4 text-sm text-slate-400 text-center">
+                            No hay tablas configuradas. Crea una desde <a href="/tables" className="text-indigo-500 hover:underline">/tables</a>.
+                        </div>
+                    )}
+                    {filtered.map((t) => (
+                        <button
+                            key={t.id_spec}
+                            onClick={() => onConfirm(t)}
+                            className="w-full text-left px-3 py-2 rounded hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border-b border-slate-100 dark:border-slate-800"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{t.name}</span>
+                                {t.is_draft && <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">draft</span>}
+                            </div>
+                            <div className="text-[11px] text-slate-500 mt-0.5">
+                                Métrica {t.metric_id ?? "—"} · {t.n_columns} cols · id {t.id_spec}
+                            </div>
+                        </button>
+                    ))}
                 </div>
             </div>
         </div>

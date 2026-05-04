@@ -39,6 +39,7 @@ import {
 } from './plotly-charts';
 import { microcopyFor } from './plotly-charts/microcopy';
 import { EmptyState, emptyReason } from './plotly-charts/emptyState';
+import { TableRenderer } from '../components/tables';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
 // No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
@@ -918,6 +919,31 @@ export function ItemRenderer({ item, ctx, tabContext }) {
                         {s}
                     </button>
                 ))}
+            </div>
+        );
+    }
+
+    // Tabla configurada (Spec type=Tablas) — render directo con TableRenderer.
+    // Item shape: {type: 'configured_table', spec_id: 9, title?, pageSize?}
+    if (item.type === 'configured_table' && item.spec_id) {
+        // Inyecta filtros activos del dashboard (curso, habilidad) como
+        // extra_filters de la tabla. El backend valida si esas
+        // dimensiones existen en la métrica subyacente.
+        const extra = {};
+        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
+        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        return (
+            <div>
+                {item.title && (
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-slate-400 mb-3">
+                        {item.title}
+                    </h3>
+                )}
+                <TableRenderer
+                    tableId={item.spec_id}
+                    extraFilters={Object.keys(extra).length ? extra : null}
+                    pageSize={item.pageSize || 50}
+                />
             </div>
         );
     }

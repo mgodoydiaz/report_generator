@@ -10,6 +10,7 @@
     "test:frontend": "vitest run --root .."
   },
   "dependencies": {
+    "@tanstack/react-table": "^8.21.3",
     "lucide-react": "^0.563.0",
     "plotly.js": "^3.4.0",
     "prismjs": "^1.30.0",
