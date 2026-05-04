@@ -1,151 +1,83 @@
-# 📊 Report Generator · Fundación PHP
+# Report Generator · Fundación PHP
 
-Este repositorio contiene una aplicación web y motor ETL diseñado para la creación automatizada de informes de resultados de pruebas académicas (SIMCE, ensayos corporativos, etc.) para la Fundación People Help People.
+Aplicación web para automatizar la generación de informes académicos a
+partir de archivos brutos de evaluaciones (SIMCE, DIA, ensayos
+diagnósticos). Procesa los datos, calcula métricas y produce reportes PDF
+listos para entregar a establecimientos educacionales.
 
-## ✨ Propósito
+## Capacidades
 
-El sistema permite procesar archivos brutos de resultados (Excel, CSV), cruzarlos con información de estudiantes y preguntas, y calcular métricas y dimensiones para finalmente generar informes PDF (LaTeX) y reportes editables (Word) listos para entregar a los establecimientos educacionales de la fundación.
+- **Pipelines configurables**: motor ETL orquestado por pasos en JSON,
+  con pausas dinámicas para que el usuario suba archivos cuando el
+  pipeline lo requiere.
+- **Catálogos de gráficos, tablas y mapeos**: editores web para
+  configurar componentes reutilizables sin tocar código.
+- **Dashboards interactivos**: visualización por evaluación, curso o
+  estudiante, con filtros multi-valor por dimensión.
+- **Generación de PDFs**: motor con paridad visual respecto al formato
+  histórico de la fundación.
+- **Multi-tenant**: separación por organización con autenticación JWT y
+  roles `superadmin` / `admin` / `user`.
 
-## � Características Principales
+## Stack
 
-- **Motor de Pipelines (ETL)**: Orquestador basado en pasos (`init_steps`, `io_steps`, `etl_steps`, `metric_steps`, `report_steps`) altamente configurable a través de archivos JSON.
-- **Frontend Moderno**: Interfaz de usuario construida con **React 18 + Vite y Tailwind CSS 4**, que permite ejecutar y monitorear pipelines, cargar datos cuando el pipeline lo requiere (pausa dinámica), y revisar catálogos de dimensiones y métricas.
-- **Backend API**: Servidor construido con **FastAPI** (`backend/api.py`) que expone los endpoints para interactuar con el motor base `rgenerator`.
-- **Generación de Reportes**: Gráficos automatizados generados con `matplotlib` e informes completos usando plantillas `LaTeX` o archivos editables usando `docxtpl` (Jinja2 para Word).
+React 18 + Vite · FastAPI · PostgreSQL 16 · SQLAlchemy + Alembic ·
+WeasyPrint · Plotly + matplotlib.
 
-## ▶️ Instalación y Uso Rápido
+## Cómo correrlo (desarrollo)
 
-### Prerrequisitos
-- [Miniconda](https://docs.anaconda.com/miniconda/) o Anaconda.
-- [Node.js](https://nodejs.org/) (versión 18+ recomendada) y npm.
-
-### 1. Configurar Entorno Backend
-
-```bash
-# Crear entorno desde el archivo environment.yml
-conda env create -f environment.yml
-
-# Activar el entorno
-conda activate rgenerator
-
-# Instalar el paquete rgenerator en modo editable
-pip install -e .
-```
-
-### 2. Configurar Entorno Frontend
+Todo el entorno local corre en Docker.
 
 ```bash
-cd frontend
-npm install
+cp .env.example .env   # completar las variables requeridas
+docker compose -f docker-compose.dev.yml up --build
 ```
 
-### 3. Configurar PostgreSQL
+Levanta tres servicios:
 
-La base de datos es PostgreSQL. Ver instrucciones de instalación más abajo según tu sistema operativo.
+| Servicio  | Puerto | Descripción                  |
+|-----------|--------|------------------------------|
+| frontend  | 5173   | Vite dev server con HMR      |
+| backend   | 8000   | FastAPI con hot-reload       |
+| db        | 5432   | PostgreSQL 16                |
 
-Una vez instalado y creada la base de datos, configura las variables de entorno:
+Para parar todo: `docker compose -f docker-compose.dev.yml down`.
 
-```bash
-cp .env.example .env
-# Editar .env con tus credenciales de PostgreSQL y un JWT_SECRET
-```
+Atajo en Windows: `run_software.bat`.
 
-Luego ejecuta la migración inicial (crea tablas y migra datos desde los Excel):
+## Variables de entorno
 
-```bash
-conda activate rgenerator
-python scripts/migrate_excel_to_pg.py
-```
+Las claves obligatorias están comentadas en `.env.example`. Como
+referencia rápida:
 
-Esto crea el usuario admin por defecto: `admin@fundacionphp.cl` / `admin1234`
+- `DATABASE_URL` — cadena de conexión PostgreSQL.
+- `JWT_SECRET` — secreto para firmar tokens JWT.
+- `VITE_API_URL` — URL del backend que el frontend debe consultar.
 
-### 4. Ejecutar la Aplicación
+Los archivos `.env*` están en `.gitignore` y no se versionan.
 
-**Windows (recomendado):**
-```cmd
-run_software.bat
-```
+## Estructura del repositorio
 
-Inicia automáticamente PostgreSQL (servicio Windows), el backend en `http://127.0.0.1:8000` y el frontend en `http://localhost:5173`.
+| Carpeta             | Contenido                                   |
+|---------------------|---------------------------------------------|
+| `backend/`          | API FastAPI + paquete `rgenerator`          |
+| `frontend/`         | UI React                                    |
+| `data/`             | inputs, outputs y artifacts de ejecuciones  |
+| `docs/`             | documentación técnica y guías de usuario    |
+| `scripts/`          | utilidades de mantención                    |
+| `.agents/workflows/`| recetarios para asistentes de IA            |
 
-**Manual:**
-```bash
-# Backend
-conda activate rgenerator
-python -m backend.api
+## Deployment
 
-# Frontend (otra terminal)
-cd frontend
-npm run dev
-```
+La guía operativa para staging y producción (URLs, runbook de
+restauración, rotación de credenciales, configuración de backups
+programados) está en [`DEPLOYMENT.md`](./DEPLOYMENT.md).
+
+## Roadmap y deuda técnica
+
+Los pendientes activos, las decisiones de arquitectura y el historial de
+versiones se mantienen en [`ROADMAP.md`](./ROADMAP.md).
 
 ---
 
-## 🐘 Instalación de PostgreSQL
-
-### Windows
-
-Descargar el instalador desde [postgresql.org/download/windows](https://www.postgresql.org/download/windows/) y seguir el asistente. Al finalizar, abrir pgAdmin o `psql` y ejecutar:
-
-```sql
-CREATE USER mgodoy WITH PASSWORD 'tu_password';
-CREATE DATABASE rgenerator_dev OWNER mgodoy;
-GRANT ALL PRIVILEGES ON DATABASE rgenerator_dev TO mgodoy;
-```
-
-### Ubuntu / Debian (Linux o WSL)
-
-```bash
-sudo apt update
-sudo apt install -y postgresql postgresql-contrib
-
-# Iniciar el servicio
-sudo service postgresql start
-
-# Crear usuario y base de datos
-sudo -u postgres psql <<EOF
-CREATE USER mgodoy WITH PASSWORD 'tu_password';
-CREATE DATABASE rgenerator_dev OWNER mgodoy;
-GRANT ALL PRIVILEGES ON DATABASE rgenerator_dev TO mgodoy;
-EOF
-```
-
-Verificar que la conexión funciona:
-
-```bash
-psql -h localhost -U mgodoy -d rgenerator_dev -c "\dt"
-```
-
-**Para WSL:** PostgreSQL corre en Linux pero es accesible desde Windows en `localhost:5432`. El backend de Windows se conecta normalmente.
-
-## 📂 Estructura del Proyecto
-
-- `backend/` : Código central. Contiene el servidor FastAPI (`api.py`), la configuración y el paquete `rgenerator` (el motor ETL y generador de reportes).
-- `frontend/` : Interfaz de usuario React interactiva para gestionar y correr pipelines.
-- `data/` : Directorio principal de datos y bases de datos locales:
-  - `database/`: Bases de datos Excel (`metrics.xlsx`, `dimensions.xlsx`, etc.) y configuraciones de pipelines en JSON.
-  - `input/`: Archivos base.
-  - `output/`: Reportes generados.
-  - `pipeline_runs/` y `tmp/`: Artefactos transaccionales generados en ejecuciones.
-- `docs/` : Documentación técnica adicional, diagramas y tutoriales.
-- `config/` : Archivos de texto o configuraciones heredadas (legacy/migrando).
-- `scripts/` : Scripts de terminal para ejecutar procesos ETL aislados o tareas de mantención.
-- `.agents/workflows/` : Recetario e instrucciones para que Agentes de IA asistan en el desarrollo y administración del sistema.
-
-## ☁️ Deployment (producción)
-
-Producción corre en:
-
-- **Backend FastAPI**: Railway Hobby, región `us-east4` (Virginia) — `https://rgenerator-backend-production.up.railway.app`
-- **PostgreSQL**: Supabase Free, región `sa-east-1` (São Paulo)
-
-Para el runbook completo (cómo redeployear, restaurar un backup, rotar credenciales, configurar el Task Scheduler de Windows para los `pg_dump` semanales, troubleshooting de latencia, etc.), ver **[DEPLOYMENT.md](./DEPLOYMENT.md)**.
-
-## 🎯 Futuro y Roadmap
-
-El proyecto se encuentra en constante evolución hacia una arquitectura SaaS más robusta. 
-Puedes consultar el archivo **[`ROADMAP.md`](./ROADMAP.md)** para ver la deuda técnica, el backlog de tareas pendientes y el historial de versiones del sistema.
-
----
-
-👨‍💻 Desarrollado por Miguel Godoy Díaz
+Desarrollado por Miguel Godoy Díaz — Fundación People Help People.

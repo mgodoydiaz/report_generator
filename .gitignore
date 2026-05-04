@@ -83,3 +83,16 @@ data/evaluaciones_bulk_load/
 # PDFs de referencia para QA visual de RenderHtmlReport (contienen PII de
 # estudiantes: nombres + RUTs en las secciones dinámicas)
 docs/pdf_examples/
+
+# Scripts one-shot (configuración de indicadores, fixes puntuales, cargas
+# de datos del cliente). Pueden contener referencias a credenciales o IDs
+# específicos del entorno; no son parte del producto versionado.
+scripts/_oneshot/
+
+# Datos de entrada del cliente (Panguipulli y otros establecimientos):
+# planillas Excel con PII (nombres, RUTs, notas).
+data/input/emn_panguipulli/
+
+# Imágenes temporales en raíz (debug, screenshots descartables).
+/tmp_img_*.png
+/inspect_*.png
