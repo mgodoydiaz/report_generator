@@ -59,14 +59,30 @@ ColorScale = ColorScaleLinkedIndicator | ColorScaleDiverging | ColorScaleSequent
 
 
 class TableColumn(BaseModel):
-    """Configuración de una columna de la tabla."""
-    key: str = Field(..., description="Nombre de la columna en metric_data")
+    """Configuración de una columna de la tabla.
+
+    `key` es el ID único de la columna en la tabla resultante (también
+    sirve como nombre del campo en el df cuando `source_key` está
+    omitido — caso típico de columna 1-a-1).
+
+    `source_key` es opcional y se usa cuando varias columnas de la
+    tabla derivan del mismo campo del df con distinta agregación, por
+    ejemplo en tablas de resumen estadístico (count/mean/min/max/std
+    de un mismo Logro). En ese caso `key` es un alias arbitrario
+    (`Logro_mean`, `Logro_max`) y `source_key="Logro"` apunta al campo
+    real del df.
+    """
+    key: str = Field(..., description="ID único de la columna en la tabla resultante (alias)")
     header: str = Field(..., description="Texto visible en el header")
+    source_key: Optional[str] = Field(
+        default=None,
+        description="Nombre del campo en metric_data. Si se omite, se asume igual a `key`. Útil para multi-agg sobre la misma columna.",
+    )
     format: Literal["text", "int", "float", "percent", "date"] = "text"
     decimals: int = 1
     # Aggregación cuando hay grouping. None = no agrega (toma el primer
     # valor o pasa raw si la columna es de la dimensión de agrupación).
-    agg: Optional[Literal["mean", "sum", "min", "max", "count", "nunique", "first"]] = None
+    agg: Optional[Literal["mean", "sum", "min", "max", "count", "nunique", "first", "std"]] = None
     color_scale: Optional[ColorScale] = None
     width: Optional[int] = None
     # Si True, columna fija a la izquierda (no scrollea horizontalmente).
@@ -74,6 +90,10 @@ class TableColumn(BaseModel):
     # Si True, esta columna NO aparece en la tabla pero queda disponible
     # para sorting/filtering/agg.
     hidden: bool = False
+
+    def resolved_source_key(self) -> str:
+        """Devuelve el campo real del df: source_key si está definido, key si no."""
+        return self.source_key if self.source_key else self.key
 
 
 # ─────────────────────────────────────────────────────────────────────────

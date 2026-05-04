@@ -166,3 +166,14 @@ Validación con Pydantic en `backend/schemas_table.py`.
 - Drag-drop reorder de columnas (hoy con flechas ↑↓).
 - Pivot tables dinámicos.
 - Snapshots / versionado.
+
+### Mejoras de UX detectadas en QA del editor (B7 v3, 2026-05-04)
+
+- **Auto-naming de columnas multi-agg**: hoy al hacer click duplicado en
+  el chip de un field, la columna se renombra a `Logro_mean`,
+  `Logro_max`, etc. El cycle de sufijos es funcional pero técnico. Sería
+  más natural que el `header` (no la `key`) muestre etiquetas humanas
+  como "Promedio Logro", "Máximo Logro", "Mínimo Logro" mientras la
+  `key` queda en su forma técnica para deduplicar internamente. Cambio
+  pequeño en `addColumn()` de `pages/Tables.jsx`: setear `header =
+  "{Capitalizado(agg)} {key}"` cuando es duplicado.

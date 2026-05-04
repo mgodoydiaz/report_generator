@@ -1,0 +1,322 @@
+/**
+ * ChartRenderer — renderiza un gráfico configurado (Spec type=Gráficos)
+ * directamente con Plotly. Consume /api/charts/{id}/data o
+ * POST /api/charts/preview con la config draft.
+ *
+ * Soporta 10 tipos: bar | grouped_bar | stacked_bar | box | line | pie |
+ * histogram | heatmap | radar | gauge.
+ *
+ * Estrategia: el backend devuelve un `dataset` ya preprocesado/agregado.
+ * Acá lo convertimos a `traces` de Plotly según el `chart_type`.
+ */
+import { useEffect, useMemo, useState, useCallback } from 'react';
+import Plot from 'react-plotly.js';
+import { Loader2, AlertCircle } from 'lucide-react';
+import { API_BASE_URL } from '../../constants';
+
+const CATEGORY_COLORS = [
+  '#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
+  '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
+];
+
+const SEMAFORO_COLORS = ['#22c55e', '#f59e0b', '#ef4444']; // Avanzado / Intermedio / Inicial
+
+export default function ChartRenderer({
+  chartId,
+  draftConfig = null,
+  extraFilters = null,
+  className = '',
+  height = 360,
+}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const fetchData = useCallback(async () => {
+    if (!chartId && !draftConfig) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const token = localStorage.getItem('rg_token');
+      const headers = {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      };
+      let res;
+      if (draftConfig) {
+        res = await fetch(`${API_BASE_URL}/charts/preview`, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ config: draftConfig, extra_filters: extraFilters || null }),
+        });
+      } else {
+        const params = new URLSearchParams();
+        if (extraFilters && Object.keys(extraFilters).length) {
+          params.set('extra_filters', JSON.stringify(extraFilters));
+        }
+        res = await fetch(`${API_BASE_URL}/charts/${chartId}/data?${params}`, { headers });
+      }
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(`HTTP ${res.status}: ${msg.slice(0, 200)}`);
+      }
+      setData(await res.json());
+    } catch (e) {
+      setError(e.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [chartId, draftConfig, extraFilters]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  const plotProps = useMemo(() => {
+    if (!data || data.dataset?.empty) return null;
+    return buildPlotProps(data);
+  }, [data]);
+
+  if (error) {
+    return (
+      <div className={`bg-rose-50 border border-rose-200 text-rose-700 p-3 rounded text-sm ${className}`}>
+        <strong>Error:</strong> {error}
+      </div>
+    );
+  }
+  if (loading && !data) {
+    return (
+      <div className={`flex items-center justify-center h-64 text-slate-400 ${className}`}>
+        <Loader2 size={20} className="animate-spin" />
+      </div>
+    );
+  }
+  if (!plotProps) {
+    return (
+      <div className={`flex items-center justify-center h-64 text-slate-400 text-sm bg-slate-50 border border-dashed border-slate-300 rounded ${className}`}>
+        <div className="text-center">
+          <AlertCircle size={20} className="mx-auto mb-1 opacity-50" />
+          Sin datos para mostrar
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={className}>
+      <Plot
+        data={plotProps.data}
+        layout={{
+          ...plotProps.layout,
+          autosize: true,
+          height,
+          margin: { l: 50, r: 20, t: plotProps.layout.title ? 50 : 20, b: 60 },
+          font: { family: 'system-ui, -apple-system, sans-serif', size: 12 },
+        }}
+        config={{ responsive: true, displaylogo: false, displayModeBar: false }}
+        style={{ width: '100%', height: '100%' }}
+        useResizeHandler
+      />
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// Construcción de traces Plotly por chart_type
+// ─────────────────────────────────────────────────────────────────────────
+
+function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
+  const t = aesthetics?.titulo || null;
+  const yfmt = aesthetics?.y_format || 'number';
+  const ylims = aesthetics?.y_lims;
+  const showLegend = aesthetics?.show_legend !== false;
+
+  const yaxisFmt = yfmt === 'percent'
+    ? { tickformat: '.0%', range: ylims || [0, 1] }
+    : yfmt === 'int'
+      ? { tickformat: 'd' }
+      : ylims ? { range: ylims } : {};
+
+  const layoutBase = {
+    title: t ? { text: t, font: { size: 13, weight: 600 }, x: 0.5 } : undefined,
+    xaxis: { title: aesthetics?.x_label || mapping?.x_field || '' },
+    yaxis: { title: aesthetics?.y_label || mapping?.y_field || '', ...yaxisFmt },
+    showlegend: showLegend,
+    legend: aesthetics?.legend_title
+      ? { title: { text: aesthetics.legend_title } }
+      : {},
+    hovermode: 'closest',
+  };
+
+  if (chart_type === 'bar') {
+    return {
+      data: [{
+        type: 'bar',
+        x: dataset.x,
+        y: dataset.y,
+        marker: { color: CATEGORY_COLORS[0] },
+        hovertemplate: yfmt === 'percent' ? '%{x}: %{y:.1%}<extra></extra>' : '%{x}: %{y}<extra></extra>',
+      }],
+      layout: layoutBase,
+    };
+  }
+
+  if (chart_type === 'grouped_bar') {
+    const traces = (dataset.series || []).map((s, i) => ({
+      type: 'bar',
+      name: s.name,
+      x: dataset.x,
+      y: s.y,
+      marker: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] },
+    }));
+    return { data: traces, layout: { ...layoutBase, barmode: 'group' } };
+  }
+
+  if (chart_type === 'stacked_bar') {
+    const palette = aesthetics?.color_palette === 'semaforo'
+      ? SEMAFORO_COLORS
+      : CATEGORY_COLORS;
+    const traces = (dataset.stacks || []).map((s, i) => ({
+      type: 'bar',
+      name: s.name,
+      x: dataset.x,
+      y: s.y,
+      marker: { color: palette[i % palette.length] },
+    }));
+    return { data: traces, layout: { ...layoutBase, barmode: 'stack', yaxis: { ...layoutBase.yaxis, tickformat: 'd' } } };
+  }
+
+  if (chart_type === 'box') {
+    const traces = (dataset.x || []).map((cat, i) => ({
+      type: 'box',
+      name: cat,
+      y: dataset.y_arrays[i],
+      marker: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] },
+      boxpoints: false,
+    }));
+    return { data: traces, layout: { ...layoutBase, showlegend: false } };
+  }
+
+  if (chart_type === 'line') {
+    if (dataset.series) {
+      const traces = dataset.series.map((s, i) => ({
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: s.name,
+        x: dataset.x,
+        y: s.y,
+        line: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], width: 2 },
+        marker: { size: 6 },
+      }));
+      return { data: traces, layout: layoutBase };
+    }
+    return {
+      data: [{
+        type: 'scatter',
+        mode: 'lines+markers',
+        x: dataset.x,
+        y: dataset.y,
+        line: { color: CATEGORY_COLORS[0], width: 2 },
+        marker: { size: 6 },
+      }],
+      layout: layoutBase,
+    };
+  }
+
+  if (chart_type === 'pie') {
+    return {
+      data: [{
+        type: 'pie',
+        labels: dataset.labels,
+        values: dataset.values,
+        marker: { colors: CATEGORY_COLORS },
+        hole: 0.35,
+        textinfo: 'label+percent',
+      }],
+      layout: { ...layoutBase, xaxis: undefined, yaxis: undefined },
+    };
+  }
+
+  if (chart_type === 'histogram') {
+    return {
+      data: [{
+        type: 'histogram',
+        x: dataset.values,
+        marker: { color: CATEGORY_COLORS[0] },
+        nbinsx: aesthetics?.bins || 10,
+      }],
+      layout: layoutBase,
+    };
+  }
+
+  if (chart_type === 'heatmap') {
+    return {
+      data: [{
+        type: 'heatmap',
+        x: dataset.x,
+        y: dataset.y,
+        z: dataset.z,
+        colorscale: aesthetics?.color_palette === 'viridis' ? 'Viridis' : 'YlGnBu',
+        hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
+      }],
+      layout: { ...layoutBase, yaxis: { ...layoutBase.yaxis, autorange: 'reversed' } },
+    };
+  }
+
+  if (chart_type === 'radar') {
+    const traces = (dataset.series || []).map((s, i) => ({
+      type: 'scatterpolar',
+      r: [...s.values, s.values[0]],
+      theta: [...dataset.axes, dataset.axes[0]],
+      fill: 'toself',
+      name: s.name,
+      line: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] },
+    }));
+    return {
+      data: traces,
+      layout: {
+        ...layoutBase,
+        polar: { radialaxis: { visible: true, range: ylims || [0, 1] } },
+        xaxis: undefined,
+        yaxis: undefined,
+      },
+    };
+  }
+
+  if (chart_type === 'gauge') {
+    const min = aesthetics?.min_value ?? 0;
+    const max = aesthetics?.max_value ?? 1;
+    // Para percent, escalar el value 0-1 a 0-100 y usar suffix; el gauge
+    // axis también va en 0-100.
+    const isPercent = yfmt === 'percent';
+    const scaledValue = isPercent ? dataset.value * 100 : dataset.value;
+    const axisMin = isPercent ? min * 100 : min;
+    const axisMax = isPercent ? max * 100 : max;
+    return {
+      data: [{
+        type: 'indicator',
+        mode: 'gauge+number',
+        value: scaledValue,
+        number: isPercent
+          ? { suffix: '%', valueformat: '.1f' }
+          : { valueformat: '.2f' },
+        gauge: {
+          axis: { range: [axisMin, axisMax] },
+          bar: { color: CATEGORY_COLORS[0] },
+          steps: (aesthetics?.thresholds || []).map((th, i, arr) => ({
+            range: [
+              i === 0 ? axisMin : (isPercent ? arr[i - 1].value * 100 : arr[i - 1].value),
+              isPercent ? th.value * 100 : th.value,
+            ],
+            color: th.color,
+          })),
+        },
+      }],
+      layout: {
+        title: layoutBase.title,
+        showlegend: false,
+      },
+    };
+  }
+
+  return { data: [], layout: layoutBase };
+}
