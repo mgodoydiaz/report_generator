@@ -16,6 +16,9 @@ class RunContext:
     # Sesión SQLAlchemy y contexto de organización (inyectados desde el router)
     db: Any = None          # sqlalchemy.orm.Session
     org_id: Optional[int] = None
+    # Usuario que disparó el pipeline. None si el pipeline corre sin sesión
+    # (ej. cron job). Lo usa el step SaveToMetric para auditoría.
+    user_id: Optional[int] = None
     base_dir: Path = field(default_factory=lambda: Path("."))
     params: Dict[str, Any] = field(default_factory=dict)
 

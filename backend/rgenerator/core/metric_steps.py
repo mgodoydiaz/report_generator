@@ -3,6 +3,7 @@ import pandas as pd
 import json
 from typing import Optional, Dict, Any
 from rgenerator.core.step import Step
+from backend.auditing import make_metric_data
 from backend.models import Metric, MetricDimension, MetricData, Dimension
 
 
@@ -150,12 +151,13 @@ class SaveToMetric(Step):
                             final_value = str(v)
 
             if final_value is not None:
-                new_data_points.append(MetricData(
-                    id_metric=self.metric_id,
+                new_data_points.append(make_metric_data(
+                    metric_id=self.metric_id,
                     value=final_value,
-                    dimensions_json=json.dumps(dims_json),
-                    created_at=datetime.utcnow(),
+                    dimensions=dims_json,
                     org_id=ctx.org_id,
+                    user_id=ctx.user_id,
+                    via=("pipeline" if ctx.user_id else "pipeline_cron"),
                 ))
 
         # 6. Guardar en PostgreSQL
