@@ -16,6 +16,26 @@ from backend.models import User, Metric, MetricDimension, MetricData, Dimension
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
 
+def _validate_dimension_ids(db: Session, dim_ids: List[int], org_id: int) -> None:
+    """Verifica que todas las dimension_ids existen y pertenecen a la org del usuario.
+
+    Sin esta validación, un editor podría enlazar su métrica a dimensiones de otra
+    organización (FKs cross-org).
+    """
+    if not dim_ids:
+        return
+    unique_ids = set(dim_ids)
+    valid = db.query(Dimension.id_dimension).filter(
+        Dimension.id_dimension.in_(unique_ids),
+        Dimension.org_id == org_id,
+    ).count()
+    if valid != len(unique_ids):
+        raise HTTPException(
+            status_code=400,
+            detail="Una o más dimensiones no existen o no pertenecen a tu organización.",
+        )
+
+
 # --- Models ---
 class MetricBase(BaseModel):
     name: str
@@ -107,6 +127,8 @@ async def create_metric(
             updated_at=datetime.utcnow(),
             org_id=user.org_id,
         )
+        _validate_dimension_ids(db, metric.dimension_ids, user.org_id)
+
         db.add(new_m)
         db.flush()
 
@@ -146,6 +168,7 @@ async def update_metric(
         record.updated_at = datetime.utcnow()
 
         if metric.dimension_ids is not None:
+            _validate_dimension_ids(db, metric.dimension_ids, user.org_id)
             db.query(MetricDimension).filter(
                 MetricDimension.id_metric == metric_id
             ).delete(synchronize_session=False)
