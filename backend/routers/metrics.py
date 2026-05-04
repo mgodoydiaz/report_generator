@@ -4,13 +4,14 @@ from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.auditing import client_ip, make_metric_data
 from backend.models import User, Metric, MetricDimension, MetricData, Dimension
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
@@ -211,6 +212,7 @@ async def get_metric_data(
     metric_id: int,
     page: int = 1,
     page_size: int = 50,
+    include_audit: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -234,6 +236,15 @@ async def get_metric_data(
             .all()
         )
 
+        # Si se pidió auditoría, resolver los emails de los usuarios involucrados
+        # en una sola query para evitar N+1.
+        users_map: dict[int, dict] = {}
+        if include_audit:
+            user_ids = {r.created_by_user_id for r in rows if r.created_by_user_id}
+            if user_ids:
+                for u in db.query(User).filter(User.id.in_(user_ids)).all():
+                    users_map[u.id] = {"email": u.email, "name": u.name or ""}
+
         results = []
         for r in rows:
             item = {
@@ -243,6 +254,14 @@ async def get_metric_data(
                 "dimensions_json": _parse_dims_json(r.dimensions_json),
                 "created_at": r.created_at.isoformat() if r.created_at else "",
             }
+            if include_audit:
+                u = users_map.get(r.created_by_user_id) if r.created_by_user_id else None
+                item["audit"] = {
+                    "created_by_email": u["email"] if u else None,
+                    "created_by_name":  u["name"] if u else None,
+                    "created_via":      r.created_via,
+                    "created_from_ip":  r.created_from_ip,
+                }
             results.append(item)
 
         return {"items": results, "total": total}
@@ -256,6 +275,7 @@ async def get_metric_data(
 async def add_metric_data_point(
     metric_id: int,
     point: MetricDataPoint,
+    request: Request,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -273,12 +293,14 @@ async def add_metric_data_point(
         else:
             final_val = str(final_val) if final_val is not None else None
 
-        new_dp = MetricData(
-            id_metric=metric_id,
+        new_dp = make_metric_data(
+            metric_id=metric_id,
             value=final_val,
-            dimensions_json=json.dumps(point.dimensions_json),
-            created_at=datetime.utcnow(),
+            dimensions=point.dimensions_json,
             org_id=user.org_id,
+            user_id=user.id,
+            via="manual_single",
+            ip=client_ip(request),
         )
         db.add(new_dp)
         db.commit()
@@ -423,6 +445,7 @@ async def delete_metric_data_batch(
 async def export_metric_data(
     metric_id: int,
     format: str = "excel",
+    include_audit: bool = False,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -444,6 +467,14 @@ async def export_metric_data(
 
         data_rows = db.query(MetricData).filter(MetricData.id_metric == metric_id).all()
 
+        # Si se pide auditoría, resolver emails de usuarios en una query.
+        users_map: dict[int, str] = {}
+        if include_audit:
+            uids = {r.created_by_user_id for r in data_rows if r.created_by_user_id}
+            if uids:
+                for u in db.query(User).filter(User.id.in_(uids)).all():
+                    users_map[u.id] = u.email
+
         flat_data = []
         for r in data_rows:
             item = {}
@@ -462,6 +493,12 @@ async def export_metric_data(
                     item["Valor_Raw"] = str(value)
             else:
                 item[metric.name] = value
+
+            if include_audit:
+                item["Cargado por"]   = users_map.get(r.created_by_user_id) if r.created_by_user_id else None
+                item["Vía"]           = r.created_via
+                item["Fecha de carga"] = r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else None
+                item["IP"]             = r.created_from_ip
 
             flat_data.append(item)
 
@@ -595,6 +632,7 @@ async def get_metric_template(
 @router.post("/{metric_id}/import")
 async def import_metric_data(
     metric_id: int,
+    request: Request,
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -675,12 +713,14 @@ async def import_metric_data(
                                 final_value = str(v)
 
                 if final_value is not None:
-                    new_data_points.append(MetricData(
-                        id_metric=metric_id,
+                    new_data_points.append(make_metric_data(
+                        metric_id=metric_id,
                         value=final_value,
-                        dimensions_json=json.dumps(dims_json),
-                        created_at=datetime.utcnow(),
+                        dimensions=dims_json,
                         org_id=user.org_id,
+                        user_id=user.id,
+                        via="import_csv",
+                        ip=client_ip(request),
                     ))
 
         if new_data_points:

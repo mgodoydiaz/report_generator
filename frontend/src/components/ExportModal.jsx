@@ -4,12 +4,14 @@ import { X, Download, FileSpreadsheet, FileText, FileCode } from 'lucide-react';
 export default function ExportModal({ isOpen, onClose, onExport, defaultFileName = "export" }) {
     const [format, setFormat] = useState('excel'); // excel, csv, txt
     const [fileName, setFileName] = useState(defaultFileName);
+    const [includeAudit, setIncludeAudit] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // Actualizar nombre al abrir el modal o cambiar la prop
     React.useEffect(() => {
         if (isOpen) {
             setFileName(defaultFileName);
+            setIncludeAudit(false);
         }
     }, [isOpen, defaultFileName]);
 
@@ -17,8 +19,7 @@ export default function ExportModal({ isOpen, onClose, onExport, defaultFileName
 
     const handleExport = async () => {
         setLoading(true);
-        // Simulamos un pequeño delay o esperamos a la promesa de exportación real
-        await onExport(format, fileName);
+        await onExport(format, fileName, includeAudit);
         setLoading(false);
         onClose();
     };
@@ -95,6 +96,22 @@ export default function ExportModal({ isOpen, onClose, onExport, defaultFileName
                                 </span>
                             </div>
                         </div>
+
+                        {/* 3. Auditoría */}
+                        <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 cursor-pointer hover:border-indigo-200 dark:hover:border-indigo-700 transition">
+                            <input
+                                type="checkbox"
+                                checked={includeAudit}
+                                onChange={(e) => setIncludeAudit(e.target.checked)}
+                                className="mt-0.5 w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <div className="text-sm">
+                                <div className="font-bold text-slate-700 dark:text-slate-200">Incluir auditoría</div>
+                                <div className="text-xs text-slate-400 dark:text-slate-500 leading-relaxed mt-0.5">
+                                    Agrega columnas con quién cargó cada dato, por qué proceso, fecha y IP.
+                                </div>
+                            </div>
+                        </label>
 
                     </div>
 
