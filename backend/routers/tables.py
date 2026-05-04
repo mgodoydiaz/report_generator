@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
@@ -356,47 +357,24 @@ async def duplicate_table(
 # ─────────────────────────────────────────────────────────────────────────
 
 
-@router.get("/{table_id}/data")
-async def get_table_data(
-    table_id: int,
-    limit: int = Query(50, ge=1, le=2000),
-    offset: int = Query(0, ge=0),
-    include_styles: bool = Query(True),
-    extra_filters: Optional[str] = Query(None, description="JSON dict con filtros adicionales (encoded)"),
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-):
-    """Devuelve filas + columnas formateadas. Aplica:
-        1. filters del data_source + extra_filters opcionales
-        2. derived_fields_override (TODO en próxima iteración)
-        3. grouping/sorting del behavior
-        4. format por columna
-        5. color_scale por celda (si include_styles)
-        6. paginación (limit/offset)
-    """
-    spec = _get_spec_or_404(db, table_id, user.org_id)
-    tables = _parse_tables_list(spec)
-    if not tables:
-        raise HTTPException(status_code=400, detail="Tabla sin configuración")
-    cfg_dict = tables[0]
-    try:
-        cfg = TableConfig(**cfg_dict)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Config inválida: {e}")
+def _render_table_data(
+    db: Session, org_id: int, cfg: TableConfig,
+    limit: int, offset: int, include_styles: bool,
+    extra_filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Aplica el pipeline completo (filtros → grouping → sort → format → color)
+    sobre una TableConfig y devuelve la respuesta estandar `{columns, rows, total_rows, limit, offset}`.
 
-    # 1. Cargar datos
+    Compartido por GET /{id}/data (config persistida) y POST /preview
+    (config draft sin persistir, pensado para el editor live).
+    """
     base_filters = dict(cfg.data_source.filters)
     if extra_filters:
-        try:
-            base_filters.update(json.loads(extra_filters))
-        except Exception:
-            pass
+        base_filters.update(extra_filters)
 
-    df = _load_metric_to_df(db, user.org_id, cfg.data_source.metric_id, base_filters)
+    df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, base_filters)
 
-    # 2. derived_fields_override (placeholder iter próxima)
-
-    # 3. Grouping
+    # Grouping
     if cfg.behavior.grouping:
         gb = cfg.behavior.grouping.by
         if gb in df.columns:
@@ -409,35 +387,26 @@ async def get_table_data(
             if agg_map:
                 df = df.groupby(gb, as_index=False).agg(agg_map)
 
-    # 4. Sort
+    # Sort
     for s in cfg.behavior.sorting:
         if s.column in df.columns:
             df = df.sort_values(by=s.column, ascending=(s.dir == "asc"))
 
     total_rows = len(df)
-
-    # 5. Paginación
     df_page = df.iloc[offset: offset + limit].copy()
 
-    # 6. Color scales — pre-cargar achievement_levels de indicadores referenciados
-    indicator_ids = []
-    for c in cfg.columns:
-        if c.color_scale and c.color_scale.kind == "linked_indicator":
-            indicator_ids.append(c.color_scale.indicator_id)
-    indicator_levels_cache = _load_indicator_levels(db, user.org_id, list(set(indicator_ids))) if indicator_ids else {}
+    # Color scales — pre-cargar achievement_levels de indicadores referenciados
+    indicator_ids = [
+        c.color_scale.indicator_id for c in cfg.columns
+        if c.color_scale and c.color_scale.kind == "linked_indicator"
+    ]
+    indicator_levels_cache = _load_indicator_levels(db, org_id, list(set(indicator_ids))) if indicator_ids else {}
 
-    # 7. Construir filas formateadas
-    columns_meta = []
-    for c in cfg.columns:
-        if c.hidden:
-            continue
-        columns_meta.append({
-            "key": c.key,
-            "header": c.header,
-            "format": c.format,
-            "pinned": c.pinned,
-            "width": c.width,
-        })
+    columns_meta = [
+        {"key": c.key, "header": c.header, "format": c.format,
+         "pinned": c.pinned, "width": c.width}
+        for c in cfg.columns if not c.hidden
+    ]
 
     rows_out = []
     for _, row in df_page.iterrows():
@@ -464,3 +433,55 @@ async def get_table_data(
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/{table_id}/data")
+async def get_table_data(
+    table_id: int,
+    limit: int = Query(50, ge=1, le=2000),
+    offset: int = Query(0, ge=0),
+    include_styles: bool = Query(True),
+    extra_filters: Optional[str] = Query(None, description="JSON dict con filtros adicionales (encoded)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Devuelve datos formateados de una tabla persistida."""
+    spec = _get_spec_or_404(db, table_id, user.org_id)
+    tables = _parse_tables_list(spec)
+    if not tables:
+        raise HTTPException(status_code=400, detail="Tabla sin configuración")
+    try:
+        cfg = TableConfig(**tables[0])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Config inválida: {e}")
+
+    extra: Optional[Dict[str, Any]] = None
+    if extra_filters:
+        try:
+            extra = json.loads(extra_filters)
+        except Exception:
+            extra = None
+    return _render_table_data(db, user.org_id, cfg, limit, offset, include_styles, extra)
+
+
+class TablePreviewRequest(BaseModel):
+    config: TableConfig
+    limit: int = 50
+    offset: int = 0
+    include_styles: bool = True
+    extra_filters: Optional[Dict[str, Any]] = None
+
+
+@router.post("/preview")
+async def preview_table_config(
+    payload: "TablePreviewRequest",
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Igual que /{id}/data pero recibe la config en body (no requiere
+    que la tabla esté persistida). Pensado para el editor live."""
+    return _render_table_data(
+        db, user.org_id, payload.config,
+        payload.limit, payload.offset, payload.include_styles,
+        payload.extra_filters,
+    )
