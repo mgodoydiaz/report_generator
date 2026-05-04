@@ -8,28 +8,25 @@ import rgenerator.core.pipeline_steps as ps
 import rgenerator.core.metric_steps as ms
 import os
 
-# Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python
+# Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python.
+# Steps removidos en B6b post-v0.2.0 (legacy CLI/LaTeX/DOCX): DiscoverInputs,
+# DeleteTempFiles, ExportConsolidatedExcel, GenerateGraphics, GenerateTables,
+# RenderReport (LaTeX), GenerateDocxReport.
 STEP_MAPPING: Dict[str, Type[Step]] = {
     "InitRun": ps.InitRun,
-    # "LoadConfig": ps.LoadConfig,  # DEPRECADO: usar LoadConfigFromSpec
     "LoadConfigFromSpec": ps.LoadConfigFromSpec,
-    "DiscoverInputs": ps.DiscoverInputs,
+    "RequestUserFiles": ps.RequestUserFiles,
     "RunExcelETL": ps.RunExcelETL,
     "EnrichWithUserInput": ps.EnrichWithUserInput,
     "EnrichWithContext": ps.EnrichWithContext,
     "EnrichWithLookup": ps.EnrichWithLookup,
     "ModifyColumnValues": ps.ModifyColumnValues,
     "ApplyDerivedFields": ps.ApplyDerivedFields,
-    "ExportConsolidatedExcel": ps.ExportConsolidatedExcel,
-    "DeleteTempFiles": ps.DeleteTempFiles,
-    "RequestUserFiles": ps.RequestUserFiles,
+    "RunDIAPDFExtraction": ps.RunDIAPDFExtraction,
+    "ValidateDataframe": ps.ValidateDataframe,
     "SaveToMetric": ms.SaveToMetric,
     "LoadMetricToDF": ms.LoadMetricToDF,
-    "GenerateGraphics": ps.GenerateGraphics,
-    "GenerateTables": ps.GenerateTables,
-    "RenderReport": ps.RenderReport,
     "RenderHtmlReport": ps.RenderHtmlReport,
-    "GenerateDocxReport": ps.GenerateDocxReport,
     "RenderPDFReport": ps.RenderPDFReport,
 }
 

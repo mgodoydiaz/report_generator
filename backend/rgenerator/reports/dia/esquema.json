@@ -1,17 +1,36 @@
 {
-  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje).",
+  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje). Avance y Mejora_vs_Inicio activos desde B6b: usan Nombre_Norm (clave estable entre hitos) que el pipeline DIA produce con kind normalize_name y guarda como dimensión en metric_data. Requiere ≥2 hitos cargados para que ambas devuelvan valor; con 1 solo hito quedan NaN sin romper el render.",
   "derived_fields": [
     {
-      "_comment": "Para DIA solo se calcula Logro_Promedio_Estudiante (mean por estudiante dentro del hito mostrado). Avance y Mejora_vs_Inicio NO se incluyen porque hay un bug de calidad de datos: los nombres de DIAGNOSTICO y INTERMEDIO vienen invertidos (DIAG: 'Nombre Apellido', INTER: 'Apellido Nombre'), dando 0 matches entre hitos al agrupar por (Curso, Nombre). Habilitar cuando se normalicen los nombres en el ETL.",
       "df_input": "estudiantes",
       "configs": [
         {
           "kind": "agg",
           "name": "Logro_Promedio_Estudiante",
           "value_field": "Logro",
-          "entity_field": ["Curso", "Nombre"],
+          "entity_field": ["Curso", "Nombre_Norm"],
           "agg": "mean",
           "min_points": 1
+        },
+        {
+          "kind": "slope",
+          "name": "Avance",
+          "value_field": "Logro",
+          "entity_field": ["Curso", "Nombre_Norm"],
+          "time_field": "Hito",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+          "min_points": 2
+        },
+        {
+          "kind": "delta",
+          "name": "Mejora_vs_Inicio",
+          "value_field": "Logro",
+          "entity_field": ["Curso", "Nombre_Norm"],
+          "time_field": "Hito",
+          "time_type": "ordinal",
+          "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "FINAL"],
+          "min_points": 2
         }
       ]
     }

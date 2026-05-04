@@ -18,6 +18,11 @@ from rgenerator.core.derived_fields_engine import (
     apply_agg,
     apply_delta,
     apply_derived_fields,
+    apply_lookup_dict,
+    apply_lookup_range,
+    apply_normalize_name,
+    apply_row_mean_dynamic,
+    apply_row_threshold,
     apply_slope,
 )
 
@@ -394,9 +399,414 @@ class TestEntityCompuesto:
         assert ia == pytest.approx(0.20, abs=1e-9)
 
 
+class TestRowMeanDynamic:
+    """Mean horizontal sobre columnas dinámicas (caso DIA)."""
+
+    @pytest.fixture
+    def df_dia_xls(self):
+        """Replica el shape del XLS DIA: 4 columnas de metadata + N de puntaje."""
+        return pd.DataFrame([
+            {"Numero Lista": 1, "Nombre del Estudiante": "Juan",
+             "Establecimiento": "PHP", "Curso": "1A",
+             "Pregunta 1": 100, "Pregunta 2": 80, "Pregunta 3": 60},
+            {"Numero Lista": 2, "Nombre del Estudiante": "María",
+             "Establecimiento": "PHP", "Curso": "1A",
+             "Pregunta 1": 50, "Pregunta 2": 50, "Pregunta 3": 50},
+        ])
+
+    def test_exclude_columns_basico(self, df_dia_xls):
+        out = apply_row_mean_dynamic(df_dia_xls, {
+            "name": "Logro",
+            "exclude_columns": ["Numero Lista", "Nombre del Estudiante",
+                                "Establecimiento", "Curso"],
+            "scale": 0.01,
+        })
+        # Juan: (100 + 80 + 60) / 3 = 80, * 0.01 = 0.80
+        # María: 50, * 0.01 = 0.50
+        assert out.loc[0, "Logro"] == pytest.approx(0.80)
+        assert out.loc[1, "Logro"] == pytest.approx(0.50)
+
+    def test_include_columns_explicito(self, df_dia_xls):
+        out = apply_row_mean_dynamic(df_dia_xls, {
+            "name": "Promedio_2_Preguntas",
+            "include_columns": ["Pregunta 1", "Pregunta 2"],
+        })
+        assert out.loc[0, "Promedio_2_Preguntas"] == pytest.approx(90.0)
+        assert out.loc[1, "Promedio_2_Preguntas"] == pytest.approx(50.0)
+
+    def test_replace_decimal_comma(self):
+        df = pd.DataFrame([
+            {"Curso": "1A", "P1": "75,5", "P2": "80,0"},
+            {"Curso": "1A", "P1": "60,2", "P2": "70,8"},
+        ])
+        out = apply_row_mean_dynamic(df, {
+            "name": "Logro",
+            "exclude_columns": ["Curso"],
+            "scale": 0.01,
+            "replace_decimal_comma": True,
+        })
+        # (75.5 + 80.0)/2 = 77.75, * 0.01 = 0.7775
+        assert out.loc[0, "Logro"] == pytest.approx(0.7775)
+        assert out.loc[1, "Logro"] == pytest.approx(0.6550)
+
+    def test_min_columns_filtra(self):
+        df = pd.DataFrame([
+            {"Curso": "1A", "P1": 80, "P2": 70, "P3": 60},
+            {"Curso": "1A", "P1": 90, "P2": np.nan, "P3": np.nan},
+        ])
+        out = apply_row_mean_dynamic(df, {
+            "name": "Promedio",
+            "exclude_columns": ["Curso"],
+            "min_columns": 2,
+        })
+        assert out.loc[0, "Promedio"] == pytest.approx(70.0)
+        assert pd.isna(out.loc[1, "Promedio"])
+
+    def test_include_y_exclude_juntos_lanza(self, df_dia_xls):
+        with pytest.raises(ValueError, match="ambos"):
+            apply_row_mean_dynamic(df_dia_xls, {
+                "name": "X",
+                "include_columns": ["Pregunta 1"],
+                "exclude_columns": ["Curso"],
+            })
+
+    def test_include_columns_inexistentes_lanza(self, df_dia_xls):
+        with pytest.raises(KeyError, match="inexistentes"):
+            apply_row_mean_dynamic(df_dia_xls, {
+                "name": "X",
+                "include_columns": ["NoExiste"],
+            })
+
+    def test_no_muta_original(self, df_dia_xls):
+        cols_originales = list(df_dia_xls.columns)
+        apply_row_mean_dynamic(df_dia_xls, {
+            "name": "Logro",
+            "exclude_columns": ["Curso"],
+        })
+        assert list(df_dia_xls.columns) == cols_originales
+
+
+class TestRowThreshold:
+    """Etiqueta por umbral (caso DIA: Nivel de Logro)."""
+
+    def test_basico_dia_niveles(self):
+        df = pd.DataFrame({"Logro": [0.20, 0.40, 0.50, 0.60, 0.80]})
+        out = apply_row_threshold(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "thresholds": [
+                {"max": 0.4, "label": "Inicial"},
+                {"max": 0.6, "label": "Intermedio"},
+                {"max": None, "label": "Avanzado"},
+            ],
+        })
+        assert out["Nivel"].tolist() == [
+            "Inicial", "Inicial", "Intermedio", "Intermedio", "Avanzado",
+        ]
+
+    def test_default_para_nan(self):
+        df = pd.DataFrame({"Logro": [0.5, np.nan, 0.9]})
+        out = apply_row_threshold(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "default": "Sin Datos",
+            "thresholds": [
+                {"max": 0.6, "label": "Bajo"},
+                {"max": None, "label": "Alto"},
+            ],
+        })
+        assert out.loc[0, "Nivel"] == "Bajo"
+        assert out.loc[1, "Nivel"] == "Sin Datos"
+        assert out.loc[2, "Nivel"] == "Alto"
+
+    def test_sin_catchall_valores_sobre_ultimo_max_son_nan_o_default(self):
+        df = pd.DataFrame({"Logro": [0.5, 0.99]})
+        out = apply_row_threshold(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "default": "Fuera",
+            "thresholds": [
+                {"max": 0.6, "label": "Bajo"},
+                {"max": 0.8, "label": "Medio"},
+            ],
+        })
+        assert out.loc[0, "Nivel"] == "Bajo"
+        assert out.loc[1, "Nivel"] == "Fuera"
+
+    def test_thresholds_vacios_lanza(self):
+        df = pd.DataFrame({"Logro": [0.5]})
+        with pytest.raises(ValueError, match="thresholds"):
+            apply_row_threshold(df, {
+                "name": "X", "value_field": "Logro", "thresholds": [],
+            })
+
+    def test_value_field_inexistente_lanza(self):
+        df = pd.DataFrame({"Otra": [0.5]})
+        with pytest.raises(KeyError, match="value_field"):
+            apply_row_threshold(df, {
+                "name": "X", "value_field": "Logro",
+                "thresholds": [{"max": None, "label": "X"}],
+            })
+
+    def test_string_numerico_se_castea(self):
+        df = pd.DataFrame({"Logro": ["0.30", "0.70"]})
+        out = apply_row_threshold(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "thresholds": [
+                {"max": 0.5, "label": "Bajo"},
+                {"max": None, "label": "Alto"},
+            ],
+        })
+        assert out["Nivel"].tolist() == ["Bajo", "Alto"]
+
+
+class TestNormalizeName:
+    """Resolver bug DIA de nombres invertidos entre hitos."""
+
+    def test_orden_de_palabras_no_importa(self):
+        df = pd.DataFrame([
+            {"Hito": "DIAGNOSTICO", "Nombre": "MARIANO JAZIEL ALARCÓN FLORES"},
+            {"Hito": "INTERMEDIO", "Nombre": "ALARCÓN FLORES MARIANO JAZIEL"},
+        ])
+        out = apply_normalize_name(df, {
+            "name": "Nombre_Norm",
+            "value_field": "Nombre",
+        })
+        # Ambos deben colapsar a la misma clave (orden alfabético, sin tildes)
+        assert out.loc[0, "Nombre_Norm"] == out.loc[1, "Nombre_Norm"]
+        assert out.loc[0, "Nombre_Norm"] == "ALARCON FLORES JAZIEL MARIANO"
+
+    def test_strip_accents_default_true(self):
+        df = pd.DataFrame({"Nombre": ["José Pérez Núñez"]})
+        out = apply_normalize_name(df, {"name": "N", "value_field": "Nombre"})
+        # Sin tildes, ordenado alfabéticamente, en mayúsculas
+        assert out.loc[0, "N"] == "JOSE NUNEZ PEREZ"
+
+    def test_case_lower(self):
+        df = pd.DataFrame({"Nombre": ["Juan PÉREZ"]})
+        out = apply_normalize_name(df, {
+            "name": "N", "value_field": "Nombre", "case": "lower",
+        })
+        assert out.loc[0, "N"] == "juan perez"
+
+    def test_case_preserve(self):
+        df = pd.DataFrame({"Nombre": ["Pérez Juan"]})
+        out = apply_normalize_name(df, {
+            "name": "N", "value_field": "Nombre",
+            "case": "preserve", "strip_accents": False,
+        })
+        # Orden alfabético case-insensitive pero preserva mayúsculas originales
+        assert out.loc[0, "N"] == "Juan Pérez"
+
+    def test_nan_y_vacios(self):
+        df = pd.DataFrame({"Nombre": [None, "", "  ", "Juan Pérez"]})
+        out = apply_normalize_name(df, {"name": "N", "value_field": "Nombre"})
+        # pandas convierte None a NaN en columnas mixtas; lo importante es
+        # que no rompa y que los valores válidos sí se normalicen.
+        assert pd.isna(out.loc[0, "N"])
+        assert out.loc[1, "N"] == ""
+        assert out.loc[2, "N"] == ""
+        assert out.loc[3, "N"] == "JUAN PEREZ"
+
+    def test_value_field_inexistente_lanza(self):
+        df = pd.DataFrame({"Otra": ["x"]})
+        with pytest.raises(KeyError, match="value_field"):
+            apply_normalize_name(df, {"name": "N", "value_field": "Nombre"})
+
+    def test_uso_realista_join_entre_hitos(self):
+        """Caso de uso real: normalize_name + agg con entity_field compuesto
+        permite calcular delta entre hitos cuando los nombres venían
+        invertidos."""
+        df = pd.DataFrame([
+            {"Curso": "I A", "Hito": "DIAG", "Nombre": "MARIANO ALARCON",  "Logro": 0.40},
+            {"Curso": "I A", "Hito": "INTER", "Nombre": "ALARCON MARIANO", "Logro": 0.60},
+        ])
+        configs = [
+            {"kind": "normalize_name", "name": "Nombre_Norm",
+             "value_field": "Nombre"},
+            {"kind": "delta", "name": "Mejora",
+             "value_field": "Logro",
+             "entity_field": ["Curso", "Nombre_Norm"],
+             "time_field": "Hito",
+             "time_type": "ordinal",
+             "time_ordinal_levels": ["DIAG", "INTER"]},
+        ]
+        out = apply_derived_fields(df, configs)
+        # Ambas filas deben tener Mejora = 0.20 (= 0.60 - 0.40), porque al
+        # normalizar caen en la misma entidad. Sin normalize_name esto da NaN.
+        assert out["Mejora"].iloc[0] == pytest.approx(0.20)
+        assert out["Mejora"].iloc[1] == pytest.approx(0.20)
+
+
+class TestLookupRange:
+    """BUSCARV con tramos (rango verdadero Excel)."""
+
+    def test_basico_3_tramos(self):
+        df = pd.DataFrame({"Logro": [0.30, 0.50, 0.85]})
+        out = apply_lookup_range(df, {
+            "name": "Nivel",
+            "value_field": "Logro",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "Insuficiente"},
+                {"min": 0.4, "max": 0.7, "label": "Adecuado"},
+                {"min": 0.7, "max": 1.0, "label": "Avanzado"},
+            ],
+        })
+        assert out["Nivel"].tolist() == ["Insuficiente", "Adecuado", "Avanzado"]
+
+    def test_tramos_abiertos_min_y_max(self):
+        df = pd.DataFrame({"x": [-100, 0.5, 1000]})
+        out = apply_lookup_range(df, {
+            "name": "label",
+            "value_field": "x",
+            "ranges": [
+                {"min": None, "max": 0,    "label": "neg"},
+                {"min": 0,    "max": 1,    "label": "med"},
+                {"min": 1,    "max": None, "label": "pos"},
+            ],
+        })
+        assert out["label"].tolist() == ["neg", "med", "pos"]
+
+    def test_match_left_inclusive_default(self):
+        # min <= v < max
+        df = pd.DataFrame({"x": [0.4, 0.7]})  # bordes
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "A"},
+                {"min": 0.4, "max": 0.7, "label": "B"},
+                {"min": 0.7, "max": 1.0, "label": "C"},
+            ],
+        })
+        # 0.4 cae en B (left_inclusive), 0.7 cae en C
+        assert out["L"].tolist() == ["B", "C"]
+
+    def test_match_both_inclusive(self):
+        df = pd.DataFrame({"x": [0.4, 0.7]})
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "match": "both_inclusive",
+            "ranges": [
+                {"min": 0.0, "max": 0.4, "label": "A"},
+                {"min": 0.4, "max": 0.7, "label": "B"},
+            ],
+        })
+        # 0.4 cae en el primer rango que matchea (A), 0.7 cae en B
+        assert out["L"].tolist() == ["A", "B"]
+
+    def test_default_para_fuera_de_rango_y_nan(self):
+        df = pd.DataFrame({"x": [0.5, np.nan, 99.0]})
+        out = apply_lookup_range(df, {
+            "name": "L",
+            "value_field": "x",
+            "default": "fuera",
+            "ranges": [
+                {"min": 0, "max": 1, "label": "in"},
+            ],
+        })
+        assert out["L"].tolist() == ["in", "fuera", "fuera"]
+
+    def test_ranges_vacios_lanza(self):
+        df = pd.DataFrame({"x": [1]})
+        with pytest.raises(ValueError, match="ranges"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x", "ranges": [],
+            })
+
+    def test_match_invalido_lanza(self):
+        df = pd.DataFrame({"x": [1]})
+        with pytest.raises(ValueError, match="match"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x", "match": "weird",
+                "ranges": [{"min": 0, "max": 2, "label": "a"}],
+            })
+
+    def test_value_field_inexistente_lanza(self):
+        df = pd.DataFrame({"otra": [1]})
+        with pytest.raises(KeyError, match="value_field"):
+            apply_lookup_range(df, {
+                "name": "L", "value_field": "x",
+                "ranges": [{"min": 0, "max": 1, "label": "a"}],
+            })
+
+
+class TestLookupDict:
+    """Mapping discreto valor → label, opcionalmente con extract previo."""
+
+    def test_basico_sin_extract(self):
+        df = pd.DataFrame({"Codigo": ["A", "B", "C", "Z"]})
+        out = apply_lookup_dict(df, {
+            "name": "Etiqueta",
+            "value_field": "Codigo",
+            "mapping": {"A": "Alfa", "B": "Beta", "C": "Gamma"},
+            "default": "Otro",
+        })
+        assert out["Etiqueta"].tolist() == ["Alfa", "Beta", "Gamma", "Otro"]
+
+    def test_extract_split_basico_dia_curso_nivel(self):
+        """Caso real DIA: 'curso = 1 A' → split por ' ' idx 0 → '1' → 'Primeros'."""
+        df = pd.DataFrame({"Curso": ["1 A", "2 B", "I A", "III C"]})
+        out = apply_lookup_dict(df, {
+            "name": "Nivel",
+            "value_field": "Curso",
+            "mapping": {
+                "1": "Primeros", "2": "Segundos",
+                "I": "Primeros Medios", "III": "Terceros Medios",
+            },
+            "extract": {"split": " ", "index": 0},
+        })
+        assert out["Nivel"].tolist() == [
+            "Primeros", "Segundos", "Primeros Medios", "Terceros Medios",
+        ]
+
+    def test_extract_regex(self):
+        df = pd.DataFrame({"x": ["1° básico A", "II° medio B"]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"1": "Primeros", "II": "Segundos Medios"},
+            "extract": {"regex": r"^[IVX]+|^\d+"},
+        })
+        assert out["L"].tolist() == ["Primeros", "Segundos Medios"]
+
+    def test_case_insensitive(self):
+        df = pd.DataFrame({"x": ["Abc", "DEF"]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"abc": "uno", "def": "dos"},
+            "case_insensitive": True,
+        })
+        assert out["L"].tolist() == ["uno", "dos"]
+
+    def test_default_para_no_match_y_nan(self):
+        df = pd.DataFrame({"x": ["A", "Z", None]})
+        out = apply_lookup_dict(df, {
+            "name": "L",
+            "value_field": "x",
+            "mapping": {"A": "uno"},
+            "default": "x",
+        })
+        assert out["L"].tolist() == ["uno", "x", "x"]
+
+    def test_mapping_vacio_lanza(self):
+        df = pd.DataFrame({"x": ["A"]})
+        with pytest.raises(ValueError, match="mapping"):
+            apply_lookup_dict(df, {
+                "name": "L", "value_field": "x", "mapping": {},
+            })
+
+
 class TestRegistry:
     def test_kinds_esperados(self):
-        assert set(KIND_REGISTRY.keys()) == {"agg", "slope", "delta"}
+        assert set(KIND_REGISTRY.keys()) == {
+            "agg", "slope", "delta",
+            "row_mean_dynamic", "row_threshold", "normalize_name",
+            "lookup_range", "lookup_dict",
+        }
 
     def test_metadata_introspection_first_check(self):
         """Sentinel para detectar si el iter del registry pasa los kinds."""
