@@ -168,6 +168,13 @@ async def submit_pipeline_input(
             enrich_store = runner.ctx.user_inputs.get("enrich_per_file", {})
             enrich_store.update(input_data.get("data", {}))
             runner.ctx.user_inputs["enrich_per_file"] = enrich_store
+        elif input_data.get("type") == "enrich_once":
+            # Valores globales del run (mode="once") — un valor por campo, aplica a todos los archivos.
+            if not hasattr(runner.ctx, "user_inputs"):
+                runner.ctx.user_inputs = {}
+            global_store = runner.ctx.user_inputs.get("enrich_global", {})
+            global_store.update(input_data.get("data", {}))
+            runner.ctx.user_inputs["enrich_global"] = global_store
 
         results = runner.run_all()
         last_result = results[-1] if results else {}

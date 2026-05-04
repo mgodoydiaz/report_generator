@@ -3,55 +3,25 @@ import { AlertCircle, PenLine, CheckCircle2 } from 'lucide-react';
 
 /**
  * Componente para el paso EnrichWithUserInput.
- * Muestra una tabla donde el usuario ingresa valores por archivo para cada campo requerido.
- * 
+ * Soporta dos modos según `inputDetails.type`:
+ *   - "enrich_per_file": tabla archivos × campos (un valor por archivo).
+ *   - "enrich_once":     formulario único (un valor por campo, válido para todo el run).
+ *
  * Props:
- *   inputDetails: { type, files: string[], fields: [{key, label}] }
- *   onSubmit: (data: { [filename]: { [key]: value } }) => void
+ *   inputDetails:
+ *     { type: "enrich_per_file", files: string[], fields: [{key, label}] }
+ *     { type: "enrich_once",  fields: [{key, label, default?, options?}] }
+ *   onSubmit: (data, type) => void
+ *     - per_file: data = { [filename]: { [key]: value } }
+ *     - once:     data = { [key]: value }
  *   status: string
  */
 const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
-    const files = inputDetails?.files || [];
+    const type = inputDetails?.type || 'enrich_per_file';
     const fields = inputDetails?.fields || [];
+    const files = inputDetails?.files || [];
 
-    // Estado: { "archivo1.xlsx": { "Curso": "2A" }, ... }
-    const [values, setValues] = useState({});
-
-    // Inicializar estado vacío al recibir nuevos detalles
-    useEffect(() => {
-        if (files.length > 0 && fields.length > 0) {
-            const initial = {};
-            files.forEach(fname => {
-                initial[fname] = {};
-                fields.forEach(field => {
-                    initial[fname][field.key] = '';
-                });
-            });
-            setValues(initial);
-        }
-    }, [inputDetails]);
-
-    const updateValue = (filename, fieldKey, val) => {
-        setValues(prev => ({
-            ...prev,
-            [filename]: {
-                ...prev[filename],
-                [fieldKey]: val
-            }
-        }));
-    };
-
-    // Verificar si todos los campos están llenos
-    const allFilled = files.every(fname =>
-        fields.every(field => values[fname]?.[field.key]?.trim())
-    );
-
-    const handleSubmit = () => {
-        if (!allFilled) return;
-        onSubmit(values);
-    };
-
-    if (!files.length || !fields.length) {
+    if (!fields.length) {
         return (
             <div className="text-slate-400 text-sm text-center p-8">
                 No se requieren datos adicionales.
@@ -59,9 +29,134 @@ const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
         );
     }
 
+    if (type === 'enrich_once') {
+        return <EnrichOnceForm fields={fields} onSubmit={(data) => onSubmit(data, 'enrich_once')} />;
+    }
+
+    return <EnrichPerFileTable files={files} fields={fields} onSubmit={(data) => onSubmit(data, 'enrich_per_file')} />;
+};
+
+// ─── Formulario único (mode="once") ────────────────────────────────────────
+
+const EnrichOnceForm = ({ fields, onSubmit }) => {
+    const [values, setValues] = useState({});
+
+    useEffect(() => {
+        const initial = {};
+        fields.forEach(f => {
+            initial[f.key] = f.default ?? '';
+        });
+        setValues(initial);
+    }, [fields]);
+
+    const update = (key, val) => setValues(prev => ({ ...prev, [key]: val }));
+
+    const allFilled = fields.every(f => String(values[f.key] ?? '').trim());
+
     return (
         <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            {/* Banner informativo */}
+            <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 text-amber-700">
+                <PenLine size={20} className="shrink-0 mt-0.5" />
+                <div className="text-sm">
+                    <p className="font-bold">Datos del Run</p>
+                    <p>Ingresa los valores que aplican a todos los archivos de esta ejecución.</p>
+                </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm p-5 space-y-4">
+                {fields.map(field => (
+                    <div key={field.key} className="space-y-1.5">
+                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">
+                            {field.label || field.key}
+                        </label>
+                        {Array.isArray(field.options) && field.options.length > 0 ? (
+                            <select
+                                value={values[field.key] ?? ''}
+                                onChange={(e) => update(field.key, e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800
+                                           focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
+                            >
+                                <option value="">— Seleccioná —</option>
+                                {field.options.map(opt => (
+                                    <option key={opt} value={opt}>{opt}</option>
+                                ))}
+                            </select>
+                        ) : (
+                            <input
+                                type="text"
+                                value={values[field.key] ?? ''}
+                                onChange={(e) => update(field.key, e.target.value)}
+                                placeholder={field.label || field.key}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800
+                                           focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400
+                                           placeholder:text-slate-300"
+                            />
+                        )}
+                    </div>
+                ))}
+            </div>
+
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                    {allFilled ? (
+                        <>
+                            <CheckCircle2 size={14} className="text-green-500" />
+                            <span className="text-green-600 font-bold">Listo para continuar</span>
+                        </>
+                    ) : (
+                        <>
+                            <AlertCircle size={14} />
+                            <span>Completa todos los campos</span>
+                        </>
+                    )}
+                </div>
+                <button
+                    onClick={() => allFilled && onSubmit(values)}
+                    disabled={!allFilled}
+                    className={`px-5 py-2 rounded-xl text-sm font-bold transition-all active:scale-95
+                        ${allFilled
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-200'
+                            : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                        }`}
+                >
+                    Confirmar Datos
+                </button>
+            </div>
+        </div>
+    );
+};
+
+// ─── Tabla por archivo (mode="per_file") ────────────────────────────────────
+
+const EnrichPerFileTable = ({ files, fields, onSubmit }) => {
+    const [values, setValues] = useState({});
+
+    useEffect(() => {
+        const initial = {};
+        files.forEach(fname => {
+            initial[fname] = {};
+            fields.forEach(field => { initial[fname][field.key] = ''; });
+        });
+        setValues(initial);
+    }, [files, fields]);
+
+    const updateValue = (filename, fieldKey, val) => {
+        setValues(prev => ({
+            ...prev,
+            [filename]: { ...prev[filename], [fieldKey]: val }
+        }));
+    };
+
+    const allFilled = files.every(fname =>
+        fields.every(field => values[fname]?.[field.key]?.trim())
+    );
+
+    if (!files.length) {
+        return <div className="text-slate-400 text-sm text-center p-8">No hay archivos para enriquecer.</div>;
+    }
+
+    return (
+        <div className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 text-amber-700">
                 <PenLine size={20} className="shrink-0 mt-0.5" />
                 <div className="text-sm">
@@ -70,7 +165,6 @@ const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
                 </div>
             </div>
 
-            {/* Tabla de ingreso */}
             <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                 <table className="w-full text-sm">
                     <thead>
@@ -103,9 +197,9 @@ const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
                                     <td key={field.key} className="px-4 py-2">
                                         <input
                                             type="text"
-                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs 
-                                                       bg-white text-slate-800 
-                                                       focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 
+                                            className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs
+                                                       bg-white text-slate-800
+                                                       focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400
                                                        transition-all placeholder:text-slate-300"
                                             placeholder={field.label}
                                             value={values[fname]?.[field.key] || ''}
@@ -119,7 +213,6 @@ const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
                 </table>
             </div>
 
-            {/* Indicador de progreso */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-xs text-slate-400">
                     {allFilled ? (
@@ -135,7 +228,7 @@ const EnrichWithUserInput = ({ inputDetails, onSubmit, status }) => {
                     )}
                 </div>
                 <button
-                    onClick={handleSubmit}
+                    onClick={() => allFilled && onSubmit(values)}
                     disabled={!allFilled}
                     className={`px-5 py-2 rounded-xl text-sm font-bold transition-all active:scale-95
                         ${allFilled

@@ -102,14 +102,15 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     };
 
     // Manejo de envío de datos de usuario (EnrichWithUserInput)
-    const handleSubmitInput = async (userData) => {
+    // type: 'enrich_per_file' | 'enrich_once' (lo determina el componente hijo).
+    const handleSubmitInput = async (userData, type = 'enrich_per_file') => {
         setStatus('executing');
         try {
             const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/input`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    type: 'enrich_per_file',
+                    type,
                     data: userData
                 })
             });

@@ -206,11 +206,17 @@ class RunExcelETL(Step):
                 if column_mapping:
                     temp_df.rename(columns=column_mapping, inplace=True)
 
-                # 3.5: Enriquecimiento POR ARCHIVO (datos recopilados por EnrichWithUserInput)
+                # 3.5: Enriquecimiento POR ARCHIVO (datos recopilados por EnrichWithUserInput mode="per_file")
                 user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
                 file_user_data = user_inputs_store.get(nombre_archivo, {})
                 for col, val in file_user_data.items():
                     temp_df[col] = val
+
+                # 3.5.b: Enriquecimiento GLOBAL (datos recopilados por EnrichWithUserInput mode="once")
+                global_user_data = getattr(ctx, "user_inputs", {}).get("enrich_global", {})
+                for col, val in global_user_data.items():
+                    if col not in temp_df.columns:  # no pisa per_file si ya cargó
+                        temp_df[col] = val
 
                 # 3.6: Inyectar metadata leída de celdas individuales pre-header
                 # (caso DIA: Establecimiento en B5, Curso en B6, datos desde fila 13).
@@ -245,29 +251,33 @@ class EnrichWithUserInput(Step):
     """
     Solicita datos de enriquecimiento al usuario durante la ejecución del pipeline.
 
-    Este paso detecta campos de enrich_data marcados con user_input=True,
-    identifica los archivos a procesar, y pausa la ejecución para solicitar
-    valores específicos por archivo al usuario.
+    Detecta campos de `enrich_data` marcados con `user_input=True` y pausa
+    el pipeline para pedirlos. Soporta dos modos:
 
-    Debe colocarse ANTES de RunExcelETL / RunDIAPDFExtraction en el pipeline.
+      - mode="per_file"  → pide UN valor por (archivo, campo). Útil si los
+        archivos pueden tener distinto Hito/Asignatura. Requiere archivos
+        ya cargados al ejecutar.
+      - mode="once"      → pide UN solo valor por campo, válido para todos
+        los archivos del run. Útil para SIMCE (Año/Asignatura/Mes/N Prueba
+        son globales). NO requiere archivos cargados — puede ir antes de
+        cualquier RequestUserFiles.
+
+    Los valores capturados se guardan en:
+      - ctx.user_inputs["enrich_per_file"][filename][key] = val   (mode per_file)
+      - ctx.user_inputs["enrich_global"][key] = val                (mode once)
+
+    `RunExcelETL` y `RunDIAPDFExtraction` leen ambos almacenes y aplican las
+    columnas resultantes a sus DataFrames.
 
     Parámetros:
         input_key: clave única en ctx.inputs cuyos archivos se procesan.
         input_keys: lista de claves en ctx.inputs. Junta todos sus archivos
-            en una sola pausa (útil cuando el mismo Hito/Asignatura aplica
-            a estudiantes y preguntas a la vez).
+            en una sola pausa.
         apply_to_all: si True (y no se da input_key/input_keys), aplica a
             todos los archivos disponibles en ctx.inputs.
         enrich_data: lista de campos {key, val, user_input}. Si se entrega
-            inline, tiene precedencia sobre el Spec/ctx.params. Marca los
-            campos con `user_input=True` para los que pide al usuario.
-
-    Flujo:
-        1. Resuelve la lista de archivos según input_key/input_keys/apply_to_all.
-        2. Detecta campos enrich_data con user_input=True.
-        3. Si faltan valores -> WaitingForInputException (pausa el pipeline).
-        4. Si todos los valores están -> los guarda en ctx.user_inputs.enrich_per_file
-           para que RunExcelETL/RunDIAPDFExtraction los inyecten en el DataFrame.
+            inline, tiene precedencia sobre el Spec/ctx.params.
+        mode: "per_file" (default) o "once".
     """
     def __init__(
         self,
@@ -275,15 +285,22 @@ class EnrichWithUserInput(Step):
         input_keys: Optional[List[str]] = None,
         apply_to_all: bool = False,
         enrich_data: Optional[List[Dict]] = None,
+        mode: str = "per_file",
     ):
+        if mode not in ("per_file", "once"):
+            raise ValueError(f"mode inválido: {mode!r}. Use 'per_file' o 'once'.")
         super().__init__(
             name="EnrichWithUserInput",
-            description="Solicita datos de enriquecimiento por archivo al usuario"
+            description=(
+                "Pide datos de enriquecimiento al usuario "
+                + ("(una sola vez para todo el run)" if mode == "once" else "(uno por archivo)")
+            )
         )
         self.input_key = input_key
         self.input_keys = input_keys
         self.apply_to_all = apply_to_all
         self._inline_enrich_data = enrich_data
+        self.mode = mode
 
     def _resolve_input_keys(self, ctx) -> List[str]:
         """Devuelve la lista de input_keys a procesar según los modos disponibles."""
@@ -298,30 +315,31 @@ class EnrichWithUserInput(Step):
             return [next(iter(ctx.inputs.keys()))]
         return []
 
+    def _resolve_enrich_data(self, ctx, keys: List[str]) -> list:
+        """Resuelve enrich_data: inline > spec del primer input_key > ctx.params global."""
+        if self._inline_enrich_data is not None:
+            return self._inline_enrich_data
+        cfgs = ctx.params.get("_config", {})
+        for k in keys:
+            if k in cfgs and "enrich_data" in cfgs[k]:
+                return cfgs[k]["enrich_data"]
+        return ctx.params.get("enrich_data", [])
+
     def run(self, ctx):
         before = self._snapshot_artifacts(ctx)
 
-        # 1. Resolver lista de input_keys
-        keys = self._resolve_input_keys(ctx)
-        if not keys:
-            raise ValueError(
-                f"[{self.name}] No se pudo resolver input_key/input_keys. "
-                f"Pasá `input_key`, `input_keys=[...]` o `apply_to_all=True`."
-            )
-
-        # 2. Resolver enrich_data: inline > spec del primer input_key > ctx.params global
-        if self._inline_enrich_data is not None:
-            enrich_data = self._inline_enrich_data
+        # En mode="once" no necesitamos archivos — puede ir antes de RequestUserFiles.
+        if self.mode == "once":
+            keys: List[str] = []  # no se usan
         else:
-            cfgs = ctx.params.get("_config", {})
-            enrich_data = None
-            for k in keys:
-                if k in cfgs and "enrich_data" in cfgs[k]:
-                    enrich_data = cfgs[k]["enrich_data"]
-                    break
-            if enrich_data is None:
-                enrich_data = ctx.params.get("enrich_data", [])
+            keys = self._resolve_input_keys(ctx)
+            if not keys:
+                raise ValueError(
+                    f"[{self.name}] No se pudo resolver input_key/input_keys. "
+                    f"Pasá `input_key`, `input_keys=[...]` o `apply_to_all=True`."
+                )
 
+        enrich_data = self._resolve_enrich_data(ctx, keys)
         if isinstance(enrich_data, list):
             user_input_fields = [p for p in enrich_data if isinstance(p, dict) and p.get("user_input")]
         else:
@@ -333,7 +351,32 @@ class EnrichWithUserInput(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        # 3. Juntar archivos de todos los input_keys
+        # ── MODE: ONCE ────────────────────────────────────────────────
+        if self.mode == "once":
+            global_store = getattr(ctx, "user_inputs", {}).get("enrich_global", {})
+            missing = [f for f in user_input_fields if not global_store.get(f.get("key"))]
+
+            if missing:
+                input_details = {
+                    "type": "enrich_once",
+                    "fields": [
+                        {
+                            "key": f.get("key"),
+                            "label": f.get("label") or f.get("key"),
+                            "default": f.get("val"),
+                            "options": f.get("options"),
+                        }
+                        for f in user_input_fields
+                    ],
+                }
+                raise WaitingForInputException(self.name, input_details)
+
+            self._log(f"[{self.name}] Globals recibidos: {list(global_store.keys())}. Continuando.")
+            ctx.last_step = self.name
+            self._log_artifacts_delta(ctx, before)
+            return
+
+        # ── MODE: PER FILE ────────────────────────────────────────────
         archivos: List[str] = []
         for k in keys:
             archivos.extend(getattr(ctx, "inputs", {}).get(k, []))
@@ -345,9 +388,7 @@ class EnrichWithUserInput(Step):
             self._log_artifacts_delta(ctx, before)
             return
 
-        # 3. Verificar si ya tenemos todos los inputs
         user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
-
         missing_data = False
         for fname in file_names:
             for field in user_input_fields:
@@ -359,7 +400,6 @@ class EnrichWithUserInput(Step):
                 break
 
         if missing_data:
-            # 4. Pausar ejecución y solicitar datos al frontend
             input_details = {
                 "type": "enrich_per_file",
                 "files": file_names,
@@ -370,7 +410,6 @@ class EnrichWithUserInput(Step):
             }
             raise WaitingForInputException(self.name, input_details)
 
-        # 5. Todos los inputs disponibles, continuar
         self._log(f"[{self.name}] Inputs recibidos para {len(file_names)} archivos. Continuando.")
         ctx.last_step = self.name
         self._log_artifacts_delta(ctx, before)

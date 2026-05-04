@@ -344,6 +344,7 @@ class RunDIAPDFExtraction(Step):
         # Asignatura, etc.) — se inyectan por archivo después del rename
         # de columnas (antes rompía el `df.columns = [...]` con length mismatch).
         user_inputs_store = getattr(ctx, "user_inputs", {}).get("enrich_per_file", {})
+        global_user_data = getattr(ctx, "user_inputs", {}).get("enrich_global", {})
 
         # Nombres alineados con las dimensiones registradas en la métrica
         # DIA por Pregunta (id=7).
@@ -373,10 +374,14 @@ class RunDIAPDFExtraction(Step):
                     .str.title()
                     .str.replace(" Y ", " y ", regex=False)
                 )
-                # 3. Inyectar user_inputs específicos de este PDF (Hito, Asignatura)
+                # 3. Inyectar user_inputs específicos de este PDF (modo per_file).
                 fname = os.path.basename(pdf)
                 for col, val in user_inputs_store.get(fname, {}).items():
                     df_pdf[col] = val
+                # 3.b. Inyectar user_inputs globales (modo once) — sin pisar per_file.
+                for col, val in global_user_data.items():
+                    if col not in df_pdf.columns:
+                        df_pdf[col] = val
                 rendered_dfs.append(df_pdf)
             except Exception as e:
                 self._log(f"[{self.name}] Error procesando {pdf}: {e}")
