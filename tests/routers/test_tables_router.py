@@ -145,6 +145,44 @@ class TestTableUpdate:
         assert upd.is_draft is None
 
 
+class TestSourceKey:
+    """Multi-agg sobre la misma columna fuente (B7 v2)."""
+
+    def test_source_key_default_es_key(self):
+        c = TableColumn(key="Logro", header="Logro")
+        assert c.source_key is None
+        assert c.resolved_source_key() == "Logro"
+
+    def test_source_key_explicito(self):
+        c = TableColumn(key="Logro_mean", header="Logro Mean", source_key="Logro", agg="mean")
+        assert c.source_key == "Logro"
+        assert c.resolved_source_key() == "Logro"
+        assert c.key == "Logro_mean"
+
+    def test_multiagg_misma_fuente_distintas_keys(self):
+        """3 columnas pueden derivar del mismo Logro con distinto agg."""
+        cfg = TableConfig(
+            data_source={"metric_id": 6},
+            columns=[
+                {"key": "Curso", "header": "Curso"},
+                {"key": "Logro_mean", "source_key": "Logro", "header": "Mean", "agg": "mean"},
+                {"key": "Logro_max", "source_key": "Logro", "header": "Max", "agg": "max"},
+                {"key": "Logro_std", "source_key": "Logro", "header": "Std", "agg": "std"},
+            ],
+            behavior={"grouping": {"by": "Curso"}},
+        )
+        sources = [c.resolved_source_key() for c in cfg.columns]
+        keys = [c.key for c in cfg.columns]
+        # 3 fuentes "Logro" pero 3 keys distintas
+        assert sources.count("Logro") == 3
+        assert len(set(keys)) == len(keys)  # todas únicas
+
+    def test_agg_std_aceptado(self):
+        # std no estaba en v1
+        c = TableColumn(key="x", header="X", agg="std")
+        assert c.agg == "std"
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Helpers de formato
 # ─────────────────────────────────────────────────────────────────────────

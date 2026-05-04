@@ -181,12 +181,64 @@ DIA_LOGRO_POR_PREGUNTA = {
 }
 
 
+SIMCE_RESUMEN_POR_CURSO = {
+    "name": "SIMCE — Resumen por Curso",
+    "description": "Tabla resumen estadística por Curso: cantidad de estudiantes + count/mean/min/max/std del Logro y SIMCE. Equivalente al `resumen_estadistico_basico` del esquema SIMCE.",
+    "config": {
+        "version": 1,
+        "data_source": {"metric_id": 4, "filters": {}},
+        "columns": [
+            {"key": "Curso", "header": "Curso", "format": "text", "pinned": True},
+            {"key": "N_estudiantes", "source_key": "Rend", "header": "N° Estudiantes", "format": "int", "agg": "count"},
+            {"key": "Rend_mean", "source_key": "Rend", "header": "Logro Promedio", "format": "percent", "decimals": 1, "agg": "mean", "color_scale": color_diverging()},
+            {"key": "Rend_min", "source_key": "Rend", "header": "Logro Mín", "format": "percent", "decimals": 1, "agg": "min"},
+            {"key": "Rend_max", "source_key": "Rend", "header": "Logro Máx", "format": "percent", "decimals": 1, "agg": "max"},
+            {"key": "Rend_std", "source_key": "Rend", "header": "Logro Desv", "format": "percent", "decimals": 2, "agg": "std"},
+            {"key": "SIMCE_mean", "source_key": "SIMCE", "header": "SIMCE Promedio", "format": "int", "agg": "mean"},
+            {"key": "SIMCE_min", "source_key": "SIMCE", "header": "SIMCE Mín", "format": "int", "agg": "min"},
+            {"key": "SIMCE_max", "source_key": "SIMCE", "header": "SIMCE Máx", "format": "int", "agg": "max"},
+        ],
+        "behavior": {
+            "grouping": {"by": "Curso"},
+            "sorting": [{"column": "Curso", "dir": "asc"}],
+            "pagination": {"enabled": True, "page_size": 50},
+            "search": False,
+        },
+    },
+}
+
+DIA_RESUMEN_POR_CURSO = {
+    "name": "DIA — Resumen por Curso",
+    "description": "Tabla resumen estadística DIA por Curso: cantidad de estudiantes + count/mean/min/max/std del Logro. Equivalente al `Cuadro Resumen Logro por Curso` del esquema DIA.",
+    "config": {
+        "version": 1,
+        "data_source": {"metric_id": 6, "filters": {}},
+        "columns": [
+            {"key": "Curso", "header": "Curso", "format": "text", "pinned": True},
+            {"key": "N_estudiantes", "source_key": "Logro", "header": "N° Estudiantes", "format": "int", "agg": "count"},
+            {"key": "Logro_mean", "source_key": "Logro", "header": "Logro Promedio", "format": "percent", "decimals": 1, "agg": "mean", "color_scale": color_diverging()},
+            {"key": "Logro_min", "source_key": "Logro", "header": "Logro Mín", "format": "percent", "decimals": 1, "agg": "min"},
+            {"key": "Logro_max", "source_key": "Logro", "header": "Logro Máx", "format": "percent", "decimals": 1, "agg": "max"},
+            {"key": "Logro_std", "source_key": "Logro", "header": "Logro Desv", "format": "percent", "decimals": 2, "agg": "std"},
+        ],
+        "behavior": {
+            "grouping": {"by": "Curso"},
+            "sorting": [{"column": "Curso", "dir": "asc"}],
+            "pagination": {"enabled": True, "page_size": 50},
+            "search": False,
+        },
+    },
+}
+
+
 ALL_TABLES = [
     SIMCE_LOGRO_POR_ALUMNO,
     SIMCE_LOGRO_POR_PREGUNTA,
     SIMCE_ESTADISTICA_PREGUNTA,
+    SIMCE_RESUMEN_POR_CURSO,
     DIA_LOGRO_POR_ALUMNO,
     DIA_LOGRO_POR_PREGUNTA,
+    DIA_RESUMEN_POR_CURSO,
 ]
 
 

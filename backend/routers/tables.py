@@ -374,18 +374,27 @@ def _render_table_data(
 
     df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, base_filters)
 
-    # Grouping
+    # Grouping con multi-agg sobre la misma columna fuente.
+    # Cada TableColumn con `agg` se vuelve un NamedAgg(column=source_key,
+    # aggfunc=agg) cuyo alias en el df resultante es la `key` de la
+    # columna. Eso permite que dos columnas con `source_key="Logro"` y
+    # distinto `agg` produzcan dos columnas separadas en el output (ej
+    # "Logro_mean", "Logro_max"). Si no se pasó source_key, source = key
+    # → comportamiento 1-a-1 anterior.
     if cfg.behavior.grouping:
         gb = cfg.behavior.grouping.by
         if gb in df.columns:
-            agg_map = {}
+            named_aggs: Dict[str, Any] = {}
             for c in cfg.columns:
-                if c.key == gb or c.key not in df.columns:
+                if c.key == gb:
+                    continue
+                src = c.resolved_source_key()
+                if src not in df.columns:
                     continue
                 if c.agg:
-                    agg_map[c.key] = c.agg
-            if agg_map:
-                df = df.groupby(gb, as_index=False).agg(agg_map)
+                    named_aggs[c.key] = pd.NamedAgg(column=src, aggfunc=c.agg)
+            if named_aggs:
+                df = df.groupby(gb, as_index=False).agg(**named_aggs)
 
     # Sort
     for s in cfg.behavior.sorting:
@@ -408,13 +417,22 @@ def _render_table_data(
         for c in cfg.columns if not c.hidden
     ]
 
+    # Después del groupby con NamedAgg, las columnas resultantes se llaman
+    # como las `key` aliased. Si no hubo groupby, df conserva las columnas
+    # originales del metric_data, identificadas por `source_key`.
     rows_out = []
     for _, row in df_page.iterrows():
         row_obj: Dict[str, Any] = {}
         for c in cfg.columns:
             if c.hidden:
                 continue
-            raw = row.get(c.key) if c.key in df_page.columns else None
+            # Resolver el campo real en el df actual (post-groupby o pre).
+            if c.key in df_page.columns:
+                lookup = c.key
+            else:
+                src = c.resolved_source_key()
+                lookup = src if src in df_page.columns else None
+            raw = row.get(lookup) if lookup else None
             cell: Dict[str, Any] = {
                 "raw": None if (isinstance(raw, float) and pd.isna(raw)) else raw,
                 "formatted": _apply_format(raw, c.format, c.decimals),

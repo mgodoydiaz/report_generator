@@ -448,18 +448,44 @@ function SourceTab({ cfg, metrics, metricColumns, onChange }) {
 
 function ColumnsTab({ cfg, metricColumns, indicators, onChange }) {
   const cols = cfg.columns || [];
-  const usedKeys = new Set(cols.map((c) => c.key));
-  const available = metricColumns.filter((mc) => !usedKeys.has(mc.key));
+  // Para una columna ya usada: si es dimensión la ocultamos (no tiene
+  // sentido duplicarla); si es field numérico la mantenemos visible
+  // para permitir multi-agg (ej Logro mean + Logro max).
+  const usedSources = new Set(cols.map((c) => c.source_key || c.key));
+  const available = metricColumns.filter((mc) => {
+    if (mc.kind === 'dimension') return !usedSources.has(mc.key);
+    return true; // fields siempre disponibles para re-agregar
+  });
 
   const addColumn = (key) => {
     const meta = metricColumns.find((m) => m.key === key);
     const isNumeric = meta && (meta.type === 'int' || meta.type === 'float');
+    // Si la key ya existe en alguna columna, generar alias único usando
+    // source_key. Permite multi-agg sobre la misma columna fuente
+    // (ej Logro_mean / Logro_max / Logro_min en una tabla resumen).
+    const existingKeys = new Set(cols.map((c) => c.key));
+    const isDuplicate = existingKeys.has(key);
+    let newKey = key;
+    if (isDuplicate) {
+      // Buscar suffix libre
+      const candidates = ['mean', 'max', 'min', 'sum', 'count', 'std', '2', '3', '4'];
+      for (const suffix of candidates) {
+        const candidate = `${key}_${suffix}`;
+        if (!existingKeys.has(candidate)) {
+          newKey = candidate;
+          break;
+        }
+      }
+      // Fallback: timestamp
+      if (newKey === key) newKey = `${key}_${Date.now() % 10000}`;
+    }
     onChange([...cols, {
-      key,
-      header: key,
+      key: newKey,
+      header: isDuplicate ? newKey : key,
+      source_key: isDuplicate ? key : null,
       format: isNumeric ? 'float' : 'text',
       decimals: 1,
-      agg: null,
+      agg: isDuplicate ? 'mean' : null,
       color_scale: null,
       width: null,
       pinned: false,
@@ -563,11 +589,23 @@ function ColumnRow({ col, idx, total, indicators, onUpdate, onRemove, onMove }) 
         <div className="border-t border-slate-200 px-3 py-2 bg-white space-y-2 text-xs">
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-slate-500 mb-0.5">Key (columna en data)</label>
+              <label className="block text-slate-500 mb-0.5">Key (alias en la tabla)</label>
               <input
                 type="text"
                 value={col.key}
                 onChange={(e) => onUpdate({ key: e.target.value })}
+                className="w-full px-1.5 py-0.5 border border-slate-200 rounded font-mono"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-500 mb-0.5">
+                Source (campo fuente en data) <span className="text-slate-400 normal-case">— opcional, para multi-agg</span>
+              </label>
+              <input
+                type="text"
+                value={col.source_key || ''}
+                onChange={(e) => onUpdate({ source_key: e.target.value || null })}
+                placeholder={`(usa "${col.key}")`}
                 className="w-full px-1.5 py-0.5 border border-slate-200 rounded font-mono"
               />
             </div>
