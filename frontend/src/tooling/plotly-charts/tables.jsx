@@ -8,7 +8,7 @@
  */
 
 import React, { useState, useMemo } from 'react';
-import { avg, formatValue, CATEGORY_COLORS, levelColors } from './constants';
+import { avg, formatValue, CATEGORY_COLORS, levelColors, titleCase } from './constants';
 
 // ── Helpers internos ──────────────────────────────────────────────────────────
 
@@ -437,7 +437,7 @@ export function DetailListWithProgress({
                             <tr key={i} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/80 transition-colors">
                                 <Td className="text-slate-400 font-semibold">{row[labelField] || i + 1}</Td>
                                 <Td className="font-semibold text-slate-700 dark:text-slate-200">
-                                    {dimVal ? dimVal.charAt(0).toUpperCase() + dimVal.slice(1).toLowerCase() : '—'}
+                                    {titleCase(dimVal)}
                                 </Td>
                                 <Td>
                                     <div className="flex items-center gap-2">

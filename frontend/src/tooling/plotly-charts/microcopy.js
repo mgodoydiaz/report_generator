@@ -9,11 +9,38 @@ function pct(n) {
     return `${Math.round(n * 100)}%`;
 }
 
+// Niveles "críticos" históricamente hardcodeados (SIMCE/DIA usan estos nombres
+// canónicos). Para indicadores con niveles distintos (FL: MUY BAJA/BAJA/MEDIA/
+// ALTA, IDEL: niveles propios), si se pasa `achievementLevels` resolvemos el
+// set crítico dinámicamente como los 1-2 peores niveles del array (el orden
+// del array en el indicator es de peor → mejor por convención).
+const FALLBACK_CRITICAL = new Set(['Crítico', 'Critico', 'Alto Riesgo']);
+
+function resolveCriticalSet(achievementLevels) {
+    if (!Array.isArray(achievementLevels) || achievementLevels.length === 0) {
+        return { set: FALLBACK_CRITICAL, label: 'Crítico+Alto' };
+    }
+    const names = achievementLevels
+        .map(l => typeof l === 'string' ? l : (l?.name || ''))
+        .filter(Boolean);
+    if (!names.length) return { set: FALLBACK_CRITICAL, label: 'Crítico+Alto' };
+    // Tomar los peores: si "No Aplica" está al final, usarlo NO como crítico.
+    // Tomar los primeros 1-2 niveles (los del array vienen de peor a mejor).
+    // Si hay 5+ niveles, tomar 2; si hay 3-4, tomar 2; si 2, tomar 1.
+    const totalReal = names.filter(n => n.toLowerCase() !== 'no aplica').length;
+    const k = totalReal >= 4 ? 2 : 1;
+    const critical = names.slice(0, k);
+    return { set: new Set(critical), label: critical.join('+') };
+}
+
 // ── StackedCountByGroup ──────────────────────────────────────────────────────
-// Señala el grupo con más y menos estudiantes en Crítico+Alto Riesgo.
-export function microcopyStackedLevels(records, { groupField = '_curso', levelField = '_logro' } = {}) {
+// Señala el grupo con más y menos estudiantes en los niveles peores del indicador.
+export function microcopyStackedLevels(records, opts = {}) {
+    const { groupField = '_curso', levelField = '_logro' } = opts;
     if (!Array.isArray(records) || records.length === 0) return null;
-    const CRITICAL = new Set(['Crítico', 'Critico', 'Alto Riesgo']);
+    const { set: CRITICAL, label: critLabel } = resolveCriticalSet(
+        opts.achievement_levels || opts.achievementLevels  // soportar ambos nombres
+    );
     const byGroup = new Map();
     for (const r of records) {
         const g = r[groupField];
@@ -28,12 +55,16 @@ export function microcopyStackedLevels(records, { groupField = '_curso', levelFi
     rows.sort((a, b) => b.pct - a.pct);
     const top = rows[0];
     const bottom = rows[rows.length - 1];
-    return `Grupo con mayor riesgo urgente: ${top.g} — ${top.crit} estudiantes en Crítico+Alto (${pct(top.pct)}). Más saludable: ${bottom.g} (${pct(bottom.pct)}).`;
+    return `Grupo con mayor concentración en ${critLabel}: ${top.g} — ${top.crit} estudiantes (${pct(top.pct)}). Más saludable: ${bottom.g} (${pct(bottom.pct)}).`;
 }
 
 // ── HeatmapMatrix ────────────────────────────────────────────────────────────
-export function microcopyHeatmap(records, { xField, yField, valueField = '_is_concerning' } = {}) {
+export function microcopyHeatmap(records, opts = {}) {
+    const { xField, yField, valueField = '_is_concerning' } = opts;
     if (!Array.isArray(records) || records.length === 0 || !xField || !yField) return null;
+    const { label: critLabel } = resolveCriticalSet(
+        opts.achievement_levels || opts.achievementLevels
+    );
     const buckets = new Map();
     for (const r of records) {
         const x = r[xField], y = r[yField];
@@ -48,7 +79,7 @@ export function microcopyHeatmap(records, { xField, yField, valueField = '_is_co
     const rows = [...buckets.values()].map(b => ({ ...b, pct: b.n ? b.truthy / b.n : 0 }));
     rows.sort((a, b) => b.pct - a.pct);
     const worst = rows[0];
-    return `Combinación más crítica: ${worst.y} × ${worst.x} — ${pct(worst.pct)} en Crítico+Alto (${worst.truthy} estudiantes).`;
+    return `Combinación más crítica: ${worst.y} × ${worst.x} — ${pct(worst.pct)} en ${critLabel} (${worst.truthy} estudiantes).`;
 }
 
 // ── ImprovementRateByGroup ───────────────────────────────────────────────────
