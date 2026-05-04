@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CircleHelp, BarChart3, Table2, Sparkles, ChevronRight } from 'lucide-react';
+import { CircleHelp, BarChart3, Table2, Sparkles, ChevronRight, BookOpen } from 'lucide-react';
 import {
     GraficoLogroPorCurso,
     GraficoBoxplotPorCurso,
@@ -82,6 +82,17 @@ const FMT_PCT = (v) => v != null ? (v * 100).toFixed(0) + '%' : '—';
 
 const TOC = [
     {
+        group: 'Guías de uso',
+        color: 'amber',
+        icon: BookOpen,
+        items: [
+            { id: 'guide-pipeline',  label: 'Crear y ejecutar pipeline' },
+            { id: 'guide-tables',    label: 'Configurar tablas' },
+            { id: 'guide-charts',    label: 'Configurar gráficos' },
+            { id: 'guide-functions', label: 'Funciones derivadas' },
+        ],
+    },
+    {
         group: 'Gráficos Plotly',
         color: 'emerald',
         icon: BarChart3,
@@ -136,11 +147,13 @@ const TOC = [
 ];
 
 const COLOR_RING = {
+    amber:   'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300',
     emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300',
     indigo:  'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300',
     slate:   'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400',
 };
 const COLOR_DOT = {
+    amber:   'bg-amber-500',
     emerald: 'bg-emerald-500',
     indigo:  'bg-indigo-500',
     slate:   'bg-slate-400',
@@ -158,6 +171,47 @@ function Param({ name, type, required, description }) {
             }`}>{name}</code>
             <span className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide shrink-0 mt-0.5">{type}</span>
             {description && <span className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">{description}</span>}
+        </div>
+    );
+}
+
+// ── Tarjeta de guía ───────────────────────────────────────────────────────────
+
+function GuideCard({ id, title, summary, steps = [], note }) {
+    return (
+        <div id={id} className="scroll-mt-6 bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 overflow-hidden shadow-sm">
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+                <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wide bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300">
+                        Guía
+                    </span>
+                </div>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">{title}</h3>
+                {summary && <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 leading-relaxed">{summary}</p>}
+            </div>
+
+            {steps.length > 0 && (
+                <div className="p-5">
+                    <ol className="space-y-3 list-none">
+                        {steps.map((step, i) => (
+                            <li key={i} className="flex items-start gap-3">
+                                <span className="shrink-0 w-6 h-6 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 flex items-center justify-center text-xs font-bold">
+                                    {i + 1}
+                                </span>
+                                <div className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed pt-0.5">
+                                    {step}
+                                </div>
+                            </li>
+                        ))}
+                    </ol>
+
+                    {note && (
+                        <div className="mt-4 px-3 py-2 rounded-lg bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                            {note}
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }
@@ -209,6 +263,7 @@ function ComponentCard({ id, badge, badgeColor = 'emerald', title, description, 
 
 function SectionHeader({ icon: Icon, title, color, id }) {
     const bg = {
+        amber:   'bg-amber-600 shadow-amber-100 dark:shadow-amber-900/20',
         emerald: 'bg-emerald-600 shadow-emerald-100 dark:shadow-emerald-900/20',
         indigo:  'bg-indigo-600 shadow-indigo-100 dark:shadow-indigo-900/20',
         slate:   'bg-slate-500 shadow-slate-100 dark:shadow-slate-900/20',
@@ -318,6 +373,68 @@ export default function Help() {
 
                 {/* Contenido principal */}
                 <div className="flex-1 min-w-0 space-y-10">
+
+                    {/* ═══════════════════════════════════════════════════════
+                        GUÍAS DE USO
+                    ════════════════════════════════════════════════════════ */}
+                    <SectionHeader icon={BookOpen} title="Guías de uso" color="amber" id="section-guides" />
+
+                    <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-300 leading-relaxed">
+                        Estas guías describen los flujos principales de la aplicación a alto nivel. Si necesitás más detalle, revisá la documentación técnica en <code className="font-mono bg-amber-100 dark:bg-amber-900/30 px-1 rounded">docs/</code> o pedile a tu administrador acceso al material extendido.
+                    </div>
+
+                    <GuideCard
+                        id="guide-pipeline"
+                        title="Crear y ejecutar un pipeline"
+                        summary="Un pipeline es una secuencia ordenada de pasos (steps) que toma archivos de entrada (Excel, PDF), los procesa y guarda los resultados en una métrica."
+                        steps={[
+                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/pipelines</code> y abrí "Nuevo pipeline". Definí nombre, descripción y el tipo de input principal.</>,
+                            <>Editá el JSON del pipeline en el modal. La estructura es <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">{`{ workflow_metadata, context, pipeline: [{ step, params }, ...] }`}</code>. Los pasos disponibles los ves en el desplegable del editor.</>,
+                            <>Pasos típicos: <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">InitRun</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">RequestUserFiles</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">RunExcelETL</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">SaveToMetric</code>.</>,
+                            <>Al ejecutar, el modal de ejecución te pedirá los archivos cuando un step lo requiera (pausa interactiva). Subilos y continuá.</>,
+                            <>Al terminar, los datos quedan guardados en la métrica destino y son visibles en <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code>.</>,
+                        ]}
+                        note="Tip: si un pipeline va a procesar varios archivos del mismo tipo (ej. EMN por mes), poné varios bloques RequestUserFiles consecutivos — cada uno limpia solo su carpeta de inputs."
+                    />
+
+                    <GuideCard
+                        id="guide-tables"
+                        title="Configurar tablas (catálogo /tables)"
+                        summary="El catálogo de tablas permite definir tablas reutilizables (resumen por curso, lista de estudiantes, análisis por pregunta) sin escribir JSON."
+                        steps={[
+                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/tables</code> y elegí "Nueva tabla" o duplicá una existente del catálogo.</>,
+                            <>Definí el grouping principal (curso, estudiante, pregunta) y las columnas a calcular: cantidad, promedio, mínimo, máximo, distribución por categoría.</>,
+                            <>Si una columna requiere un cálculo derivado (ej. avance temporal), referenciá el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> ya configurado en el indicador.</>,
+                            <>Vinculá la tabla al indicador correspondiente desde su layout. Aparece en <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code> y en los PDFs si el layout PDF la incluye.</>,
+                        ]}
+                        note="Multi-agg: una misma columna puede mostrar varias agregaciones a la vez (ej. promedio + delta vs. evaluación anterior)."
+                    />
+
+                    <GuideCard
+                        id="guide-charts"
+                        title="Configurar gráficos (catálogo /charts)"
+                        summary="El catálogo de gráficos centraliza la configuración de visualizaciones disponibles para los dashboards y los PDFs."
+                        steps={[
+                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/charts</code>. Vas a ver los gráficos pre-armados (BarByGroup, BoxPlotByGroup, RadarProfile, etc.) y podés crear nuevos.</>,
+                            <>Para crear uno nuevo, elegí el componente del registry (la lista completa está más abajo en este Centro de Ayuda) y mapeá los campos del data al gráfico (groupField, valueField, etc.).</>,
+                            <>Si el gráfico necesita un campo derivado, primero configurá el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> en el indicador para que esté disponible.</>,
+                            <>Asignalo a un dashboard desde el layout del indicador, o a una sección del PDF desde el layout PDF.</>,
+                        ]}
+                        note="Los gráficos legacy (Recharts) usan campos fijos como _rend, _logro, _habilidad. Los Plotly nuevos son completamente configurables — usá los Plotly cuando puedas."
+                    />
+
+                    <GuideCard
+                        id="guide-functions"
+                        title="Funciones derivadas (/functions)"
+                        summary="Las funciones derivadas transforman datos crudos en valores derivados: avance entre evaluaciones, mejora respecto al inicio, mapeos de niveles, etc."
+                        steps={[
+                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/functions</code> para ver el catálogo de mapeos. Los kinds disponibles incluyen <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">piecewise_linear</code> y lookup tables.</>,
+                            <>Para campos derivados a nivel de indicador (avance temporal, promedio por estudiante), abrí el indicador y configurá <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_columns</code> con el kind apropiado: <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">agg</code> (groupby), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">slope</code> (regresión lineal expansiva), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">delta</code> (último menos primero).</>,
+                            <>Definí el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">entity_field</code> (qué identifica una unidad: RUT, Curso+Nombre, etc.) y el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">time_field</code> con su orden si es ordinal (ej. ABRIL → JUNIO → AGOSTO).</>,
+                            <>Una vez configurado, el campo aparece automáticamente en dashboards (<code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code>) y PDFs.</>,
+                        ]}
+                        note="Importante: las funciones temporales (slope/delta) operan sobre el histórico completo del estudiante, ignorando los filtros temporales del dashboard. Esto es deseable para que el avance no cambie según el filtro."
+                    />
 
                     {/* ═══════════════════════════════════════════════════════
                         GRÁFICOS PLOTLY
