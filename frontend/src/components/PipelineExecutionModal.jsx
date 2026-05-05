@@ -19,9 +19,23 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     const [executionResult, setExecutionResult] = useState(null);
     const [executionMode, setExecutionMode] = useState('normal'); // normal | fast
     const [inputDetails, setInputDetails] = useState(null); // Detalles de input requerido por un paso
+    const [dots, setDots] = useState(''); // Animación de puntos suspensivos durante 'executing'
 
     const stepsViewportRef = useRef(null);
     const activeStepRef = useRef(null);
+
+    // Animación: puntos suspensivos crecientes mientras el backend procesa.
+    // Cicla "" → "." → ".." → "..." cada segundo.
+    useEffect(() => {
+        if (status !== 'executing') {
+            setDots('');
+            return;
+        }
+        const interval = setInterval(() => {
+            setDots(d => d.length >= 3 ? '' : d + '.');
+        }, 600);
+        return () => clearInterval(interval);
+    }, [status]);
 
     // Cargar pasos del pipeline al abrir
     useEffect(() => {
@@ -208,20 +222,15 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
             let finalState = false;
 
             if (effectiveMode === 'fast') {
-                // Modo rápido — el intervalo simula avance visual mientras el
-                // backend ejecuta el pipeline. Lo envolvemos en try/finally para
-                // que `clearInterval` se ejecute aún si fetchAuth lanza, evitando
-                // que el timer quede colgado hasta el unmount del componente.
-                const progressInterval = setInterval(() => {
-                    setCurrentStepIndex(prev => (prev < steps.length - 1 ? prev + 1 : prev));
-                }, 400);
-
-                try {
-                    const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
-                    result = await response.json();
-                } finally {
-                    clearInterval(progressInterval);
-                }
+                // Modo rápido — el frontend NO simula progreso visual. Se queda
+                // mostrando el step actual con el indicador "Ejecutando…" hasta
+                // que el backend confirme el resultado real (waiting_input,
+                // success o error). Antes había un setInterval que avanzaba
+                // currentStepIndex cada 400ms, marcando como completados pasos
+                // que aún no terminaban (ej. extracción de PDFs DIA tarda
+                // varios segundos).
+                const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
+                result = await response.json();
 
                 // Si el pipeline se detuvo porque necesita input del usuario
                 if (result.status === 'waiting_input') {
@@ -354,8 +363,30 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                             </div>
                         )}
 
-                        {/* Renderizado Modular del Paso Actual */}
-                        {(status === 'idle' || status === 'executing' || status === 'waiting_input') && currentStepData && (
+                        {/* Indicador "Ejecutando proceso..." durante un run del backend.
+                            Reemplaza al StepRenderer cuando status='executing' para que
+                            el usuario sepa que el backend está trabajando y no avance
+                            visualmente más allá de lo que realmente está procesado. */}
+                        {status === 'executing' && (
+                            <div className="flex flex-col items-center justify-center h-full gap-5 text-slate-500 animate-in fade-in duration-300">
+                                <Loader2 size={40} className="animate-spin text-indigo-500" />
+                                <div className="text-center space-y-1">
+                                    <p className="text-base font-bold text-slate-700 font-mono tabular-nums">
+                                        Ejecutando proceso<span className="inline-block min-w-[1.5em] text-left">{dots}</span>
+                                    </p>
+                                    <p className="text-xs text-slate-400">
+                                        {currentStepData ? `Paso actual: ${currentStepData.step}` : 'El backend está procesando…'}
+                                    </p>
+                                </div>
+                                <p className="text-[11px] text-slate-300 max-w-md text-center leading-relaxed">
+                                    Algunos pasos pueden tardar varios segundos (ej. extracción de PDFs).
+                                    Por favor espere a que termine; no cierre esta ventana.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Renderizado Modular del Paso Actual (idle / waiting_input) */}
+                        {(status === 'idle' || status === 'waiting_input') && currentStepData && (
                             <StepRenderer
                                 stepData={currentStepData}
                                 status={status}
