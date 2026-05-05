@@ -142,6 +142,19 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
     };
 
     const startExecution = async (mode = 'normal') => {
+        // 0. Si vengo de un estado terminal (success/error), descartar el runner
+        // anterior y arrancar limpio. Sin esto, el usuario apretando "Ejecutar"
+        // otra vez sin cerrar el modal reusaba el runner agotado del backend.
+        if (status === 'success' || status === 'error') {
+            await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/reset`, { method: 'POST' }).catch(console.error);
+            setStatus('idle');
+            setCurrentStepIndex(0);
+            setError(null);
+            setUserFiles({});
+            setExecutionResult(null);
+            setInputDetails(null);
+        }
+
         // 1. Si el paso actual es RequestUserFiles y hay archivos seleccionados, subirlos primero
         const currentStep = steps[currentStepIndex];
         if (currentStep && currentStep.step === 'RequestUserFiles') {
