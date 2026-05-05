@@ -92,14 +92,27 @@ class RunExcelETL(Step):
         rename_columns=None,
         enrich_data=None,
         metadata_cells=None,
+        start_marker: Optional[str] = None,
+        header_offset: int = 1,
     ):
         """Configura claves de entrada/salida y los parámetros ETL inline.
 
         Los parámetros ETL (`header_row`, `select_columns`, `rename_columns`,
-        `enrich_data`, `metadata_cells`) pueden venir tanto desde un Spec via
-        `LoadConfigFromSpec` (en `ctx.params["_config"][input_key]`) como
-        directamente en la config del step en el pipeline (kwargs aquí).
-        Los kwargs tienen precedencia sobre el Spec/ctx.params si se entregan.
+        `enrich_data`, `metadata_cells`, `start_marker`, `header_offset`)
+        pueden venir tanto desde un Spec via `LoadConfigFromSpec` (en
+        `ctx.params["_config"][input_key]`) como directamente en la config
+        del step en el pipeline (kwargs aquí). Los kwargs tienen precedencia
+        sobre el Spec/ctx.params si se entregan.
+
+        Auto-detección de header (start_marker):
+          Si `start_marker` está definido (string), el step busca la primera
+          fila que contenga ese texto (case-insensitive, en cualquier columna)
+          y usa `fila_marker + header_offset` como header. Útil cuando la
+          posición absoluta del header varía entre archivos (ej. SIMCE
+          preguntas: "Forma 1" en fila 43 o 49 según número de preguntas).
+          Cuando `start_marker` está activo, además se filtran filas donde
+          la primera columna no es un valor numérico válido (descarta filas
+          de pie de tabla).
         """
         resolved_output_key = output_key
         if input_key and not resolved_output_key:
@@ -111,17 +124,20 @@ class RunExcelETL(Step):
         )
         self.input_key = input_key
         self.output_key = resolved_output_key
-        # Config inline: solo guardamos los que el usuario entregó (no None)
+        # Config inline: solo guardamos los que el usuario entregó (no None/default)
         # para que `run()` pueda fallback al Spec/ctx.params cuando falten.
-        self._inline_config = {
-            k: v for k, v in {
-                "header_row": header_row,
-                "select_columns": select_columns,
-                "rename_columns": rename_columns,
-                "enrich_data": enrich_data,
-                "metadata_cells": metadata_cells,
-            }.items() if v is not None
+        inline = {
+            "header_row": header_row,
+            "select_columns": select_columns,
+            "rename_columns": rename_columns,
+            "enrich_data": enrich_data,
+            "metadata_cells": metadata_cells,
+            "start_marker": start_marker,
         }
+        self._inline_config = {k: v for k, v in inline.items() if v is not None}
+        # header_offset: solo lo guardamos si difiere del default (1)
+        if header_offset != 1:
+            self._inline_config["header_offset"] = header_offset
 
     def run(self, ctx):
         """Lee Excels, aplica select/rename y consolida en un DataFrame."""
@@ -174,6 +190,9 @@ class RunExcelETL(Step):
         column_mapping = _resolve("rename_columns", {})
         # Celdas individuales pre-header a inyectar como columnas (caso DIA)
         metadata_cells = _resolve("metadata_cells", [])
+        # Auto-detección de header por marker textual (caso SIMCE preguntas)
+        start_marker = _resolve("start_marker", None)
+        header_offset = _resolve("header_offset", 1)
 
         # --- PASO 2: Normalizar la configuracion del header ---
         # Si el usuario paso un solo entero, lo convertimos a la estructura de diccionario
@@ -192,11 +211,57 @@ class RunExcelETL(Step):
             nombre_archivo = os.path.basename(ruta_archivo)
 
             try:
-                # 3.1: Determinar fila del header
-                header_row = header_conf.get(nombre_archivo, header_conf.get("default", 0))
+                # 3.1: Determinar fila del header.
+                # Si hay start_marker, buscamos la fila del marker y usamos un offset.
+                # Si no, usamos header_row absoluto del config.
+                if start_marker:
+                    df_raw = pd.read_excel(ruta_archivo, header=None)
+                    marker_lower = str(start_marker).strip().lower()
+                    marker_row = None
+                    for i in range(len(df_raw)):
+                        for v in df_raw.iloc[i]:
+                            if isinstance(v, str) and marker_lower in v.strip().lower():
+                                marker_row = i
+                                break
+                        if marker_row is not None:
+                            break
+                    if marker_row is None:
+                        self._log(
+                            f"[{self.name}] start_marker '{start_marker}' no encontrado "
+                            f"en {nombre_archivo}; salteo archivo."
+                        )
+                        continue
+                    header_row = marker_row + int(header_offset)
+                    self._log(
+                        f"[{self.name}] {nombre_archivo}: marker='{start_marker}' en fila "
+                        f"{marker_row}, header en fila {header_row}."
+                    )
+                else:
+                    header_row = header_conf.get(nombre_archivo, header_conf.get("default", 0))
 
                 # 3.2: Lectura del Excel
                 temp_df = pd.read_excel(ruta_archivo, header=header_row)
+                # Sanitizar nombres de columnas (strip de espacios y \n)
+                temp_df.columns = [str(c).strip() if isinstance(c, str) else c for c in temp_df.columns]
+
+                # 3.2.b: Si hay marker, filtramos filas donde la primera columna no es numérica
+                # (descarta pie de tabla, filas de totales, etc.).
+                if start_marker and not temp_df.empty:
+                    key_col = temp_df.columns[0]
+                    def _is_numeric_key(v):
+                        if pd.isna(v): return False
+                        try:
+                            int(float(str(v).strip()))
+                            return True
+                        except Exception:
+                            return False
+                    before_n = len(temp_df)
+                    temp_df = temp_df[temp_df[key_col].apply(_is_numeric_key)].reset_index(drop=True)
+                    if before_n != len(temp_df):
+                        self._log(
+                            f"[{self.name}] {nombre_archivo}: filtradas {before_n - len(temp_df)} "
+                            f"filas no-numéricas en columna '{key_col}'."
+                        )
 
                 # 3.3: Select columns
                 if select_columns:
@@ -217,6 +282,11 @@ class RunExcelETL(Step):
                 for col, val in global_user_data.items():
                     if col not in temp_df.columns:  # no pisa per_file si ya cargó
                         temp_df[col] = val
+
+                # 3.5.c: Inyectar nombre del archivo como columna `__source_file__`.
+                # Permite que ModifyColumnValues u otros steps extraigan info
+                # del nombre del archivo (ej. Curso desde 'ReportePregunta 2ªA (5).xlsx').
+                temp_df["__source_file__"] = nombre_archivo
 
                 # 3.6: Inyectar metadata leída de celdas individuales pre-header
                 # (caso DIA: Establecimiento en B5, Curso en B6, datos desde fila 13).
