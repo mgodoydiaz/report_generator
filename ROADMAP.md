@@ -90,6 +90,7 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 - [ ] **NewSpecDrawer**: secciones de edición para tipos `Gráficos`, `Tablas` y `Dashboard` (formularios para `metadata`, `charts_list`, `tables_list`).
 - [x] **Guías de uso en `/help` — Modo A (esqueleto)** ✅ — TOC "Guías de uso" con 4 GuideCards: crear pipeline, configurar tablas, configurar gráficos, funciones derivadas. Contenido inicial con pasos numerados.
 - [ ] **Guías de uso en `/help` — Modo B (completo)** — completar las 4 guías con screenshots, ejemplos de JSON reales y flujos visuales. Posibles guías adicionales: generación de PDF, multi-tenancy, gestión de usuarios.
+- [ ] **Indicador "SIMCE Comparación" (Pullinque ↔ Panguipulli)** — comparar evolución mes a mes de ambos colegios sobre denominador común de % logro. Incluye step custom `BuildSIMCEComparison` (agrega metric 4 + metric 24 a una metric derivada nueva), pipeline "Reconstruir SIMCE Comparación" ejecutable desde `/pipelines`, indicador con 4 tabs (KPIs, comparativa por mes, evolución temporal, por habilidad) reusando charts existentes. **Plan completo**: [`docs/_archive/sprints/sprint-simce-comparacion.md`](./docs/_archive/sprints/sprint-simce-comparacion.md). Pendiente también: decidir qué hacer con metrics 24/25/26 (EMN Aptus) y pipeline 26 — posiblemente crear "SIMCE Panguipulli" individual.
 
 ### Calidad y documentación
 - [ ] Escribir suite de tests automatizados
