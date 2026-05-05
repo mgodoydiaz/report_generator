@@ -12,6 +12,7 @@ const StepRenderer = ({ stepData, status, userFiles, onFileChange, inputDetails,
         return (
             <RequestUserFiles
                 stepParams={stepData.params}
+                stepDescription={stepData.description}
                 files={userFiles}
                 onFileChange={onFileChange}
             />
