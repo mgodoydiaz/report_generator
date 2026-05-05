@@ -86,9 +86,9 @@ const FileDropZone = ({ spec, files, onFileChange }) => {
 
                     <div className="text-center transition-all duration-300">
                         <p className={`text-sm font-bold ${isDragging ? 'text-indigo-600 text-lg' : 'text-slate-700'}`}>
-                            {isDragging ? '¡Suelta los archivos aquí!' :
+                            {isDragging ? '¡Suelte los archivos aquí!' :
                                 isReady ? `${currentFiles.length} archivo(s) seleccionado(s)` :
-                                    'Haz clic o arrastra archivos aquí'}
+                                    'Haga clic o arrastre archivos aquí'}
                         </p>
                         <p className={`text-xs mt-1 transition-opacity whitespace-pre-line max-w-md ${isDragging ? 'opacity-0' : 'text-slate-500'}`}>
                             {spec.description || "Formatos soportados: Excel, CSV"}
@@ -122,7 +122,7 @@ const FileDropZone = ({ spec, files, onFileChange }) => {
 const RequestUserFiles = ({ stepParams, stepDescription, files = {}, onFileChange }) => {
     const fileSpecs = stepParams?.file_specs || [];
     const headerText = stepDescription?.trim() ||
-        "Selecciona los archivos necesarios para continuar con el proceso.";
+        "Seleccione los archivos necesarios para continuar con el proceso.";
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">

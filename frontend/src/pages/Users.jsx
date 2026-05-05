@@ -72,7 +72,7 @@ export default function Users() {
   const handleToggleActive = async (user) => {
     if (!isAdmin) return;
     if (user.id === currentUser.id) {
-      toast.error("No puedes desactivar tu propia cuenta");
+      toast.error("No puede desactivar su propia cuenta");
       return;
     }
     try {
@@ -106,7 +106,7 @@ export default function Users() {
               Usuarios
             </h1>
             <p className="text-slate-500 dark:text-slate-400 text-sm mt-0.5">
-              Administra los usuarios de tu organización
+              Administre los usuarios de su organización
             </p>
           </div>
         </div>
