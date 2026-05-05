@@ -90,7 +90,7 @@ const FileDropZone = ({ spec, files, onFileChange }) => {
                                 isReady ? `${currentFiles.length} archivo(s) seleccionado(s)` :
                                     'Haz clic o arrastra archivos aquí'}
                         </p>
-                        <p className={`text-xs mt-1 transition-opacity ${isDragging ? 'opacity-0' : 'text-slate-400'}`}>
+                        <p className={`text-xs mt-1 transition-opacity whitespace-pre-line max-w-md ${isDragging ? 'opacity-0' : 'text-slate-500'}`}>
                             {spec.description || "Formatos soportados: Excel, CSV"}
                         </p>
                     </div>
@@ -119,16 +119,18 @@ const FileDropZone = ({ spec, files, onFileChange }) => {
     );
 };
 
-const RequestUserFiles = ({ stepParams, files = {}, onFileChange }) => {
+const RequestUserFiles = ({ stepParams, stepDescription, files = {}, onFileChange }) => {
     const fileSpecs = stepParams?.file_specs || [];
+    const headerText = stepDescription?.trim() ||
+        "Selecciona los archivos necesarios para continuar con el proceso.";
 
     return (
         <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div className="bg-amber-50 border border-amber-100 p-4 rounded-xl flex gap-3 text-amber-700">
-                <AlertCircle size={20} className="shrink-0" />
+                <AlertCircle size={20} className="shrink-0 mt-0.5" />
                 <div className="text-sm">
                     <p className="font-bold">Archivos Requeridos</p>
-                    <p>Selecciona los archivos necesarios para continuar con el proceso.</p>
+                    <p className="whitespace-pre-line">{headerText}</p>
                 </div>
             </div>
             <div className="grid gap-6">
