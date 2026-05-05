@@ -945,7 +945,10 @@ export function ItemRenderer({ item, ctx, tabContext }) {
     // Gráfico configurado (Spec type=Gráficos) — render directo con ChartRenderer.
     // Item shape: {type: 'configured_chart', spec_id: 9, title?, height?}
     if (item.type === 'configured_chart' && item.spec_id) {
-        const extra = {};
+        // Combina: filtros del indicador (Año, Asignatura, Hito, ...) +
+        // filtros scoped del dashboard (curso, habilidad activos). Los
+        // scoped pisan a los del indicador si hay colisión por nombre.
+        const extra = { ...(ctx.dashboardFilters || {}) };
         if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
         if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
         return (
@@ -967,10 +970,10 @@ export function ItemRenderer({ item, ctx, tabContext }) {
     // Tabla configurada (Spec type=Tablas) — render directo con TableRenderer.
     // Item shape: {type: 'configured_table', spec_id: 9, title?, pageSize?}
     if (item.type === 'configured_table' && item.spec_id) {
-        // Inyecta filtros activos del dashboard (curso, habilidad) como
-        // extra_filters de la tabla. El backend valida si esas
+        // Inyecta filtros del indicador + filtros scoped del dashboard
+        // como extra_filters de la tabla. El backend valida si esas
         // dimensiones existen en la métrica subyacente.
-        const extra = {};
+        const extra = { ...(ctx.dashboardFilters || {}) };
         if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
         if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
         return (
@@ -1138,7 +1141,7 @@ function EmptyLayoutPlaceholder() {
     );
 }
 
-export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, subpruebaActiva, setSubpruebaActiva, onCursoClick, derivedColumns }) {
+export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, setCursoActivo, subpruebaActiva, setSubpruebaActiva, onCursoClick, derivedColumns, dashboardFilters }) {
     const [activeTab, setActiveTab] = useState(0);
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
@@ -1169,6 +1172,10 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
         computed: enrichedComputed, datosCurso, cursoActivo, setCursoActivo,
         subpruebaActiva, setSubpruebaActiva, onCursoClick,
         metricLogro, setMetricLogro, metricBoxplot, setMetricBoxplot,
+        // Filtros del indicador (Año, Asignatura, Hito, etc.) propagados a
+        // los items configured_table / configured_chart como extra_filters.
+        // Llaves son nombres de dimensión, valores pueden ser str | str[].
+        dashboardFilters: dashboardFilters || {},
     };
 
     const tabStyle = (active) =>
