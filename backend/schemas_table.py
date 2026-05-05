@@ -115,10 +115,17 @@ class TableDataSource(BaseModel):
 
 
 class TableGrouping(BaseModel):
-    by: str
+    # `by` puede ser un único campo (str) o una lista de campos para
+    # agrupar por la combinación (ej ["Curso", "Hito"] para una tabla
+    # comparativa entre hitos por curso).
+    by: str | List[str]
     # Aggregations para columnas que NO sean la de groupby (las columnas
     # mismas pueden definir su .agg para distintos modos por columna).
     drop_ungrouped: bool = False
+
+    def by_list(self) -> List[str]:
+        """Devuelve `by` siempre como lista, normalizando str → [str]."""
+        return [self.by] if isinstance(self.by, str) else list(self.by)
 
 
 class TableSort(BaseModel):

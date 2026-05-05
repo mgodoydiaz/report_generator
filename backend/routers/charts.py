@@ -234,10 +234,17 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         pivot = df.pivot_table(
             index=m.group_field, columns=m.x_field, values=m.y_field, aggfunc=agg
         )
+        # `pivot.fillna(None)` es un no-op en pandas (None != NaN). Para que
+        # json.dumps acepte el resultado hay que reemplazar NaN por None
+        # explícitamente con .where + .astype(object).
+        z_values = (
+            pivot.astype(object).where(pivot.notna(), None).values.tolist()
+            if hasattr(pivot, "values") else []
+        )
         return {
             "x": [str(c) for c in pivot.columns.tolist()],
             "y": [str(r) for r in pivot.index.tolist()],
-            "z": pivot.fillna(None).values.tolist() if hasattr(pivot, "values") else [],
+            "z": z_values,
         }
 
     if ct == "radar":
