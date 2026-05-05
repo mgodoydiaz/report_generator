@@ -142,7 +142,7 @@ export default function Metrics() {
                         Métricas
                     </h1>
                     <p className="text-slate-400 dark:text-slate-500 text-sm font-medium">
-                        Administra los indicadores y variables que mides en tus reportes.
+                        Administre los indicadores y variables que mide en sus reportes.
                     </p>
                 </div>
                 <div className="flex items-center gap-2">

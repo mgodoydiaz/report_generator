@@ -127,7 +127,7 @@ export default function ImportModal({ isOpen, onClose, onImport, onDownloadTempl
                             <div className="bg-white dark:bg-slate-800 p-3 rounded-full shadow-sm mb-2">
                                 <UploadCloud size={24} className="text-indigo-500" />
                             </div>
-                            <h4 className="font-bold text-slate-700 dark:text-slate-200 text-base">Arrastra tus archivos aquí</h4>
+                            <h4 className="font-bold text-slate-700 dark:text-slate-200 text-base">Arrastre sus archivos aquí</h4>
                             <p className="text-slate-400 text-xs mt-1 mb-4 text-center max-w-xs">Excel (.xlsx, .xls) o CSV.</p>
 
                             <input

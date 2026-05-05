@@ -59,7 +59,7 @@ const EnrichOnceForm = ({ fields, onSubmit }) => {
                 <PenLine size={20} className="shrink-0 mt-0.5" />
                 <div className="text-sm">
                     <p className="font-bold">Datos del Run</p>
-                    <p>Ingresa los valores que aplican a todos los archivos de esta ejecución.</p>
+                    <p>Ingrese los valores que aplican a todos los archivos de esta ejecución.</p>
                 </div>
             </div>
 
@@ -76,7 +76,7 @@ const EnrichOnceForm = ({ fields, onSubmit }) => {
                                 className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white text-slate-800
                                            focus:outline-none focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400"
                             >
-                                <option value="">— Seleccioná —</option>
+                                <option value="">— Seleccione —</option>
                                 {field.options.map(opt => (
                                     <option key={opt} value={opt}>{opt}</option>
                                 ))}
@@ -106,7 +106,7 @@ const EnrichOnceForm = ({ fields, onSubmit }) => {
                     ) : (
                         <>
                             <AlertCircle size={14} />
-                            <span>Completa todos los campos</span>
+                            <span>Complete todos los campos</span>
                         </>
                     )}
                 </div>
@@ -161,7 +161,7 @@ const EnrichPerFileTable = ({ files, fields, onSubmit }) => {
                 <PenLine size={20} className="shrink-0 mt-0.5" />
                 <div className="text-sm">
                     <p className="font-bold">Datos Requeridos por Archivo</p>
-                    <p>Ingresa los valores correspondientes para cada archivo antes de continuar.</p>
+                    <p>Ingrese los valores correspondientes para cada archivo antes de continuar.</p>
                 </div>
             </div>
 
@@ -223,7 +223,7 @@ const EnrichPerFileTable = ({ files, fields, onSubmit }) => {
                     ) : (
                         <>
                             <AlertCircle size={14} />
-                            <span>Completa todos los campos para continuar</span>
+                            <span>Complete todos los campos para continuar</span>
                         </>
                     )}
                 </div>

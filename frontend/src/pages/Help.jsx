@@ -388,13 +388,13 @@ export default function Help() {
                         title="Crear y ejecutar un pipeline"
                         summary="Un pipeline es una secuencia ordenada de pasos (steps) que toma archivos de entrada (Excel, PDF), los procesa y guarda los resultados en una métrica."
                         steps={[
-                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/pipelines</code> y abrí "Nuevo pipeline". Definí nombre, descripción y el tipo de input principal.</>,
-                            <>Editá el JSON del pipeline en el modal. La estructura es <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">{`{ workflow_metadata, context, pipeline: [{ step, params }, ...] }`}</code>. Los pasos disponibles los ves en el desplegable del editor.</>,
+                            <>Diríjase a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/pipelines</code> y abra "Nuevo pipeline". Defina nombre, descripción y el tipo de input principal.</>,
+                            <>Edite el JSON del pipeline en el modal. La estructura es <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">{`{ workflow_metadata, context, pipeline: [{ step, params }, ...] }`}</code>. Los pasos disponibles aparecen en el desplegable del editor.</>,
                             <>Pasos típicos: <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">InitRun</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">RequestUserFiles</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">RunExcelETL</code> → <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">SaveToMetric</code>.</>,
-                            <>Al ejecutar, el modal de ejecución te pedirá los archivos cuando un step lo requiera (pausa interactiva). Subilos y continuá.</>,
+                            <>Al ejecutar, el modal de ejecución le pedirá los archivos cuando un step lo requiera (pausa interactiva). Súbalos y continúe.</>,
                             <>Al terminar, los datos quedan guardados en la métrica destino y son visibles en <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code>.</>,
                         ]}
-                        note="Tip: si un pipeline va a procesar varios archivos del mismo tipo (ej. EMN por mes), poné varios bloques RequestUserFiles consecutivos — cada uno limpia solo su carpeta de inputs."
+                        note="Sugerencia: si un pipeline va a procesar varios archivos del mismo tipo (ej. EMN por mes), use varios bloques RequestUserFiles consecutivos — cada uno limpia solo su carpeta de inputs."
                     />
 
                     <GuideCard
@@ -402,10 +402,10 @@ export default function Help() {
                         title="Configurar tablas (catálogo /tables)"
                         summary="El catálogo de tablas permite definir tablas reutilizables (resumen por curso, lista de estudiantes, análisis por pregunta) sin escribir JSON."
                         steps={[
-                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/tables</code> y elegí "Nueva tabla" o duplicá una existente del catálogo.</>,
-                            <>Definí el grouping principal (curso, estudiante, pregunta) y las columnas a calcular: cantidad, promedio, mínimo, máximo, distribución por categoría.</>,
-                            <>Si una columna requiere un cálculo derivado (ej. avance temporal), referenciá el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> ya configurado en el indicador.</>,
-                            <>Vinculá la tabla al indicador correspondiente desde su layout. Aparece en <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code> y en los PDFs si el layout PDF la incluye.</>,
+                            <>Diríjase a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/tables</code> y elija "Nueva tabla" o duplique una existente del catálogo.</>,
+                            <>Defina el grouping principal (curso, estudiante, pregunta) y las columnas a calcular: cantidad, promedio, mínimo, máximo, distribución por categoría.</>,
+                            <>Si una columna requiere un cálculo derivado (ej. avance temporal), referencie el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> ya configurado en el indicador.</>,
+                            <>Vincule la tabla al indicador correspondiente desde su layout. Aparece en <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code> y en los PDFs si el layout PDF la incluye.</>,
                         ]}
                         note="Multi-agg: una misma columna puede mostrar varias agregaciones a la vez (ej. promedio + delta vs. evaluación anterior)."
                     />
@@ -415,12 +415,12 @@ export default function Help() {
                         title="Configurar gráficos (catálogo /charts)"
                         summary="El catálogo de gráficos centraliza la configuración de visualizaciones disponibles para los dashboards y los PDFs."
                         steps={[
-                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/charts</code>. Vas a ver los gráficos pre-armados (BarByGroup, BoxPlotByGroup, RadarProfile, etc.) y podés crear nuevos.</>,
-                            <>Para crear uno nuevo, elegí el componente del registry (la lista completa está más abajo en este Centro de Ayuda) y mapeá los campos del data al gráfico (groupField, valueField, etc.).</>,
-                            <>Si el gráfico necesita un campo derivado, primero configurá el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> en el indicador para que esté disponible.</>,
-                            <>Asignalo a un dashboard desde el layout del indicador, o a una sección del PDF desde el layout PDF.</>,
+                            <>Diríjase a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/charts</code>. Verá los gráficos pre-armados (BarByGroup, BoxPlotByGroup, RadarProfile, etc.) y puede crear nuevos.</>,
+                            <>Para crear uno nuevo, elija el componente del registry (la lista completa aparece más abajo en este Centro de Ayuda) y mapee los campos del data al gráfico (groupField, valueField, etc.).</>,
+                            <>Si el gráfico necesita un campo derivado, primero configure el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_field</code> en el indicador para que esté disponible.</>,
+                            <>Asígnelo a un dashboard desde el layout del indicador, o a una sección del PDF desde el layout PDF.</>,
                         ]}
-                        note="Los gráficos legacy (Recharts) usan campos fijos como _rend, _logro, _habilidad. Los Plotly nuevos son completamente configurables — usá los Plotly cuando puedas."
+                        note="Los gráficos legacy (Recharts) usan campos fijos como _rend, _logro, _habilidad. Los Plotly nuevos son completamente configurables — se recomiendan los Plotly cuando sea posible."
                     />
 
                     <GuideCard
@@ -428,9 +428,9 @@ export default function Help() {
                         title="Funciones derivadas (/functions)"
                         summary="Las funciones derivadas transforman datos crudos en valores derivados: avance entre evaluaciones, mejora respecto al inicio, mapeos de niveles, etc."
                         steps={[
-                            <>Andá a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/functions</code> para ver el catálogo de mapeos. Los kinds disponibles incluyen <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">piecewise_linear</code> y lookup tables.</>,
-                            <>Para campos derivados a nivel de indicador (avance temporal, promedio por estudiante), abrí el indicador y configurá <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_columns</code> con el kind apropiado: <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">agg</code> (groupby), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">slope</code> (regresión lineal expansiva), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">delta</code> (último menos primero).</>,
-                            <>Definí el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">entity_field</code> (qué identifica una unidad: RUT, Curso+Nombre, etc.) y el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">time_field</code> con su orden si es ordinal (ej. ABRIL → JUNIO → AGOSTO).</>,
+                            <>Diríjase a <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/functions</code> para ver el catálogo de mapeos. Los kinds disponibles incluyen <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">piecewise_linear</code> y lookup tables.</>,
+                            <>Para campos derivados a nivel de indicador (avance temporal, promedio por estudiante), abra el indicador y configure <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">derived_columns</code> con el kind apropiado: <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">agg</code> (groupby), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">slope</code> (regresión lineal expansiva), <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">delta</code> (último menos primero).</>,
+                            <>Defina el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">entity_field</code> (qué identifica una unidad: RUT, Curso+Nombre, etc.) y el <code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">time_field</code> con su orden si es ordinal (ej. ABRIL → JUNIO → AGOSTO).</>,
                             <>Una vez configurado, el campo aparece automáticamente en dashboards (<code className="font-mono px-1 rounded bg-slate-100 dark:bg-slate-800">/results</code>) y PDFs.</>,
                         ]}
                         note="Importante: las funciones temporales (slope/delta) operan sobre el histórico completo del estudiante, ignorando los filtros temporales del dashboard. Esto es deseable para que el avance no cambie según el filtro."
