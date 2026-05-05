@@ -18,6 +18,13 @@ function getComponentMeta(item) {
 }
 
 function itemLabel(item) {
+    // Items configurados desde el catálogo (/tables, /charts) guardan el name
+    // del spec en `item.title`. Mostrar ese título es lo más útil para que el
+    // usuario identifique a qué tabla/gráfico está mirando, en lugar del
+    // genérico "configured_table" / "configured_chart".
+    if ((item.type === 'configured_table' || item.type === 'configured_chart') && item.title) {
+        return item.title;
+    }
     const meta = getComponentMeta(item);
     return meta ? meta.label : item.component || item.type;
 }
@@ -85,6 +92,8 @@ function ItemBadge({ item, onRemove, onUpdate, onDragStart, onDragOver, onDrop, 
         subprueba_selector: 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-400',
         table:              'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400',
         chart:              'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-700 dark:text-emerald-400',
+        configured_table:   'bg-indigo-50 border-indigo-300 text-indigo-700 dark:bg-indigo-900/20 dark:border-indigo-700 dark:text-indigo-400',
+        configured_chart:   'bg-violet-50 border-violet-300 text-violet-700 dark:bg-violet-900/20 dark:border-violet-700 dark:text-violet-400',
     }[meta?.type || item.type] || 'bg-slate-50 border-slate-200 text-slate-600';
 
     const configFields = meta?.axisConfig?.map(a => item[a.key]).filter(Boolean) || [];
