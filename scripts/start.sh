@@ -16,5 +16,12 @@ echo "→ Iniciando uvicorn en puerto ${PORT:-8000}..."
 # inyectan. Sin esto, los redirects 307 que hace FastAPI (ej: /api/metrics ->
 # /api/metrics/) se construyen con http:// en lugar de https://, y el browser
 # los bloquea por mixed content -> "Failed to fetch".
-exec uvicorn backend.api:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 2 \
+#
+# --workers 1: el dict ACTIVE_RUNNERS en routers/pipelines.py vive en memoria
+# del proceso. Con 2+ workers cada request del mismo pipeline puede caer en
+# un worker distinto y no ver el runner cargado, rompiendo el flow
+# upload/run/input. Mientras no haya backend de estado compartido (Redis u
+# otra DB), nos quedamos en 1 worker. Para escalar, agregar Redis y mover
+# ACTIVE_RUNNERS allí.
+exec uvicorn backend.api:app --host 0.0.0.0 --port "${PORT:-8000}" --workers 1 \
     --proxy-headers --forwarded-allow-ips='*'
