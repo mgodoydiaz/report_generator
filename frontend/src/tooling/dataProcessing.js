@@ -189,6 +189,16 @@ export function processDataForDashboard(result) {
             roleFieldMap[role] = ROLE_ALIASES[role];
         }
     }
+    // Resolver choque entre logro_1 (numérico) y el alias legacy `_logro`,
+    // que está reservado por convención para nivel_de_logro (string del nivel).
+    // Si la columna del role logro_1 se llama "Logro" (caso DIA), su fieldName
+    // natural sería `_logro`, lo que pisaría el string del nivel y rompería
+    // varios charts legacy (TablaResumenCursos, GraficoNivelesPorCurso, etc.)
+    // y el KPI de Logro Promedio (avg sobre strings → NaN). Forzamos logro_1
+    // al alias legacy `_rend` para mantener `_logro` como string del nivel.
+    if (roleFieldMap.logro_1 === '_logro') {
+        roleFieldMap.logro_1 = '_rend';
+    }
 
     // Mapa inverso fieldName → role (cubre tanto el nombre canónico como el alias legacy)
     const fieldToRole = {};
