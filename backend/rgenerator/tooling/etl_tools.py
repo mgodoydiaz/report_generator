@@ -172,7 +172,15 @@ def modificar_valores_columna(df, config_transformaciones):
 
         elif operacion == "math":
             usa_fila = regla.get("usa_fila", False)
-            _math_ns = {"__builtins__": {}, "abs": abs, "round": round, "min": min, "max": max, "sum": sum, "len": len, "str": str, "float": float, "int": int}
+            import re as _re_mod
+            _math_ns = {
+                "__builtins__": {},
+                "abs": abs, "round": round, "min": min, "max": max,
+                "sum": sum, "len": len, "str": str, "float": float, "int": int,
+                # Acceso al módulo `re` para parseo de strings (ej. extraer
+                # info de nombres de archivo en `__source_file__`).
+                "re": _re_mod,
+            }
 
             if usa_fila:
                 def aplicar_math_fila(row, reglas):
