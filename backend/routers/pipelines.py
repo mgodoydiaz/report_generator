@@ -122,6 +122,14 @@ async def execute_pipeline(
     try:
         os.system("cls")
 
+        # Si hay un runner previo en estado terminal (COMPLETED/FAILED),
+        # lo descartamos para empezar un run nuevo desde cero. Sin esto, el
+        # frontend reusaba el runner agotado y los steps ya ejecutados se
+        # saltaban (bug: pedía archivos en orden incorrecto entre re-ejecuciones).
+        existing = ACTIVE_RUNNERS.get(pipeline_id)
+        if existing is not None and getattr(existing, "status", None) in ("COMPLETED", "FAILED"):
+            del ACTIVE_RUNNERS[pipeline_id]
+
         if pipeline_id not in ACTIVE_RUNNERS:
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
@@ -200,6 +208,11 @@ async def execute_pipeline_step(
     user: User = Depends(get_current_user),
 ):
     try:
+        # Idem que en /run: descartar runner terminal antes de crear nuevo.
+        existing = ACTIVE_RUNNERS.get(pipeline_id)
+        if existing is not None and getattr(existing, "status", None) in ("COMPLETED", "FAILED"):
+            del ACTIVE_RUNNERS[pipeline_id]
+
         if pipeline_id not in ACTIVE_RUNNERS:
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
