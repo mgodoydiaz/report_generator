@@ -1,10 +1,11 @@
 import json
 import os
 import shutil
+import time
 from datetime import datetime
 from io import BytesIO
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -20,8 +21,52 @@ from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
-# Store active sessions in memory (Global state for this module)
-ACTIVE_RUNNERS: Dict[int, PipelineRunner] = {}
+# ─────────────────────────────────────────────────────────────────────────
+# Estado de sesión de pipelines
+#
+# `ACTIVE_RUNNERS` mantiene los `PipelineRunner` en curso en memoria. La
+# clave es `(user_id, pipeline_id)` — así distintos usuarios pueden
+# ejecutar el mismo pipeline en paralelo sin pisarse el state.
+#
+# IMPORTANTE: este dict vive en memoria del proceso. Para que funcione
+# uvicorn debe correr con `--workers 1` (ver scripts/start.sh). Con
+# múltiples workers, cada request puede caer en un proceso distinto y
+# no encontrar el runner. La opción de escala es mover este state a Redis.
+#
+# `_RUNNER_LAST_ACTIVITY` rastrea cuándo se tocó cada runner por última
+# vez. Runners idle por más de RUNNER_TTL_SECONDS se descartan en cada
+# request para no acumular sesiones colgadas.
+# ─────────────────────────────────────────────────────────────────────────
+
+RunnerKey = Tuple[int, int]  # (user_id, pipeline_id)
+
+ACTIVE_RUNNERS: Dict[RunnerKey, PipelineRunner] = {}
+_RUNNER_LAST_ACTIVITY: Dict[RunnerKey, float] = {}
+
+RUNNER_TTL_SECONDS = 30 * 60  # 30 minutos
+
+
+def _key(user: User, pipeline_id: int) -> RunnerKey:
+    return (user.id, pipeline_id)
+
+
+def _cleanup_stale_runners() -> int:
+    """Descarta runners cuya última actividad es más antigua que el TTL."""
+    now = time.time()
+    stale = [k for k, ts in _RUNNER_LAST_ACTIVITY.items() if now - ts > RUNNER_TTL_SECONDS]
+    for k in stale:
+        ACTIVE_RUNNERS.pop(k, None)
+        _RUNNER_LAST_ACTIVITY.pop(k, None)
+    return len(stale)
+
+
+def _touch_runner(key: RunnerKey) -> None:
+    _RUNNER_LAST_ACTIVITY[key] = time.time()
+
+
+def _drop_runner(key: RunnerKey) -> None:
+    ACTIVE_RUNNERS.pop(key, None)
+    _RUNNER_LAST_ACTIVITY.pop(key, None)
 
 
 def _pipeline_to_dict(p: Pipeline) -> dict:
@@ -120,24 +165,27 @@ async def execute_pipeline(
     user: User = Depends(get_current_user),
 ):
     try:
-        os.system("cls")
+        _cleanup_stale_runners()
+        key = _key(user, pipeline_id)
 
         # Si hay un runner previo en estado terminal (COMPLETED/FAILED),
         # lo descartamos para empezar un run nuevo desde cero. Sin esto, el
         # frontend reusaba el runner agotado y los steps ya ejecutados se
         # saltaban (bug: pedía archivos en orden incorrecto entre re-ejecuciones).
-        existing = ACTIVE_RUNNERS.get(pipeline_id)
+        existing = ACTIVE_RUNNERS.get(key)
         if existing is not None and getattr(existing, "status", None) in ("COMPLETED", "FAILED"):
-            del ACTIVE_RUNNERS[pipeline_id]
+            _drop_runner(key)
 
-        if pipeline_id not in ACTIVE_RUNNERS:
+        if key not in ACTIVE_RUNNERS:
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline para el ID {pipeline_id}"}
-            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
+            ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
 
-        runner = ACTIVE_RUNNERS[pipeline_id]
+        runner = ACTIVE_RUNNERS[key]
+        _touch_runner(key)
         results = runner.run_all()
+        _touch_runner(key)
         last_result = results[-1] if results else {}
 
         if last_result.get("status") == "waiting_input":
@@ -151,8 +199,7 @@ async def execute_pipeline(
         _update_last_run(pipeline_id, user, db)
         return result
     except Exception as e:
-        if pipeline_id in ACTIVE_RUNNERS:
-            del ACTIVE_RUNNERS[pipeline_id]
+        _drop_runner(_key(user, pipeline_id))
         return {"error": str(e)}
 
 
@@ -165,10 +212,13 @@ async def submit_pipeline_input(
 ):
     """Recibe input del usuario para reanudar un pipeline pausado."""
     try:
-        if pipeline_id not in ACTIVE_RUNNERS:
+        _cleanup_stale_runners()
+        key = _key(user, pipeline_id)
+        if key not in ACTIVE_RUNNERS:
             return {"error": "La sesión del pipeline no está activa."}
 
-        runner = ACTIVE_RUNNERS[pipeline_id]
+        runner = ACTIVE_RUNNERS[key]
+        _touch_runner(key)
 
         if input_data.get("type") == "enrich_per_file":
             if not hasattr(runner.ctx, "user_inputs"):
@@ -185,6 +235,7 @@ async def submit_pipeline_input(
             runner.ctx.user_inputs["enrich_global"] = global_store
 
         results = runner.run_all()
+        _touch_runner(key)
         last_result = results[-1] if results else {}
 
         if last_result.get("status") == "waiting_input":
@@ -208,27 +259,31 @@ async def execute_pipeline_step(
     user: User = Depends(get_current_user),
 ):
     try:
-        # Idem que en /run: descartar runner terminal antes de crear nuevo.
-        existing = ACTIVE_RUNNERS.get(pipeline_id)
-        if existing is not None and getattr(existing, "status", None) in ("COMPLETED", "FAILED"):
-            del ACTIVE_RUNNERS[pipeline_id]
+        _cleanup_stale_runners()
+        key = _key(user, pipeline_id)
 
-        if pipeline_id not in ACTIVE_RUNNERS:
+        # Idem que en /run: descartar runner terminal antes de crear nuevo.
+        existing = ACTIVE_RUNNERS.get(key)
+        if existing is not None and getattr(existing, "status", None) in ("COMPLETED", "FAILED"):
+            _drop_runner(key)
+
+        if key not in ACTIVE_RUNNERS:
             config = _get_pipeline_config_from_db(pipeline_id, user, db)
             if not config:
                 return {"error": "No se encontró la configuración del pipeline"}
-            ACTIVE_RUNNERS[pipeline_id] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
+            ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
 
-        runner = ACTIVE_RUNNERS[pipeline_id]
+        runner = ACTIVE_RUNNERS[key]
+        _touch_runner(key)
         result = runner.step()
+        _touch_runner(key)
 
         if result.get("finished"):
             _update_last_run(pipeline_id, user, db)
 
         return result
     except Exception as e:
-        if pipeline_id in ACTIVE_RUNNERS:
-            del ACTIVE_RUNNERS[pipeline_id]
+        _drop_runner(_key(user, pipeline_id))
         return {"error": str(e)}
 
 
@@ -238,8 +293,7 @@ async def reset_pipeline_session(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if pipeline_id in ACTIVE_RUNNERS:
-        del ACTIVE_RUNNERS[pipeline_id]
+    _drop_runner(_key(user, pipeline_id))
     return {"status": "success"}
 
 
@@ -250,10 +304,12 @@ async def download_artifact(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if pipeline_id not in ACTIVE_RUNNERS:
+    key = _key(user, pipeline_id)
+    if key not in ACTIVE_RUNNERS:
         raise HTTPException(status_code=404, detail="La sesión del pipeline ha expirado o no existe.")
 
-    runner = ACTIVE_RUNNERS[pipeline_id]
+    runner = ACTIVE_RUNNERS[key]
+    _touch_runner(key)
     artifact = runner.ctx.artifacts.get(artifact_key)
 
     if artifact is None:
@@ -302,10 +358,12 @@ async def preview_artifact(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if pipeline_id not in ACTIVE_RUNNERS:
+    key = _key(user, pipeline_id)
+    if key not in ACTIVE_RUNNERS:
         raise HTTPException(status_code=404, detail="La sesión del pipeline ha expirado.")
 
-    runner = ACTIVE_RUNNERS[pipeline_id]
+    runner = ACTIVE_RUNNERS[key]
+    _touch_runner(key)
     artifact = runner.ctx.artifacts.get(artifact_key)
 
     if artifact is None:
