@@ -949,8 +949,15 @@ export function ItemRenderer({ item, ctx, tabContext }) {
         // filtros scoped del dashboard (curso, habilidad activos). Los
         // scoped pisan a los del indicador si hay colisión por nombre.
         const extra = { ...(ctx.dashboardFilters || {}) };
-        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
-        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        // cursoActivo (course_selector) → filtro por nombre de dim "Curso".
+        // Esa dim existe por convención en TODAS las métricas de evaluación
+        // (SIMCE, DIA, IDEL, FL, CV) — ver dataProcessing.js.
+        // subpruebaActiva (subprueba_selector) → filtro "Habilidad" (rol
+        // "habilidad" mapea a la dim Habilidad en todas las evaluaciones
+        // que la usan; si la métrica no tiene esa dim, el backend ignora
+        // el filtro silenciosamente).
+        if (cursoActivo) extra["Curso"] = cursoActivo;
+        if (subpruebaActiva) extra["Habilidad"] = subpruebaActiva;
         return (
             <div>
                 {item.title && (
@@ -974,8 +981,15 @@ export function ItemRenderer({ item, ctx, tabContext }) {
         // como extra_filters de la tabla. El backend valida si esas
         // dimensiones existen en la métrica subyacente.
         const extra = { ...(ctx.dashboardFilters || {}) };
-        if (cursoActivo && activeRoles?.curso) extra[activeRoles.curso] = cursoActivo;
-        if (subpruebaActiva && activeRoles?.habilidad) extra[activeRoles.habilidad] = subpruebaActiva;
+        // cursoActivo (course_selector) → filtro por nombre de dim "Curso".
+        // Esa dim existe por convención en TODAS las métricas de evaluación
+        // (SIMCE, DIA, IDEL, FL, CV) — ver dataProcessing.js.
+        // subpruebaActiva (subprueba_selector) → filtro "Habilidad" (rol
+        // "habilidad" mapea a la dim Habilidad en todas las evaluaciones
+        // que la usan; si la métrica no tiene esa dim, el backend ignora
+        // el filtro silenciosamente).
+        if (cursoActivo) extra["Curso"] = cursoActivo;
+        if (subpruebaActiva) extra["Habilidad"] = subpruebaActiva;
         return (
             <div>
                 {item.title && (
