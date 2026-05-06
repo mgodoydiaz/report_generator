@@ -281,6 +281,46 @@ async def get_indicator_data(
                         filtered.append(item)
                 data_by_metric[mid] = filtered
 
+        # 7.5. Cascading dimension values: para cada dimensión D, su lista
+        # de values disponibles se computa aplicando todos los filtros
+        # ACTUALES excepto el de D mismo. Esto hace que los dropdowns
+        # muestren solo opciones consistentes con las selecciones previas
+        # (ej: si Año=2026, Asignatura solo lista las asignaturas que
+        # existen en 2026), sin que el dropdown de Año pierda sus opciones
+        # al estar él mismo filtrado.
+        if dim_filters:
+            # Re-cargar todos los rows de las metrics involucradas (sin
+            # filtrar) para tener el universo completo. Esto es ligeramente
+            # redundante con el paso 6 que ya cargó todo, pero allí se
+            # mutó data_by_metric ya filtrado en el paso 7. Mantenemos una
+            # estructura aparte para no costar memoria adicional grande.
+            all_rows_by_metric = {}
+            for mid in metric_ids:
+                rows = db.query(MetricData.dimensions_json).filter(
+                    MetricData.id_metric == mid
+                ).all()
+                all_rows_by_metric[mid] = [
+                    _parse_json_field(r[0], {}) for r in rows
+                ]
+
+            for dim_key in list(dims_map.keys()):
+                # Filtros activos sin el de la dimensión D
+                other_filters = {
+                    fk: fv for fk, fv in dim_filters.items() if str(fk) != str(dim_key)
+                }
+                values_acc = set()
+                for mid, dims_list in all_rows_by_metric.items():
+                    for djson in dims_list:
+                        if not all(
+                            _matches(djson.get(fk, ""), fv)
+                            for fk, fv in other_filters.items()
+                        ):
+                            continue
+                        v = djson.get(dim_key)
+                        if v is not None and str(v) != "":
+                            values_acc.add(str(v))
+                dims_map[dim_key]["values"] = sorted(values_acc)
+
         # 8. Parse object-type values
         for mid in data_by_metric:
             m = metrics_by_id.get(mid)

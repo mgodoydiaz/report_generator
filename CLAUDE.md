@@ -15,19 +15,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Rama | Rol |
 |---|---|
-| `main` | Producción. Se promociona desde `devtest` una vez validado en staging |
-| `dev` | Rama activa de desarrollo. Trabajar aquí por defecto |
-| `devtest` | **Staging**. Render auto-deploya esta rama en `rgenerator-staging`. Mergear `dev` → `devtest` para disparar un deploy |
+| `main` | Producción. Railway auto-deploya esta rama. Mergear `dev` → `main` para promover. |
+| `dev` | Rama activa de desarrollo. Trabajar aquí por defecto. |
 
 ### Entornos
 
 | Entorno | Backend | DB | Frontend |
 |---|---|---|---|
 | **Local (WSL)** | `python backend/api.py` en conda env `rgenerator` | Docker PostgreSQL (`report_generator-db-1`) | `npm run dev` en `frontend/` |
-| **Staging (Render)** | `rgenerator-staging.onrender.com` (Docker, rama `devtest`) | `rgenerator-staging-db` PG16 Oregon (Free) | Static Site en Render con `.env.staging` |
-| **Producción** | Pendiente — rama `main`, en Render | Probable **Neon** (São Paulo) por latencia desde Chile | Pendiente |
+| **Producción** | Railway us-east4 (Docker, rama `main`) — `rgenerator-backend-production.up.railway.app` | Supabase PG17, región `sa-east-1` (São Paulo) | Pendiente |
 
-Detalle vivo del deploy en `memory/project_deploy_status.md`.
+Detalle vivo del deploy en `DEPLOYMENT.md` y `memory/project_deploy_status.md`.
 
 ---
 
@@ -36,7 +34,7 @@ Detalle vivo del deploy en `memory/project_deploy_status.md`.
 - **Frontend**: React 18 + Vite, Tailwind CSS 4, react-router-dom
 - **Backend**: FastAPI + Uvicorn (`backend/api.py`), SQLAlchemy ORM, Alembic para migraciones
 - **Auth**: JWT con `python-jose` + bcrypt, multi-tenancy por `org_id`
-- **Base de datos**: PostgreSQL 16 (local en Docker, Render en cloud)
+- **Base de datos**: PostgreSQL (16 local en Docker, 17 en cloud Supabase)
 - **ETL library**: paquete `rgenerator` (`backend/rgenerator/`) instalado en modo editable
 - **Generación de PDFs**: LaTeX/MikTeX + docxtpl (pendiente migrar a algo más liviano — ver ROADMAP)
 - **Procesamiento**: pandas, camelot-py, PyMuPDF, matplotlib
@@ -84,7 +82,7 @@ python scripts/run_etl.py ./config/simce_estudiantes_lenguaje.txt
 # Generar PDF
 python scripts/generate_report.py --schema <schema.json> --data <data.csv> --tipo <type> --output <output.pdf>
 
-# Export/import DB (para seed de Render o backup)
+# Export/import DB (para seed inicial en Supabase o backup)
 python scripts/db_seed.py export --output db_seed.json
 python scripts/db_seed.py import --input db_seed.json --clear
 
@@ -201,7 +199,7 @@ data/
 └── tmp/               trabajo temporal
 ```
 
-En Render, `data/pipeline_runs/` y `data/output/` requieren un Persistent Disk (plan Starter). Staging actual no tiene disk — las ejecuciones largas pierden artifacts al redeployar.
+En Railway, `data/pipeline_runs/` y `data/output/` viven en un Volume montado al contenedor. Las ejecuciones largas persisten entre redeploys.
 
 ### Config del dominio (no DB)
 
@@ -210,14 +208,14 @@ En Render, `data/pipeline_runs/` y `data/output/` requieren un Persistent Disk (
 
 ---
 
-## Deploy a Render
+## Deploy a Producción
 
-- **IaC**: `render.yaml` define backend + DB (+ disk en prod)
-- **Seed inicial de DB**: `scripts/db_seed.py import --input db_seed.json --clear` desde local apuntando al External URL de la PG de Render
-- **Rama staging**: Render service `rgenerator-staging` sigue `dev`
-- **Docker**: Dockerfile multi-stage con targets `dev` y `prod`. Render usa `prod`
+- **Backend**: Railway us-east4, sigue `main`. Auto-deploya en push. Dockerfile multi-stage target `prod`.
+- **DB**: Supabase PG17 `sa-east-1`. Conexión via `DATABASE_URL` configurada en Railway → Variables.
+- **Seed inicial / migraciones de specs**: correr `scripts/_oneshot/_seed_dashboards_v2.py` y `scripts/db_seed.py` desde el contenedor de prod o desde local apuntando al `DATABASE_URL` externo.
+- **Variables de entorno**: ver `DEPLOYMENT.md` para la lista completa. Copia local de referencia en `.env.railway` (gitignored).
 
-Detalles y credenciales en `memory/project_deploy_status.md`.
+Runbook completo en **[DEPLOYMENT.md](./DEPLOYMENT.md)** y estado vivo en `memory/project_deploy_status.md`.
 
 ---
 

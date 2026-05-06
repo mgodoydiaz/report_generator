@@ -391,11 +391,12 @@ def _render_table_data(
     # "Logro_mean", "Logro_max"). Si no se pasó source_key, source = key
     # → comportamiento 1-a-1 anterior.
     if cfg.behavior.grouping:
-        gb = cfg.behavior.grouping.by
-        if gb in df.columns:
+        gb_list = cfg.behavior.grouping.by_list()
+        gb_present = [g for g in gb_list if g in df.columns]
+        if gb_present:
             named_aggs: Dict[str, Any] = {}
             for c in cfg.columns:
-                if c.key == gb:
+                if c.key in gb_present:
                     continue
                 src = c.resolved_source_key()
                 if src not in df.columns:
@@ -403,7 +404,9 @@ def _render_table_data(
                 if c.agg:
                     named_aggs[c.key] = pd.NamedAgg(column=src, aggfunc=c.agg)
             if named_aggs:
-                df = df.groupby(gb, as_index=False).agg(**named_aggs)
+                # Cuando hay >1 col en groupby pandas devuelve un MultiIndex
+                # tupla; `as_index=False` lo aplana a columnas regulares.
+                df = df.groupby(gb_present, as_index=False).agg(**named_aggs)
 
     # Sort
     for s in cfg.behavior.sorting:

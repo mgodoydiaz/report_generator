@@ -805,7 +805,7 @@ class TestRegistry:
         assert set(KIND_REGISTRY.keys()) == {
             "agg", "slope", "delta",
             "row_mean_dynamic", "row_threshold", "normalize_name",
-            "lookup_range", "lookup_dict",
+            "lookup_range", "lookup_dict", "piecewise_linear",
         }
 
     def test_metadata_introspection_first_check(self):

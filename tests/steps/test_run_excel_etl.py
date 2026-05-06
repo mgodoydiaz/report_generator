@@ -226,5 +226,8 @@ class TestRunExcelETLMetadataCells:
         )
         RunExcelETL(input_key="data").run(ctx)
         df = ctx.artifacts["df_consolidado_data"]
-        assert list(df.columns) == ["a", "b"]
+        # __source_file__ se inyecta automáticamente por RunExcelETL para
+        # trazabilidad (ver pdf_steps_stub flow). El flujo legacy debe
+        # seguir trabajando con las columnas del Excel original.
+        assert [c for c in df.columns if c != "__source_file__"] == ["a", "b"]
         assert df.iloc[0]["a"] == 1

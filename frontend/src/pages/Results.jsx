@@ -144,6 +144,12 @@ export default function Results() {
             const result = await res.json();
             const processed = processDataForDashboard(result);
             setDashboardData(processed);
+            // Refresca dimensiones para soportar cascading filters: el
+            // backend devuelve los `values` por dimensión recomputados
+            // aplicando los filtros actuales excepto el de la propia
+            // dimensión. Esto hace que los dropdowns solo muestren
+            // valores consistentes con las selecciones previas.
+            if (result.dimensions) setIndicatorDims(result.dimensions);
             setCursoActivo(null);
             setSubpruebaActiva(null);
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
@@ -177,6 +183,23 @@ export default function Results() {
     };
 
     const hasActiveFilters = Object.keys(selectedFilters).some((k) => (selectedFilters[k] || []).length > 0);
+
+    // Filtros para configured_table / configured_chart: el endpoint
+    // /api/tables/{id}/data y /api/charts/{id}/data esperan dimensiones
+    // por NOMBRE (ej "Curso") no por id, y aceptan list-of-values para
+    // filtros multi-valor. Se aplica el unwrap a single-value cuando
+    // hay un solo elemento para no forzar array innecesariamente.
+    const dashboardFilters = useMemo(() => {
+        const out = {};
+        Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
+            const dimName = indicatorDims[dimId]?.name;
+            if (!dimName) return;
+            const arr = Array.isArray(vals) ? vals.filter(v => v != null && v !== '') : [];
+            if (!arr.length) return;
+            out[dimName] = arr.length === 1 ? arr[0] : arr;
+        });
+        return out;
+    }, [selectedFilters, indicatorDims]);
 
     // ── Indicador actualmente seleccionado + disponibilidad de informe PDF ──
     const currentIndicator = useMemo(() => {
@@ -378,6 +401,7 @@ export default function Results() {
                     subpruebaActiva={subpruebaActiva}
                     setSubpruebaActiva={setSubpruebaActiva}
                     derivedColumns={indicatorDerivedCols}
+                    dashboardFilters={dashboardFilters}
                 />
             )}
 
