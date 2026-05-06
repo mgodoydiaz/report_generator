@@ -327,13 +327,23 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'heatmap') {
+    // Paletas heatmap soportadas:
+    //   "viridis"     → Viridis (default fríos→cálidos, percepción uniforme)
+    //   "rojo_calor"  → YlOrRd (amarillo claro→naranja→rojo). Estándar para
+    //                   "% en riesgo / % crítico" donde rojo = peor.
+    //   (default)     → YlGnBu (amarillo→azul, neutro)
+    const palette = aesthetics?.color_palette;
+    const colorscale =
+      palette === 'viridis' ? 'Viridis'
+        : palette === 'rojo_calor' ? 'YlOrRd'
+        : 'YlGnBu';
     return {
       data: [{
         type: 'heatmap',
         x: dataset.x,
         y: dataset.y,
         z: dataset.z,
-        colorscale: aesthetics?.color_palette === 'viridis' ? 'Viridis' : 'YlGnBu',
+        colorscale,
         reversescale: !!aesthetics?.palette_reversed,
         hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
       }],

@@ -582,6 +582,7 @@ function AestheticsTab({ cfg, onChange }) {
           <option value="">Default (categorical)</option>
           <option value="semaforo">Semáforo (verde/naranja/rojo)</option>
           <option value="viridis">Viridis (heatmap)</option>
+          <option value="rojo_calor">Rojo cálido (amarillo→rojo · YlOrRd)</option>
         </select>
       </div>
 
