@@ -168,14 +168,19 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     return {
       data: [{
         type: 'bar',
+        // Sin `name`, Plotly auto-genera "trace 0" en la leyenda. Como un
+        // bar simple es una sola serie, el nombre es redundante. Le damos
+        // un nombre vacío y desactivamos la leyenda por defecto.
+        name: '',
         x: dataset.x,
         y: dataset.y,
         marker: { color: CATEGORY_COLORS[0] },
         text: showValues ? (dataset.y || []).map(fmtVal) : undefined,
         textposition: showValues ? 'outside' : 'none',
         hovertemplate: yfmt === 'percent' ? '%{x}: %{y:.1%}<extra></extra>' : '%{x}: %{y}<extra></extra>',
+        showlegend: false,
       }],
-      layout: layoutBase,
+      layout: { ...layoutBase, showlegend: false },
     };
   }
 
@@ -292,6 +297,10 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       ? SEMAFORO_COLORS
       : CATEGORY_COLORS;
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    // Para pie, eliminamos xaxis e yaxis del layout (no aplican). Pasarlos
+    // como `undefined` confunde a Plotly y puede dejar el chart colapsado
+    // a height: 0. Hacemos un layout limpio omitiéndolos por destructuring.
+    const { xaxis: _x, yaxis: _y, ...layoutPie } = layoutBase;
     return {
       data: [{
         type: 'pie',
@@ -301,7 +310,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         hole: 0.35,
         textinfo: 'label+percent',
       }],
-      layout: { ...layoutBase, xaxis: undefined, yaxis: undefined },
+      layout: layoutPie,
     };
   }
 
