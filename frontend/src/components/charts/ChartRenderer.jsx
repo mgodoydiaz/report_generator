@@ -77,10 +77,14 @@ export default function ChartRenderer({
     return () => ctrl.abort();
   }, [fetchData]);
 
+  // pivot_matrix se renderiza como tabla HTML, no como Plotly
+  const isPivotMatrix = data?.chart_type === 'pivot_matrix';
+
   const plotProps = useMemo(() => {
     if (!data || data.dataset?.empty) return null;
+    if (isPivotMatrix) return null;  // tabla HTML, no Plotly
     return buildPlotProps(data);
-  }, [data]);
+  }, [data, isPivotMatrix]);
 
   if (error) {
     return (
@@ -95,6 +99,9 @@ export default function ChartRenderer({
         <Loader2 size={20} className="animate-spin" />
       </div>
     );
+  }
+  if (isPivotMatrix && data?.dataset && !data.dataset.empty) {
+    return <PivotMatrixTable data={data} height={height} className={className} />;
   }
   if (!plotProps) {
     return (
@@ -408,4 +415,105 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   return { data: [], layout: layoutBase };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────
+// PivotMatrixTable — renderer de chart_type='pivot_matrix' como tabla HTML
+// ─────────────────────────────────────────────────────────────────────────
+
+// Mapeo de niveles cualitativos comunes a colores. Cuando el cell value
+// matchea (case-insensitive) una de estas claves, la celda se colorea.
+// Si no matchea, queda en gris claro.
+const PIVOT_LEVEL_COLORS = {
+  // IDEL/PDL Woodcock
+  'crítico': { bg: '#fee2e2', fg: '#991b1b' },
+  'critico': { bg: '#fee2e2', fg: '#991b1b' },
+  'alto riesgo': { bg: '#ffedd5', fg: '#9a3412' },
+  'cierto riesgo': { bg: '#fef3c7', fg: '#854d0e' },
+  'bajo riesgo': { bg: '#dcfce7', fg: '#166534' },
+  // SIMCE / DIA
+  'inicial': { bg: '#fee2e2', fg: '#991b1b' },
+  'insuficiente': { bg: '#fee2e2', fg: '#991b1b' },
+  'intermedio': { bg: '#fef3c7', fg: '#854d0e' },
+  'elemental': { bg: '#fef3c7', fg: '#854d0e' },
+  'avanzado': { bg: '#dcfce7', fg: '#166534' },
+  'adecuado': { bg: '#dcfce7', fg: '#166534' },
+  // CV
+  'básico': { bg: '#ffedd5', fg: '#9a3412' },
+  'experto': { bg: '#bbf7d0', fg: '#14532d' },
+};
+
+function cellStyle(value) {
+  if (value == null || value === '') return { background: '#f8fafc', color: '#94a3b8' };
+  const key = String(value).trim().toLowerCase();
+  return PIVOT_LEVEL_COLORS[key] ? {
+    background: PIVOT_LEVEL_COLORS[key].bg,
+    color: PIVOT_LEVEL_COLORS[key].fg,
+  } : { background: '#f1f5f9', color: '#475569' };
+}
+
+function PivotMatrixTable({ data, height, className }) {
+  const ds = data.dataset;
+  const title = data?.aesthetics?.titulo;
+  const hasOuter = Array.isArray(ds.col_outer);
+  const cols = hasOuter ? ds.col_inner : ds.cols;
+  const cellsPerOuter = hasOuter ? ds.col_inner.length : 0;
+  const totalCols = hasOuter ? ds.col_outer.length * cellsPerOuter : ds.cols.length;
+
+  return (
+    <div className={className} style={{ height, overflow: 'auto' }}>
+      {title && (
+        <div className="text-center text-sm font-semibold text-slate-700 mb-2">{title}</div>
+      )}
+      <table className="text-xs border-collapse w-full">
+        <thead className="sticky top-0 bg-slate-50">
+          {hasOuter && (
+            <tr>
+              <th className="border border-slate-300 bg-slate-100 px-2 py-1 sticky left-0 z-10" rowSpan={2}>Estudiante</th>
+              {ds.col_outer.map((g) => (
+                <th key={g} colSpan={cellsPerOuter} className="border border-slate-300 bg-slate-100 px-2 py-1 text-center font-bold">
+                  {g}
+                </th>
+              ))}
+            </tr>
+          )}
+          <tr>
+            {!hasOuter && (
+              <th className="border border-slate-300 bg-slate-100 px-2 py-1 sticky left-0 z-10">Estudiante</th>
+            )}
+            {hasOuter
+              ? ds.col_outer.flatMap((_, oi) => cols.map((c, ci) => (
+                  <th key={`${oi}-${ci}`} className="border border-slate-300 px-1 py-1 text-center font-medium text-slate-600">
+                    {c}
+                  </th>
+                )))
+              : cols.map((c) => (
+                  <th key={c} className="border border-slate-300 px-1 py-1 text-center font-medium text-slate-600">
+                    {c}
+                  </th>
+                ))}
+          </tr>
+        </thead>
+        <tbody>
+          {ds.rows.map((rowName, ri) => (
+            <tr key={rowName}>
+              <td className="border border-slate-300 px-2 py-1 sticky left-0 bg-white whitespace-nowrap font-medium">
+                {rowName}
+              </td>
+              {ds.cells[ri].map((val, ci) => (
+                <td
+                  key={ci}
+                  className="border border-slate-300 px-1 py-1 text-center text-[11px]"
+                  style={cellStyle(val)}
+                >
+                  {val ?? '—'}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

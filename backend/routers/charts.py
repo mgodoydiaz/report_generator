@@ -353,6 +353,79 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         fn = agg_map.get(agg, series.mean)
         return {"value": float(fn())}
 
+    if ct == "pivot_matrix":
+        # Tabla pivote: rows × cols con valores categóricos en celdas.
+        # Mapping:
+        #   axis_field  → row_field (ej Nombre)
+        #   group_field → col_outer (ej Subprueba) - OPCIONAL
+        #   x_field     → col_inner (ej Versión)
+        #   y_field     → cell value (ej Nivel de Riesgo)
+        # Si hay agg, se usa para combinar duplicados; default = first.
+        if not (m.axis_field and m.x_field and m.y_field):
+            raise ValueError(
+                "pivot_matrix requiere axis_field (rows), x_field (cols) y y_field (celda)"
+            )
+        if any(c not in df.columns for c in [m.axis_field, m.x_field, m.y_field]):
+            return {"empty": True}
+        use_outer = bool(m.group_field) and m.group_field in df.columns
+
+        rows_order = sorted(df[m.axis_field].astype(str).unique().tolist())
+        col_inner_order = (
+            cfg.aesthetics.x_order
+            or sorted(df[m.x_field].astype(str).unique().tolist())
+        )
+
+        # Aggregation: si hay duplicados por (row, col), tomar el primer
+        # valor non-null. Si quisiéramos otro agg numérico, se podría
+        # parametrizar — para celdas categóricas, "first" es lo natural.
+        if use_outer:
+            col_outer_order = (
+                cfg.aesthetics.stack_order
+                or sorted(df[m.group_field].astype(str).unique().tolist())
+            )
+            cells = []
+            for r in rows_order:
+                sub = df[df[m.axis_field].astype(str) == r]
+                row_cells = []
+                for outer in col_outer_order:
+                    for inner in col_inner_order:
+                        s = sub[
+                            (sub[m.group_field].astype(str) == str(outer))
+                            & (sub[m.x_field].astype(str) == str(inner))
+                        ]
+                        val = (
+                            s[m.y_field].iloc[0]
+                            if len(s) > 0 and pd.notna(s[m.y_field].iloc[0])
+                            else None
+                        )
+                        row_cells.append(val)
+                cells.append(row_cells)
+            return {
+                "rows": rows_order,
+                "col_outer": col_outer_order,
+                "col_inner": col_inner_order,
+                "cells": cells,
+            }
+        else:
+            cells = []
+            for r in rows_order:
+                sub = df[df[m.axis_field].astype(str) == r]
+                row_cells = []
+                for c in col_inner_order:
+                    s = sub[sub[m.x_field].astype(str) == str(c)]
+                    val = (
+                        s[m.y_field].iloc[0]
+                        if len(s) > 0 and pd.notna(s[m.y_field].iloc[0])
+                        else None
+                    )
+                    row_cells.append(val)
+                cells.append(row_cells)
+            return {
+                "rows": rows_order,
+                "cols": col_inner_order,
+                "cells": cells,
+            }
+
     raise ValueError(f"chart_type no soportado: {ct}")
 
 
@@ -363,7 +436,73 @@ def _render_chart_data(
     base_filters = dict(cfg.data_source.filters)
     if extra_filters:
         base_filters.update(extra_filters)
-    df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, base_filters)
+
+    # Derived columns: pueden venir del spec (override) o del indicador
+    # vinculado a la metric. Se aplican PRE-filtro temporal — los kinds
+    # slope/delta/agg necesitan ver todas las observaciones del estudiante.
+    # Mismo patrón que tables.py para consistencia entre charts y tablas.
+    derived_cfg_list = list(cfg.data_source.derived_fields_override or [])
+    if not derived_cfg_list:
+        from backend.models import IndicatorMetric, Indicator
+        ind_links = db.query(IndicatorMetric).filter(
+            IndicatorMetric.id_metric == cfg.data_source.metric_id
+        ).all()
+        for lnk in ind_links:
+            ind = db.query(Indicator).filter(
+                Indicator.id_indicator == lnk.id_indicator,
+                Indicator.org_id == org_id,
+            ).first()
+            if not ind or not ind.derived_columns:
+                continue
+            try:
+                ind_dc = json.loads(ind.derived_columns)
+            except Exception:
+                continue
+            for entry in ind_dc:
+                if entry.get("metric_id") == cfg.data_source.metric_id:
+                    derived_cfg_list.append(entry)
+
+    # Identifica dims temporales para excluirlas del filtro pre-cálculo
+    from backend.models import Dimension
+    temporal_dim_ids: set[str] = set()
+    for entry in derived_cfg_list:
+        for did in (entry.get("temporal_dim_ids") or []):
+            temporal_dim_ids.add(str(did))
+    temporal_dim_names: set[str] = set()
+    if temporal_dim_ids:
+        dims = db.query(Dimension).filter(
+            Dimension.id_dimension.in_([int(x) for x in temporal_dim_ids])
+        ).all()
+        temporal_dim_names = {d.name for d in dims}
+
+    pre_filters = {k: v for k, v in base_filters.items() if k not in temporal_dim_names}
+    df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, pre_filters)
+
+    if derived_cfg_list and not df.empty:
+        try:
+            from backend.rgenerator.core.derived_fields_engine import apply_derived_fields
+            for entry in derived_cfg_list:
+                configs = entry.get("configs") or []
+                if configs:
+                    df = apply_derived_fields(df, configs)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    # Filtros temporales POST cálculo
+    post_temporal = {k: v for k, v in base_filters.items() if k in temporal_dim_names}
+    if post_temporal:
+        for col, val in post_temporal.items():
+            if col not in df.columns:
+                continue
+            if isinstance(val, (list, tuple, set)):
+                allowed = {str(v) for v in val}
+                if not allowed:
+                    continue
+                df = df[df[col].astype(str).isin(allowed)]
+            else:
+                df = df[df[col].astype(str) == str(val)]
+
     dataset = _build_dataset(df, cfg)
     return {
         "chart_type": cfg.chart_type,
