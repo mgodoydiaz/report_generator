@@ -120,10 +120,13 @@ def chart_config(
     y_label: Optional[str] = None,
     x_label: Optional[str] = None,
     color_palette: Optional[str] = None,
+    palette_reversed: bool = False,
     stack_order: Optional[List[str]] = None,
+    x_order: Optional[List[str]] = None,
     bins: int = 10,
     filters: Optional[Dict[str, Any]] = None,
     show_legend: bool = True,
+    show_values: bool = False,
     legend_title: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Arma un ChartConfig (lo que va dentro de charts_list[0])."""
@@ -151,9 +154,12 @@ def chart_config(
             "y_format": y_format,
             "y_lims": y_lims,
             "color_palette": color_palette,
+            "palette_reversed": palette_reversed,
             "show_legend": show_legend,
+            "show_values": show_values,
             "legend_title": legend_title,
             "stack_order": stack_order,
+            "x_order": x_order,
             "bins": bins,
         },
     }

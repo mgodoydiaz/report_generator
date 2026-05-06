@@ -381,7 +381,79 @@ def _render_table_data(
     if extra_filters:
         base_filters.update(extra_filters)
 
-    df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, base_filters)
+    # Carga inicial SIN aplicar filtros temporales — los derived_fields
+    # (slope/delta) necesitan ver TODOS los puntos del estudiante para
+    # calcular correctamente. Se identifica qué dims son temporales
+    # leyendo `temporal_dim_ids` del derived_fields_override (o de los
+    # derived_columns del indicador linked, ver más abajo).
+    derived_cfg_list = list(cfg.data_source.derived_fields_override or [])
+
+    # Si el spec NO trae derived_fields_override, intentamos heredar del
+    # indicador linked a la metric (single source of truth: el spec del
+    # indicador). Solo se aplica si el indicador tiene derived_columns y
+    # apunta a la misma metric.
+    if not derived_cfg_list:
+        from backend.models import IndicatorMetric
+        ind_links = db.query(IndicatorMetric).filter(
+            IndicatorMetric.id_metric == cfg.data_source.metric_id
+        ).all()
+        for lnk in ind_links:
+            ind = db.query(Indicator).filter(
+                Indicator.id_indicator == lnk.id_indicator,
+                Indicator.org_id == org_id,
+            ).first()
+            if not ind or not ind.derived_columns:
+                continue
+            try:
+                ind_dc = json.loads(ind.derived_columns)
+            except Exception:
+                continue
+            for entry in ind_dc:
+                if entry.get("metric_id") == cfg.data_source.metric_id:
+                    derived_cfg_list.append(entry)
+
+    # Identifica las dims temporales para excluirlas del filtro pre-cálculo
+    temporal_dim_ids: set[str] = set()
+    for entry in derived_cfg_list:
+        for did in (entry.get("temporal_dim_ids") or []):
+            temporal_dim_ids.add(str(did))
+    # Resolver nombres de dim temporales (ej "Mes", "N Prueba")
+    temporal_dim_names: set[str] = set()
+    if temporal_dim_ids:
+        dims = db.query(Dimension).filter(
+            Dimension.id_dimension.in_([int(x) for x in temporal_dim_ids])
+        ).all()
+        temporal_dim_names = {d.name for d in dims}
+
+    # Pre-filtros: solo los NO-temporales se aplican antes del cálculo
+    pre_filters = {k: v for k, v in base_filters.items() if k not in temporal_dim_names}
+    df = _load_metric_to_df(db, org_id, cfg.data_source.metric_id, pre_filters)
+
+    # Aplicar derived_columns sobre el df ANTES de filtrar por temporal
+    if derived_cfg_list and not df.empty:
+        try:
+            from backend.rgenerator.core.derived_fields_engine import apply_derived_fields
+            for entry in derived_cfg_list:
+                configs = entry.get("configs") or []
+                if configs:
+                    df = apply_derived_fields(df, configs)
+        except Exception:
+            import traceback
+            traceback.print_exc()
+
+    # Aplicar filtros temporales POST cálculo
+    post_temporal = {k: v for k, v in base_filters.items() if k in temporal_dim_names}
+    if post_temporal:
+        for col, val in post_temporal.items():
+            if col not in df.columns:
+                continue
+            if isinstance(val, (list, tuple, set)):
+                allowed = {str(v) for v in val}
+                if not allowed:
+                    continue
+                df = df[df[col].astype(str).isin(allowed)]
+            else:
+                df = df[df[col].astype(str) == str(val)]
 
     # Grouping con multi-agg sobre la misma columna fuente.
     # Cada TableColumn con `agg` se vuelve un NamedAgg(column=source_key,

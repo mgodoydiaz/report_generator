@@ -212,6 +212,40 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     return { data: traces, layout: { ...layoutBase, barmode: 'stack', yaxis: { ...layoutBase.yaxis, tickformat: 'd' } } };
   }
 
+  if (chart_type === 'stacked_grouped_bar') {
+    // Plotly soporta eje X categorical multi-nivel pasando x = [outer, inner].
+    // Outer = group_field (ej Curso), inner = x_field (ej Mes). Visualmente
+    // queda con una etiqueta superior por grupo y barras separadas por
+    // categoría interna debajo.
+    const basePalette = aesthetics?.color_palette === 'semaforo'
+      ? SEMAFORO_COLORS
+      : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    const xOuter = dataset.x_outer || [];
+    const xInner = dataset.x_inner || [];
+    const traces = (dataset.stacks || []).map((s, i) => ({
+      type: 'bar',
+      name: s.name,
+      x: [xOuter, xInner],
+      y: s.y,
+      marker: { color: palette[i % palette.length] },
+      text: showValues ? (s.y || []).map(v => (v && v > 0 ? fmtVal(v) : '')) : undefined,
+      textposition: showValues ? 'inside' : 'none',
+      insidetextanchor: 'middle',
+    }));
+    return {
+      data: traces,
+      layout: {
+        ...layoutBase,
+        barmode: 'stack',
+        yaxis: { ...layoutBase.yaxis, tickformat: 'd' },
+        // Mostrar líneas verticales discontinuas entre los grupos outer
+        // ayuda a separar visualmente los cursos en el eje compuesto.
+        xaxis: { ...layoutBase.xaxis, showdividers: true, dividercolor: '#cbd5e1', dividerwidth: 1 },
+      },
+    };
+  }
+
   if (chart_type === 'box') {
     const traces = (dataset.x || []).map((cat, i) => ({
       type: 'box',

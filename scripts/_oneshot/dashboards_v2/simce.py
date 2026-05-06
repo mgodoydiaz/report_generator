@@ -84,7 +84,12 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
     ids["t_alumno"] = upsert_table(
         db, org_id,
         name="SIMCE — Logro por Alumno",
-        description="Detalle nominal por estudiante con Rend, SIMCE y Nivel.",
+        description=(
+            "Detalle nominal por estudiante con Rend, SIMCE, Nivel y Avance. "
+            "La columna Avance es la pendiente (slope) del logro a lo largo "
+            "del año (ABRIL → NOVIEMBRE) — positiva si el estudiante mejora, "
+            "negativa si empeora. Replica la página 8 del informe SIMCE."
+        ),
         config=table_config(
             metric_id=METRIC_SIMCE_EST,
             columns=[
@@ -98,6 +103,10 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
                     "key": "Logro", "header": "Nivel", "format": "text",
                     "color_scale": color_scale_linked(indicator_id_simce, "Logro"),
                 },
+                # Columna Avance del derived_columns "Avance" (slope). Se
+                # renderiza en formato % con paleta divergente (rojo si
+                # negativo, verde si positivo).
+                col_percent("Avance", "Avance", decimals=1),
             ],
             sorting=[{"column": "Curso", "dir": "asc"}, {"column": "Nombre", "dir": "asc"}],
             page_size=50,
@@ -123,31 +132,43 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
         ),
     )
 
+    # Replica la "Reporte de estadísticas por pregunta" del informe SIMCE
+    # pág. 7. Columnas A/B/C/D/E + Correcta + Distractor + Logro.
+    # Recomendación: filtrar por (Año, Asignatura, Mes, N° Prueba) antes
+    # de leer la tabla — el promedio mezcla menos cuando hay un solo
+    # snapshot. Cuando hay múltiples cursos, el % de cada alternativa
+    # es el promedio simple entre cursos (no ponderado por N).
     ids["t_estad_pregunta"] = upsert_table(
         db, org_id,
         name="SIMCE — Estadística por Pregunta",
         description=(
-            "Resumen psicométrico: % acierto promedio (dificultad) por pregunta. "
-            "Las preguntas con dificultad fuera de [0.2, 0.9] o muy dispersas "
-            "entre cursos suelen requerir revisión pedagógica."
+            "Reporte de estadísticas por pregunta con porcentaje de respuestas "
+            "por alternativa (A/B/C/D/E), alternativa correcta y distractor "
+            "más frecuente. Replica la página 7 del informe SIMCE. "
+            "Filtrar por (Año, Asignatura, Mes, N° Prueba) para un snapshot "
+            "limpio."
         ),
         config=table_config(
             metric_id=METRIC_SIMCE_PREG,
             columns=[
                 col_text("Pregunta", "Pregunta", pinned=True),
-                col_text("Habilidad", "Habilidad"),
-                col_text("Eje Temático", "Eje"),
-                col_agg("N", "Logro", "N° respuestas", agg="count", fmt="int", decimals=0),
+                col_agg("A", "A", "%A", agg="mean", fmt="percent", decimals=0),
+                col_agg("B", "B", "%B", agg="mean", fmt="percent", decimals=0),
+                col_agg("C", "C", "%C", agg="mean", fmt="percent", decimals=0),
+                col_agg("D", "D", "%D", agg="mean", fmt="percent", decimals=0),
+                col_agg("E", "E", "%E", agg="mean", fmt="percent", decimals=0),
+                col_agg("Correcta", "Correcta", "Correcta", agg="first", fmt="text"),
+                col_agg("Distractor", "Distractor", "Distractor", agg="first", fmt="text"),
                 col_agg(
-                    "Logro_mean", "Logro", "Dificultad (% acierto)",
+                    "Logro_mean", "Logro", "Dificultad",
                     agg="mean", fmt="percent", decimals=1,
                     color_scale=color_scale_diverging_logro(),
                 ),
-                col_agg("Logro_std", "Logro", "Desviación", agg="std", fmt="percent", decimals=2),
             ],
             grouping={"by": "Pregunta"},
             sorting=[{"column": "Pregunta", "dir": "asc"}],
             search=False,
+            page_size=50,
         ),
     )
 
@@ -252,19 +273,71 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
         ),
     )
 
-    ids["c_evolucion_mes"] = upsert_chart(
+    # Orden cronológico de meses en SIMCE 2025 (ABRIL → NOVIEMBRE).
+    # Si en años futuros se usan otros meses, hay que extender la lista.
+    SIMCE_MES_ORDER = ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "NOVIEMBRE", "MAYO"]
+
+    # Replica el "Evolución del Logro Promedio por Curso y Mes" del informe
+    # SIMCE pág. 2: barras agrupadas con el curso en el eje X y los meses
+    # como series. Útil para ver lado a lado cómo evoluciona cada curso.
+    ids["c_evolucion_logro"] = upsert_chart(
         db, org_id,
-        name="SIMCE — Evolución de Rendimiento por Mes",
+        name="SIMCE — Evolución Logro Promedio por Curso y Mes",
         description=(
-            "Línea: rendimiento promedio por mes (ABRIL, JUNIO, AGOSTO, "
-            "OCTUBRE), una línea por curso. Permite ver el avance del "
-            "curso a lo largo de los ensayos."
+            "Barras agrupadas: % logro promedio por curso, una serie por mes "
+            "(ABRIL → NOVIEMBRE). Replica la página 2 del informe SIMCE."
         ),
         config=chart_config(
-            "line", METRIC_SIMCE_EST,
-            titulo="Evolución de Rendimiento por Mes",
-            x_field="Mes", y_field="Rend", group_field="Curso",
+            "grouped_bar", METRIC_SIMCE_EST,
+            titulo="Evolución del Logro Promedio por Curso y Mes",
+            x_field="Curso", y_field="Rend", group_field="Mes",
             y_format="percent", y_lims=[0, 1], y_label="Rendimiento",
+            stack_order=SIMCE_MES_ORDER,
+            show_values=True,
+        ),
+    )
+
+    # Replica "Evolución del SIMCE Promedio por Curso y Mes" del informe pág. 3:
+    # barras agrupadas con puntaje SIMCE estimado por curso × mes.
+    ids["c_evolucion_simce"] = upsert_chart(
+        db, org_id,
+        name="SIMCE — Evolución del SIMCE Promedio por Curso y Mes",
+        description=(
+            "Barras agrupadas: puntaje SIMCE estimado promedio por curso, "
+            "una serie por mes. Replica la página 3 del informe."
+        ),
+        config=chart_config(
+            "grouped_bar", METRIC_SIMCE_EST,
+            titulo="Evolución del SIMCE Promedio por Curso y Mes",
+            x_field="Curso", y_field="SIMCE", group_field="Mes",
+            y_format="int", y_label="Puntaje SIMCE",
+            stack_order=SIMCE_MES_ORDER,
+            show_values=True,
+        ),
+    )
+
+    # Replica "Evolución de Alumnos por Nivel de Logro, Curso y Mes" del
+    # informe pág. 5: stacked bar agrupado con eje X de 2 niveles
+    # (curso outer × mes inner) apilado por nivel de logro.
+    ids["c_evolucion_niveles"] = upsert_chart(
+        db, org_id,
+        name="SIMCE — Evolución Niveles de Logro por Curso y Mes",
+        description=(
+            "Stacked bar agrupado: cantidad de estudiantes por nivel "
+            "(Insuficiente/Elemental/Adecuado), agrupado por curso y mes. "
+            "Replica la página 5 del informe SIMCE."
+        ),
+        config=chart_config(
+            "stacked_grouped_bar", METRIC_SIMCE_EST,
+            titulo="Evolución de Alumnos por Nivel, Curso y Mes",
+            x_field="Mes", group_field="Curso", stack_field="Logro",
+            stack_order=["Insuficiente", "Elemental", "Adecuado"],
+            x_order=SIMCE_MES_ORDER,
+            color_palette="semaforo",
+            palette_reversed=True,
+            show_values=True,
+            y_label="N° Estudiantes",
+            legend_title="Nivel",
         ),
     )
 
@@ -313,7 +386,9 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
                 row([cfg_table_item(ids["t_alumno"], "Logro por Alumno")], cols=1),
             ]),
             tab("tendencia", "Tendencia", [
-                row([cfg_chart_item(ids["c_evolucion_mes"], "Evolución por Mes")], cols=1),
+                row([cfg_chart_item(ids["c_evolucion_logro"], "Evolución Logro Promedio por Curso y Mes")], cols=1),
+                row([cfg_chart_item(ids["c_evolucion_simce"], "Evolución SIMCE Promedio por Curso y Mes")], cols=1),
+                row([cfg_chart_item(ids["c_evolucion_niveles"], "Evolución de Alumnos por Nivel, Curso y Mes")], cols=1),
             ]),
         ]
     }
