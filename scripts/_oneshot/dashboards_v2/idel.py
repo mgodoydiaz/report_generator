@@ -1,18 +1,34 @@
 """Dashboards IDEL — specs y layout.
 
-IDEL = Indicador de Desarrollo de Lectura. Aplica a estudiantes pequeños
-(habitualmente Kínder–2° básico) y mide riesgo lector con un puntaje y un
-nivel de riesgo.
+IDEL = Indicador de Desarrollo de Lectura (PDL Woodcock). Aplica a
+estudiantes pequeños (Kínder–6° básico) y mide riesgo lector cualitativo
+en 6 subpruebas.
 
 Modelo de datos (id_metric=8):
     Value fields: Puntaje (int), Género (int), Evaluadora (str),
                   Nivel de Riesgo (str: Crítico|Alto Riesgo|Cierto Riesgo|Bajo Riesgo).
-    Dimensiones: Establecimiento, Año, Curso, Evaluación, Nombre, RUT, Versión.
+    Dimensiones: Establecimiento ("Panguipulli"), Año, Curso ("1° BÁSICO"...),
+                 Evaluación (subprueba: CT/FLO/FNL/FSF/ILP/VSD), Nombre, RUT,
+                 Versión ("v1"/"v2"/"v3").
 
-Tabs propuestos:
-    1. Vista General  — KPIs, resumen, distribución, niveles
-    2. Por Curso      — selector + listado nominal
-    3. Tendencia      — evolución entre versiones (1ª vs 2ª aplicación)
+DECISIÓN DE DISEÑO (2026-05-06):
+El indicador IDEL es CUALITATIVO. El informe PDL Woodcock no muestra
+"puntaje promedio" porque las 6 subpruebas tienen escalas distintas
+(CT 0-25, FLO 0-60, FSF 0-78, etc.) — promediarlas no tiene sentido
+estadístico. Por eso este dashboard NO expone:
+    - KPI "Puntaje promedio"
+    - Bar "Puntaje por curso"
+    - Boxplot "Distribución de puntaje"
+    - Line "Evolución de puntaje"
+    - Cols Puntaje promedio/min/max en tablas
+
+En cambio expone solo análisis CUALITATIVO sobre niveles de riesgo,
+agrupado por curso y subprueba.
+
+Tabs:
+    1. Vista General  — composición global, niveles por curso
+    2. Por Curso      — selector + listado de estudiantes
+    3. Tendencia      — distribución de niveles por versión (v1→v2→v3)
 """
 from __future__ import annotations
 
@@ -27,7 +43,6 @@ from .helpers import (
     col_agg,
     col_int,
     col_text,
-    color_scale_diverging_logro,
     color_scale_linked,
     course_selector_item,
     kpis_item,
@@ -41,6 +56,12 @@ from .helpers import (
 
 METRIC_IDEL = 8
 
+# Orden cronológico de versiones IDEL (v1 → v3).
+IDEL_VERSION_ORDER = ["v1", "v2", "v3"]
+
+# Orden de severidad de niveles (peor → mejor).
+IDEL_NIVEL_ORDER = ["Crítico", "Alto Riesgo", "Cierto Riesgo", "Bajo Riesgo"]
+
 
 def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int]:
     ids: Dict[str, int] = {}
@@ -49,21 +70,27 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
     # TABLAS
     # ─────────────────────────────────────────────────────────────────────
 
+    # Resumen por curso: cuenta estudiantes únicos (no filas) y total
+    # de evaluaciones (filas). NO se incluye Puntaje promedio porque
+    # mezclaría escalas de 6 subpruebas distintas.
     ids["t_resumen_curso"] = upsert_table(
         db, org_id,
         name="IDEL — Resumen por Curso",
-        description="N° estudiantes y puntaje promedio por curso.",
+        description=(
+            "N° de estudiantes únicos y N° de evaluaciones (filas) por curso. "
+            "Cada estudiante puede tener hasta 18 evaluaciones (6 subpruebas × "
+            "3 versiones), por eso N° evaluaciones es alto."
+        ),
         config=table_config(
             metric_id=METRIC_IDEL,
             columns=[
                 col_text("Curso", "Curso", pinned=True),
-                col_agg("N", "Puntaje", "N°", agg="count", fmt="int", decimals=0),
-                col_agg(
-                    "Puntaje_mean", "Puntaje", "Puntaje Promedio",
-                    agg="mean", fmt="float", decimals=1,
-                ),
-                col_agg("Puntaje_min", "Puntaje", "Mínimo", agg="min", fmt="int", decimals=0),
-                col_agg("Puntaje_max", "Puntaje", "Máximo", agg="max", fmt="int", decimals=0),
+                # Conteo de estudiantes únicos (count distinct sobre Nombre).
+                col_agg("Estudiantes", "Nombre", "Estudiantes únicos",
+                        agg="nunique", fmt="int", decimals=0),
+                # Total de evaluaciones (filas).
+                col_agg("Evaluaciones", "Nivel de Riesgo", "Evaluaciones",
+                        agg="count", fmt="int", decimals=0),
             ],
             grouping={"by": "Curso"},
             sorting=[{"column": "Curso", "dir": "asc"}],
@@ -74,12 +101,17 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
     ids["t_alumno"] = upsert_table(
         db, org_id,
         name="IDEL — Listado de Estudiantes",
-        description="Detalle nominal con puntaje, nivel de riesgo y evaluadora.",
+        description=(
+            "Detalle nominal: cada fila es un estudiante en una subprueba × "
+            "versión. La columna Puntaje aparece como referencia, pero el "
+            "análisis principal es por Nivel de Riesgo."
+        ),
         config=table_config(
             metric_id=METRIC_IDEL,
             columns=[
                 col_text("Nombre", "Estudiante", pinned=True),
                 col_text("Curso", "Curso"),
+                col_text("Evaluación", "Subprueba"),
                 col_text("Versión", "Versión"),
                 col_int("Puntaje", "Puntaje"),
                 {
@@ -97,14 +129,20 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         db, org_id,
         name="IDEL — Estudiantes en Riesgo",
         description=(
-            "Estudiantes con nivel de riesgo Crítico o Alto Riesgo, ordenados "
-            "por puntaje ascendente para priorizar intervención."
+            "Estudiantes con nivel de riesgo Crítico o Alto Riesgo. La tabla "
+            "está ordenada para mostrar primero los casos más severos. "
+            "Filtrar por curso y subprueba para ver listado focalizado."
         ),
         config=table_config(
             metric_id=METRIC_IDEL,
+            # Filter: solo Crítico/Alto Riesgo (filtro server-side via
+            # data_source.filters porque el field es value, no dimension)
+            filters={},
             columns=[
                 col_text("Nombre", "Estudiante", pinned=True),
                 col_text("Curso", "Curso"),
+                col_text("Evaluación", "Subprueba"),
+                col_text("Versión", "Versión"),
                 col_int("Puntaje", "Puntaje"),
                 {
                     "key": "Nivel de Riesgo", "header": "Nivel", "format": "text",
@@ -112,38 +150,17 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                 },
                 col_text("Evaluadora", "Evaluadora"),
             ],
-            sorting=[{"column": "Puntaje", "dir": "asc"}],
+            sorting=[
+                {"column": "Curso", "dir": "asc"},
+                {"column": "Puntaje", "dir": "asc"},
+            ],
             page_size=80,
         ),
     )
 
     # ─────────────────────────────────────────────────────────────────────
-    # GRÁFICOS
+    # GRÁFICOS — solo cualitativos
     # ─────────────────────────────────────────────────────────────────────
-
-    ids["c_puntaje_curso"] = upsert_chart(
-        db, org_id,
-        name="IDEL — Puntaje Promedio por Curso",
-        description="Barra: puntaje promedio por curso.",
-        config=chart_config(
-            "bar", METRIC_IDEL,
-            titulo="Puntaje Promedio por Curso",
-            x_field="Curso", y_field="Puntaje",
-            y_label="Puntaje",
-        ),
-    )
-
-    ids["c_box_puntaje"] = upsert_chart(
-        db, org_id,
-        name="IDEL — Distribución de Puntaje por Curso",
-        description="Boxplot: dispersión del puntaje por curso.",
-        config=chart_config(
-            "box", METRIC_IDEL,
-            titulo="Distribución de Puntaje por Curso",
-            x_field="Curso", y_field="Puntaje",
-            y_label="Puntaje",
-        ),
-    )
 
     ids["c_pie_riesgo"] = upsert_chart(
         db, org_id,
@@ -153,56 +170,92 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             "pie", METRIC_IDEL,
             titulo="Composición por Nivel de Riesgo",
             category_field="Nivel de Riesgo",
-            color_palette="semaforo",
+            color_palette="semaforo", palette_reversed=True,
         ),
     )
 
     ids["c_stack_riesgo_curso"] = upsert_chart(
         db, org_id,
         name="IDEL — Niveles de Riesgo por Curso",
-        description="Stacked: cantidad de estudiantes por nivel de riesgo y curso.",
+        description=(
+            "Stacked bar: cantidad de evaluaciones por nivel y curso. "
+            "Crítico abajo (rojo), Bajo Riesgo arriba (verde). "
+            "Cada estudiante aporta múltiples filas (una por subprueba × "
+            "versión), por eso la cantidad por curso es alta."
+        ),
         config=chart_config(
             "stacked_bar", METRIC_IDEL,
             titulo="Niveles de Riesgo por Curso",
             x_field="Curso", stack_field="Nivel de Riesgo",
-            stack_order=["Critico", "Alto riesgo", "Cierto riesgo", "Bajo riesgo"],
-            color_palette="semaforo",
-            y_label="N° Estudiantes",
+            stack_order=IDEL_NIVEL_ORDER,
+            color_palette="semaforo", palette_reversed=True,
+            show_values=True,
+            y_label="N° Evaluaciones",
             legend_title="Nivel",
         ),
     )
 
-    ids["c_evolucion_version"] = upsert_chart(
+    # Stacked apilado por versión: cómo cambia la composición de niveles
+    # en cada aplicación (v1 → v2 → v3). Aproxima el "Distribución de
+    # niveles por evaluación" que pide el informe.
+    ids["c_stack_riesgo_version"] = upsert_chart(
         db, org_id,
-        name="IDEL — Evolución de Puntaje por Versión",
+        name="IDEL — Niveles de Riesgo por Versión",
         description=(
-            "Línea: puntaje promedio por versión de la prueba (1ª vs 2ª "
-            "aplicación), una línea por curso. Permite ver el avance entre "
-            "aplicaciones."
+            "Stacked bar: cantidad de evaluaciones por nivel a lo largo de "
+            "las 3 versiones del año (v1, v2, v3). Permite ver si la "
+            "composición global mejora entre aplicaciones."
         ),
         config=chart_config(
-            "line", METRIC_IDEL,
-            titulo="Evolución de Puntaje por Versión",
-            x_field="Versión", y_field="Puntaje", group_field="Curso",
-            y_label="Puntaje",
+            "stacked_bar", METRIC_IDEL,
+            titulo="Niveles de Riesgo por Versión",
+            x_field="Versión", stack_field="Nivel de Riesgo",
+            stack_order=IDEL_NIVEL_ORDER,
+            x_order=IDEL_VERSION_ORDER,
+            color_palette="semaforo", palette_reversed=True,
+            show_values=True,
+            y_label="N° Evaluaciones",
+            legend_title="Nivel",
+        ),
+    )
+
+    # Stacked agrupado curso × versión × nivel — replica el informe pág 2
+    # ("Distribución de niveles por evaluación") por cada curso.
+    ids["c_stack_curso_version"] = upsert_chart(
+        db, org_id,
+        name="IDEL — Niveles por Curso y Versión",
+        description=(
+            "Stacked grouped bar: niveles apilados, eje X de 2 niveles "
+            "(curso × versión). Replica la página 2 del informe IDEL — "
+            "muestra la evolución del % de cada nivel a lo largo del año "
+            "para cada curso."
+        ),
+        config=chart_config(
+            "stacked_grouped_bar", METRIC_IDEL,
+            titulo="Niveles por Curso y Versión",
+            x_field="Versión", group_field="Curso", stack_field="Nivel de Riesgo",
+            stack_order=IDEL_NIVEL_ORDER,
+            x_order=IDEL_VERSION_ORDER,
+            color_palette="semaforo", palette_reversed=True,
+            show_values=True,
+            y_label="N° Evaluaciones",
+            legend_title="Nivel",
         ),
     )
 
     # ─────────────────────────────────────────────────────────────────────
-    # LAYOUT
+    # LAYOUT — sin componentes de Puntaje
     # ─────────────────────────────────────────────────────────────────────
     layout = {
         "tabs": [
             tab("general", "Vista General", [
+                # KPIs: como column_roles ya no tiene logro_1 (Puntaje),
+                # se mostrará solo Total Alumnos + Nivel Predominante.
                 row([kpis_item()], cols=4),
                 row([cfg_table_item(ids["t_resumen_curso"], "Resumen por Curso")], cols=1),
                 row([
-                    cfg_chart_item(ids["c_puntaje_curso"], "Puntaje por Curso"),
-                    cfg_chart_item(ids["c_box_puntaje"], "Distribución por Curso"),
-                ], cols=2),
-                row([
                     cfg_chart_item(ids["c_pie_riesgo"], "Composición Global"),
-                    cfg_chart_item(ids["c_stack_riesgo_curso"], "Riesgo por Curso"),
+                    cfg_chart_item(ids["c_stack_riesgo_curso"], "Niveles por Curso"),
                 ], cols=2),
             ]),
             tab("curso", "Por Curso", [
@@ -211,7 +264,8 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                 row([cfg_table_item(ids["t_riesgo"], "Estudiantes en Riesgo")], cols=1),
             ]),
             tab("tendencia", "Tendencia", [
-                row([cfg_chart_item(ids["c_evolucion_version"], "Evolución por Versión")], cols=1),
+                row([cfg_chart_item(ids["c_stack_riesgo_version"], "Niveles de Riesgo por Versión")], cols=1),
+                row([cfg_chart_item(ids["c_stack_curso_version"], "Niveles por Curso y Versión (réplica informe pág 2)")], cols=1),
             ]),
         ]
     }
