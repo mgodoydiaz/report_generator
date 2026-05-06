@@ -64,6 +64,11 @@ from .helpers import (
 METRIC_DIA_EST = 6
 METRIC_DIA_PREG = 7
 
+# Orden cronológico de hitos DIA (Diagnóstico → Intermedio → Cierre).
+# Se aplica como x_order en charts con eje X = Hito para que no salga
+# en orden alfabético (CIERRE primero, etc.).
+DIA_HITO_ORDER = ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"]
+
 
 def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
     """Crea/actualiza specs DIA y devuelve mapa nombre→id_spec."""
@@ -103,11 +108,15 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
         ),
     )
 
-    # 2. Logro por Alumno
+    # 2. Logro por Alumno con columna Avance (slope DIAGNOSTICO→CIERRE)
     ids["t_logro_alumno"] = upsert_table(
         db, org_id,
         name="DIA — Logro por Alumno",
-        description="Detalle nominal: logro y nivel por estudiante.",
+        description=(
+            "Detalle nominal: logro, nivel y avance por estudiante. "
+            "Avance es la pendiente del logro a lo largo de los hitos "
+            "(DIAGNOSTICO → INTERMEDIO → CIERRE) — positivo si mejora."
+        ),
         config=table_config(
             metric_id=METRIC_DIA_EST,
             columns=[
@@ -122,6 +131,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
                     "format": "text",
                     "color_scale": color_scale_linked(indicator_id_dia, "Nivel Logro"),
                 },
+                col_percent("Avance", "Avance", decimals=1),
             ],
             sorting=[
                 {"column": "Curso", "dir": "asc"},
@@ -261,6 +271,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Logro Promedio por Curso",
             x_field="Curso", y_field="Logro",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
+            show_values=True,
         ),
     )
 
@@ -277,6 +288,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Logro Promedio por Nivel",
             x_field="Nivel", y_field="Logro", group_field="Curso",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
+            show_values=True,
         ),
     )
 
@@ -297,6 +309,9 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
     )
 
     # 4. Cantidad de alumnos por Nivel de Logro (stacked) — pág. 6 del PDF
+    # palette_reversed=true porque el stack_order va de "peor" a "mejor"
+    # (Inicial → Avanzado) y la paleta semáforo va al revés (verde, amarillo,
+    # rojo). Sin reverse, Inicial saldría verde y Avanzado rojo.
     ids["c_stack_niveles"] = upsert_chart(
         db, org_id,
         name="DIA — Cantidad de Alumnos por Nivel de Logro",
@@ -306,7 +321,8 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Cantidad de Alumnos por Nivel de Logro",
             x_field="Curso", stack_field="Nivel Logro",
             stack_order=["Inicial", "Intermedio", "Avanzado"],
-            color_palette="semaforo",
+            color_palette="semaforo", palette_reversed=True,
+            show_values=True,
             y_label="N° Estudiantes",
             legend_title="Nivel",
         ),
@@ -322,6 +338,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Logro Promedio por Eje Temático",
             x_field="Eje Temático", y_field="Logro", group_field="Curso",
             y_format="percent", y_lims=[0, 1], y_label="% Acierto",
+            show_values=True,
         ),
     )
 
@@ -335,10 +352,11 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Logro Promedio por Habilidad",
             x_field="Habilidad", y_field="Logro", group_field="Curso",
             y_format="percent", y_lims=[0, 1], y_label="% Acierto",
+            show_values=True,
         ),
     )
 
-    # 7. Tendencia por Hito (line)
+    # 7. Tendencia por Hito (line) — orden cronológico DIAG→INT→CIERRE
     ids["c_tendencia"] = upsert_chart(
         db, org_id,
         name="DIA — Tendencia de Logro por Hito",
@@ -352,6 +370,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             x_field="Hito", y_field="Logro", group_field="Curso",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
             x_label="Hito",
+            x_order=DIA_HITO_ORDER,
         ),
     )
 
@@ -385,6 +404,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Logro por Curso × Establecimiento",
             x_field="Curso", y_field="Logro", group_field="Establecimiento",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
+            show_values=True,
         ),
     )
 
@@ -402,6 +422,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             titulo="Tendencia de Logro por Establecimiento",
             x_field="Hito", y_field="Logro", group_field="Establecimiento",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
+            x_order=DIA_HITO_ORDER,
         ),
     )
 
@@ -424,6 +445,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
                 x_field="Curso", y_field="Logro", group_field="Establecimiento",
                 filters={"Hito": hito_label},
                 y_format="percent", y_lims=[0, 1], y_label="Logro",
+                show_values=True,
             ),
         )
 

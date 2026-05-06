@@ -258,17 +258,32 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             if any(c not in df.columns for c in [m.x_field, m.y_field, m.group_field]):
                 return {"empty": True}
             g = df.groupby([m.x_field, m.group_field], as_index=False)[m.y_field].agg(agg)
-            x_vals = sorted(g[m.x_field].astype(str).unique().tolist())
+            # x_order tiene precedencia (cronológico). Default: orden
+            # alfabético de aparición.
+            x_vals = (
+                cfg.aesthetics.x_order
+                or sorted(g[m.x_field].astype(str).unique().tolist())
+            )
+            # stack_order también ordena las series (curso/establecimiento).
+            series_order = (
+                cfg.aesthetics.stack_order
+                or g[m.group_field].astype(str).unique().tolist()
+            )
             series = []
-            for name in g[m.group_field].astype(str).unique():
-                sub = g[g[m.group_field].astype(str) == name].set_index(m.x_field)[m.y_field]
+            for name in series_order:
+                sub = g[g[m.group_field].astype(str) == str(name)].set_index(m.x_field)[m.y_field]
                 series.append({"name": str(name), "y": [sub.get(x, None) for x in x_vals]})
             return {"x": x_vals, "series": series}
         else:
             if any(c not in df.columns for c in [m.x_field, m.y_field]):
                 return {"empty": True}
             g = df.groupby(m.x_field, as_index=False)[m.y_field].agg(agg)
-            return {"x": g[m.x_field].astype(str).tolist(), "y": g[m.y_field].tolist()}
+            x_vals = (
+                cfg.aesthetics.x_order
+                or g[m.x_field].astype(str).tolist()
+            )
+            sub = g.set_index(m.x_field)[m.y_field]
+            return {"x": x_vals, "y": [sub.get(x, None) for x in x_vals]}
 
     if ct == "pie":
         cat = m.category_field or m.x_field
