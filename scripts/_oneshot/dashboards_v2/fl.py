@@ -178,7 +178,7 @@ def seed_fl(db: Session, org_id: int, indicator_id_fl: int) -> Dict[str, int]:
             "heatmap", METRIC_FL,
             titulo="Categoría × Calidad Lectora",
             x_field="Categoria", group_field="Calidad lectora", y_field="Cantidad",
-            aggregation="count", color_palette="rojo_calor",
+            aggregation="count", color_palette="rojo_calor", palette_reversed=False,
         ),
     )
 

@@ -349,7 +349,7 @@ def seed_simce(db: Session, org_id: int, indicator_id_simce: int) -> Dict[str, i
             "heatmap", METRIC_SIMCE_PREG,
             titulo="Heatmap Curso × Eje Temático",
             x_field="Eje Temático", group_field="Curso", y_field="Logro",
-            y_format="percent", color_palette="rojo_calor",
+            y_format="percent", color_palette="rojo_calor", palette_reversed=True,
         ),
     )
 
