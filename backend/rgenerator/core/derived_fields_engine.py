@@ -150,11 +150,18 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         raise KeyError(f"agg '{name}': value_field '{value_field}' no existe en el DataFrame")
 
     df = df.copy()
-    series_num = _as_numeric(df[value_field], value_type, ordinal_levels)
+    # Para nunique/count sobre valores categóricos (ej "v1","v2","v3" o
+    # niveles "Crítico"/"Bajo Riesgo") no tiene sentido pasar por _as_numeric:
+    # convertiría todo a NaN. Solo se exige numérico cuando el agg lo requiere
+    # (mean/sum/min/max/std).
+    if agg_fn in ("nunique", "count") and value_type != "ordinal":
+        series_for_agg = df[value_field]
+    else:
+        series_for_agg = _as_numeric(df[value_field], value_type, ordinal_levels)
 
     # Calcular agregación + count por entity (uno o varios campos)
     group_keys = [df[k] for k in entity_keys]
-    grouped = series_num.groupby(group_keys)
+    grouped = series_for_agg.groupby(group_keys)
     agg_series = grouped.agg(agg_fn)
     counts = grouped.count()
 

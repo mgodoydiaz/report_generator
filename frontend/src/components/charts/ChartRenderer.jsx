@@ -344,6 +344,12 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       palette === 'viridis' ? 'Viridis'
         : palette === 'rojo_calor' ? 'YlOrRd'
         : 'YlGnBu';
+    // UX-6: Tooltip respeta y_format. Para percent muestra "35.0%", para
+    // count entero, para number 2 decimales. Más útil que el genérico .2f.
+    const heatmapHover =
+      yfmt === 'percent' ? '%{y} × %{x}: %{z:.1%}<extra></extra>'
+        : yfmt === 'int' ? '%{y} × %{x}: %{z:.0f}<extra></extra>'
+        : '%{y} × %{x}: %{z:.2f}<extra></extra>';
     return {
       data: [{
         type: 'heatmap',
@@ -352,7 +358,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         z: dataset.z,
         colorscale,
         reversescale: !!aesthetics?.palette_reversed,
-        hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
+        hovertemplate: heatmapHover,
       }],
       layout: { ...layoutBase, yaxis: { ...layoutBase.yaxis, autorange: 'reversed' } },
     };
@@ -460,11 +466,21 @@ function PivotMatrixTable({ data, height, className }) {
   const cols = hasOuter ? ds.col_inner : ds.cols;
   const cellsPerOuter = hasOuter ? ds.col_inner.length : 0;
   const totalCols = hasOuter ? ds.col_outer.length * cellsPerOuter : ds.cols.length;
+  // UX-5: cuando hay muchas filas (típicamente Roster sin filtro de curso),
+  // sugerir al usuario que aplique un filtro para una vista más manejable.
+  const TOO_MANY_ROWS = 60;
+  const showFilterHint = ds.rows.length > TOO_MANY_ROWS;
 
   return (
     <div className={className} style={{ height, overflow: 'auto' }}>
       {title && (
         <div className="text-center text-sm font-semibold text-slate-700 mb-2">{title}</div>
+      )}
+      {showFilterHint && (
+        <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+          <span className="font-semibold">Tip:</span> Esta tabla muestra {ds.rows.length} filas.
+          Aplica un filtro (ej: Curso) en el panel superior para una vista más enfocada.
+        </div>
       )}
       <table className="text-xs border-collapse w-full">
         <thead className="sticky top-0 bg-slate-50">
@@ -501,15 +517,22 @@ function PivotMatrixTable({ data, height, className }) {
               <td className="border border-slate-300 px-2 py-1 sticky left-0 bg-white whitespace-nowrap font-medium">
                 {rowName}
               </td>
-              {ds.cells[ri].map((val, ci) => (
-                <td
-                  key={ci}
-                  className="border border-slate-300 px-1 py-1 text-center text-[11px]"
-                  style={cellStyle(val)}
-                >
-                  {val ?? '—'}
-                </td>
-              ))}
+              {ds.cells[ri].map((val, ci) => {
+                // Datos-10: celdas sin dato (combinación curso × subprueba ×
+                // versión que no rinde el protocolo, ej v3 para 5°/6° BÁSICO)
+                // se etiquetan como "N/A" en gris suave para distinguirlas
+                // visualmente de niveles bajos.
+                const isMissing = val == null || val === '';
+                return (
+                  <td
+                    key={ci}
+                    className={"border border-slate-300 px-1 py-1 text-center text-[11px] " + (isMissing ? "text-slate-400 italic bg-slate-50" : "")}
+                    style={isMissing ? undefined : cellStyle(val)}
+                  >
+                    {isMissing ? 'N/A' : val}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

@@ -482,17 +482,20 @@ export function computeDashboardKPIs(dashboardData) {
     if (!dashboardData) return null;
     const { estudiantes, preguntas, cursos, activeRoles, roleLabels, roleFormats, temporalConfig, roleFieldMap, fieldToRole } = dashboardData;
 
-    // Contar alumnos únicos: preferimos _rut (clave sin colisiones). Si no hay
-    // dimensión RUT configurada, caemos a _nombre; si tampoco hay nombre, al
-    // número de filas (caso degenerado, probablemente no es un dataset por alumno).
+    // Contar alumnos únicos: tomamos el MÁXIMO entre nombres únicos y RUTs
+    // únicos (cada uno filtrado a no-vacíos). Esto es robusto cuando el RUT
+    // está parcialmente poblado: por ejemplo IDEL tiene 340 nombres únicos
+    // pero solo 227 con RUT — antes el conteo era 227 (incorrecto, perdía
+    // 113 estudiantes); ahora usa max(227, 340) = 340.
+    // Para indicadores donde RUT está bien poblado (SIMCE 98%, FL 100%) o
+    // ausente (DIA, CV) el comportamiento es estable.
+    // Caso degenerado (sin nombre ni rut): caer al número de filas.
     const ruts = estudiantes.map(e => e._rut).filter(Boolean);
-    let totalAlumnos;
-    if (ruts.length > 0) {
-        totalAlumnos = new Set(ruts).size;
-    } else {
-        const studentNames = estudiantes.map(e => e._nombre).filter(Boolean);
-        totalAlumnos = studentNames.length > 0 ? new Set(studentNames).size : estudiantes.length;
-    }
+    const nombres = estudiantes.map(e => e._nombre).filter(Boolean);
+    const uniqueRuts = ruts.length ? new Set(ruts).size : 0;
+    const uniqueNombres = nombres.length ? new Set(nombres).size : 0;
+    let totalAlumnos = Math.max(uniqueRuts, uniqueNombres);
+    if (totalAlumnos === 0) totalAlumnos = estudiantes.length;
 
     const rendField  = roleFieldMap?.logro_1        || '_rend';
     const simceField = roleFieldMap?.logro_2        || '_simce';

@@ -269,6 +269,21 @@ def course_selector_item() -> Dict[str, Any]:
     return {"type": "course_selector"}
 
 
+def subprueba_selector_item(field: str = "_habilidad") -> Dict[str, Any]:
+    return {"type": "subprueba_selector", "field": field}
+
+
+def note_item(text: str, *, tone: str = "info", title: Optional[str] = None) -> Dict[str, Any]:
+    """Bloque de texto explicativo.
+
+    tone: 'info' (gris), 'warn' (ámbar), 'tip' (azul).
+    """
+    item: Dict[str, Any] = {"type": "note", "text": text, "tone": tone}
+    if title:
+        item["title"] = title
+    return item
+
+
 def row(items: List[Dict[str, Any]], cols: Optional[int] = None) -> Dict[str, Any]:
     return {"cols": cols if cols is not None else len(items), "items": items}
 
