@@ -275,18 +275,22 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
         ),
     )
 
-    # 2. Logro Promedio por Nivel (bar agrupada por Curso)
+    # 2. Logro Promedio por Nivel (bar simple — réplica del informe pág. 2)
+    # El informe muestra una barra por nivel agregado (Octavos, Primeros
+    # Medios, ...), no desagregado por curso. Más legible para directivos.
     ids["c_logro_nivel"] = upsert_chart(
         db, org_id,
         name="DIA — Logro Promedio por Nivel",
         description=(
-            "Barras agrupadas por nivel (Octavos, Primeros Medios, etc.). "
-            "Cada nivel muestra los cursos que lo componen."
+            "Barra simple: logro promedio por nivel (Octavos, Primeros "
+            "Medios, Segundos Medios, Septimos). Réplica de la página 2 "
+            "del informe DIA. Para ver el desglose curso por curso, ir a "
+            "'Logro por Curso'."
         ),
         config=chart_config(
-            "grouped_bar", METRIC_DIA_EST,
+            "bar", METRIC_DIA_EST,
             titulo="Logro Promedio por Nivel",
-            x_field="Nivel", y_field="Logro", group_field="Curso",
+            x_field="Nivel", y_field="Logro",
             y_format="percent", y_lims=[0, 1], y_label="Logro",
             show_values=True,
         ),
