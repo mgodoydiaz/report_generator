@@ -36,6 +36,7 @@ ChartType = Literal[
     "heatmap",              # Matriz de calor — Y por (X, group)
     "radar",                # Radar — perfil multi-eje
     "gauge",                # Medidor KPI — un valor único
+    "pivot_matrix",         # Tabla pivote (rows × cols con celdas categóricas coloreadas) — para Roster IDEL
 ]
 
 
@@ -73,6 +74,20 @@ CHART_TYPE_META: Dict[str, Dict[str, Any]] = {
         "required_fields": ["x_field", "group_field", "stack_field"],
         "optional_fields": ["stack_order", "x_order", "color_palette", "palette_reversed"],
         "plotly_component": "StackedGroupedBar",
+    },
+    "pivot_matrix": {
+        "display_name": "Tabla pivote (matriz)",
+        "description": (
+            "Tabla pivote con rows × cols. Cada celda muestra el valor de "
+            "y_field para esa combinación; las celdas se colorean según "
+            "achievement_levels del indicador linked. Soporta cols de 2 "
+            "niveles (group_field outer, x_field inner). Útil para el "
+            "Roster del informe IDEL: rows = Estudiante, group = Subprueba, "
+            "x = Versión, cell = Nivel de Riesgo."
+        ),
+        "required_fields": ["axis_field", "x_field", "y_field"],
+        "optional_fields": ["group_field", "x_order", "stack_order", "color_palette"],
+        "plotly_component": "PivotMatrixTable",
     },
     "box": {
         "display_name": "Boxplot",

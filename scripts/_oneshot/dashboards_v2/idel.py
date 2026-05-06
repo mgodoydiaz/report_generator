@@ -174,6 +174,28 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         ),
     )
 
+    # Mapa de riesgo (heatmap Curso × Subprueba) — replica pág 1 del informe.
+    # El "es_riesgo" es un derived_column lookup_dict que mapea Nivel de
+    # Riesgo a 0/1 (1 si Crítico o Alto Riesgo). El agg=mean da el % de
+    # estudiantes en riesgo. Paleta rojo_calor: 0 = amarillo claro
+    # (sin alerta), 1 = rojo intenso (alta concentración de Crítico+Alto).
+    ids["c_mapa_riesgo"] = upsert_chart(
+        db, org_id,
+        name="IDEL — Mapa de Riesgo (Curso × Subprueba)",
+        description=(
+            "Heatmap del % de estudiantes en Crítico o Alto Riesgo por curso "
+            "y subprueba. Réplica de la página 1 del informe PDL Woodcock. "
+            "Rojo = mayor proporción en riesgo, amarillo = baja proporción."
+        ),
+        config=chart_config(
+            "heatmap", METRIC_IDEL,
+            titulo="Mapa de Riesgo — % Crítico o Alto Riesgo",
+            x_field="Evaluación", group_field="Curso", y_field="es_riesgo",
+            aggregation="mean", y_format="percent",
+            color_palette="rojo_calor",
+        ),
+    )
+
     ids["c_stack_riesgo_curso"] = upsert_chart(
         db, org_id,
         name="IDEL — Niveles de Riesgo por Curso",
@@ -219,6 +241,33 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         ),
     )
 
+    # Roster pivot_matrix — replica la pág 6 del informe IDEL.
+    # Filas = Estudiante, columnas = Subprueba×Versión, celda = Nivel.
+    # Útil para ver de un vistazo el progreso de cada estudiante en
+    # cada subprueba a lo largo de las 3 versiones del año.
+    ids["c_roster"] = upsert_chart(
+        db, org_id,
+        name="IDEL — Roster (Estudiante × Subprueba × Versión)",
+        description=(
+            "Tabla pivote: cada fila es un estudiante, cada columna es una "
+            "combinación Subprueba×Versión. La celda muestra el Nivel de "
+            "Riesgo coloreado. Replica la página 6 del informe PDL Woodcock. "
+            "Muy útil para ver progreso individual a lo largo de las 3 "
+            "aplicaciones del año. RECOMENDACIÓN: filtrar por Curso para "
+            "limitar el número de filas."
+        ),
+        config=chart_config(
+            "pivot_matrix", METRIC_IDEL,
+            titulo="Roster — Niveles por Estudiante",
+            axis_field="Nombre",          # filas
+            group_field="Evaluación",     # outer cols (Subprueba)
+            x_field="Versión",            # inner cols
+            y_field="Nivel de Riesgo",    # cell value
+            stack_order=["CT", "FLO", "FNL", "FSF", "ILP", "VSD"],  # outer order
+            x_order=IDEL_VERSION_ORDER,
+        ),
+    )
+
     # Stacked agrupado curso × versión × nivel — replica el informe pág 2
     # ("Distribución de niveles por evaluación") por cada curso.
     ids["c_stack_curso_version"] = upsert_chart(
@@ -253,6 +302,7 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                 # se mostrará solo Total Alumnos + Nivel Predominante.
                 row([kpis_item()], cols=4),
                 row([cfg_table_item(ids["t_resumen_curso"], "Resumen por Curso")], cols=1),
+                row([cfg_chart_item(ids["c_mapa_riesgo"], "Mapa de Riesgo (Curso × Subprueba)")], cols=1),
                 row([
                     cfg_chart_item(ids["c_pie_riesgo"], "Composición Global"),
                     cfg_chart_item(ids["c_stack_riesgo_curso"], "Niveles por Curso"),
@@ -260,6 +310,7 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             ]),
             tab("curso", "Por Curso", [
                 row([course_selector_item()], cols=1),
+                row([cfg_chart_item(ids["c_roster"], "Roster — Niveles por Estudiante × Subprueba × Versión")], cols=1),
                 row([cfg_table_item(ids["t_alumno"], "Listado de Estudiantes")], cols=1),
                 row([cfg_table_item(ids["t_riesgo"], "Estudiantes en Riesgo")], cols=1),
             ]),
