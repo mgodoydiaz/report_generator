@@ -144,6 +144,12 @@ export default function Results() {
             const result = await res.json();
             const processed = processDataForDashboard(result);
             setDashboardData(processed);
+            // Refresca dimensiones para soportar cascading filters: el
+            // backend devuelve los `values` por dimensión recomputados
+            // aplicando los filtros actuales excepto el de la propia
+            // dimensión. Esto hace que los dropdowns solo muestren
+            // valores consistentes con las selecciones previas.
+            if (result.dimensions) setIndicatorDims(result.dimensions);
             setCursoActivo(null);
             setSubpruebaActiva(null);
             if (processed.estudiantes.length === 0 && processed.preguntas.length === 0) {
