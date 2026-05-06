@@ -155,9 +155,17 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             return {"empty": True}
         g = df.groupby([m.x_field, m.group_field], as_index=False)[m.y_field].agg(agg)
         x_vals = g[m.x_field].astype(str).unique().tolist()
+        # `stack_order` también define el orden de las series en grouped_bar
+        # (útil para meses cronológicos, hitos ordinales, etc.). Si no se
+        # define, se usa el orden de aparición en el dataset (típicamente
+        # alfabético post-groupby).
+        series_order = (
+            cfg.aesthetics.stack_order
+            or g[m.group_field].astype(str).unique().tolist()
+        )
         series = []
-        for name in g[m.group_field].astype(str).unique():
-            sub = g[g[m.group_field].astype(str) == name].set_index(m.x_field)[m.y_field]
+        for name in series_order:
+            sub = g[g[m.group_field].astype(str) == str(name)].set_index(m.x_field)[m.y_field]
             y_vals = [sub.get(x, None) for x in x_vals]
             series.append({"name": str(name), "y": y_vals})
         return {"x": x_vals, "series": series}
@@ -170,7 +178,10 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         # Stacked = count por (x, stack)
         g = df.groupby([m.x_field, m.stack_field], as_index=False).size()
         g = g.rename(columns={"size": "_n"})
-        x_vals = g[m.x_field].astype(str).unique().tolist()
+        x_vals = (
+            cfg.aesthetics.x_order
+            or g[m.x_field].astype(str).unique().tolist()
+        )
         order = cfg.aesthetics.stack_order or g[m.stack_field].astype(str).unique().tolist()
         stacks = []
         for name in order:
@@ -178,6 +189,55 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             y_vals = [int(sub.get(x, 0)) for x in x_vals]
             stacks.append({"name": str(name), "y": y_vals})
         return {"x": x_vals, "stacks": stacks}
+
+    if ct == "stacked_grouped_bar":
+        # Eje X de 2 niveles: outer = group_field (ej Curso), inner = x_field
+        # (ej Mes), stacked = stack_field (ej Logro/Nivel). Devuelve x_outer
+        # y x_inner como arrays paralelos del mismo largo (Plotly soporta
+        # x: [outer, inner] como categorical multi-level).
+        if not (m.x_field and m.group_field and m.stack_field):
+            raise ValueError(
+                "stacked_grouped_bar requiere x_field, group_field y stack_field"
+            )
+        if any(c not in df.columns for c in [m.x_field, m.group_field, m.stack_field]):
+            return {"empty": True}
+        cnt = (
+            df.groupby([m.group_field, m.x_field, m.stack_field], as_index=False)
+            .size()
+            .rename(columns={"size": "_n"})
+        )
+        # Orders: group natural sort, x desde aesthetics.x_order si existe,
+        # stack desde aesthetics.stack_order si existe.
+        g_order = sorted(cnt[m.group_field].astype(str).unique().tolist())
+        x_order = (
+            cfg.aesthetics.x_order
+            or sorted(cnt[m.x_field].astype(str).unique().tolist())
+        )
+        s_order = (
+            cfg.aesthetics.stack_order
+            or sorted(cnt[m.stack_field].astype(str).unique().tolist())
+        )
+        # Construir x_outer (group repetido) y x_inner (x_field por group)
+        x_outer: list[str] = []
+        x_inner: list[str] = []
+        for g in g_order:
+            for x in x_order:
+                x_outer.append(str(g))
+                x_inner.append(str(x))
+        # Stack series — cada uno tiene array y paralelo a (x_outer, x_inner)
+        stacks = []
+        # Index por (group, x, stack) → _n para lookup rápido
+        idx = {
+            (str(r[m.group_field]), str(r[m.x_field]), str(r[m.stack_field])): int(r["_n"])
+            for _, r in cnt.iterrows()
+        }
+        for s in s_order:
+            ys = []
+            for g in g_order:
+                for x in x_order:
+                    ys.append(idx.get((str(g), str(x), str(s)), 0))
+            stacks.append({"name": str(s), "y": ys})
+        return {"x_outer": x_outer, "x_inner": x_inner, "stacks": stacks}
 
     if ct == "box":
         if not (m.x_field and m.y_field):

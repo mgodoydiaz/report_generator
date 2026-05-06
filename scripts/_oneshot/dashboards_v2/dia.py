@@ -368,7 +368,7 @@ def seed_dia(db: Session, org_id: int, indicator_id_dia: int) -> Dict[str, int]:
             "heatmap", METRIC_DIA_PREG,
             titulo="Heatmap Curso × Eje Temático",
             x_field="Eje Temático", group_field="Curso", y_field="Logro",
-            y_format="percent", color_palette="viridis",
+            y_format="percent", color_palette="rojo_calor", palette_reversed=True,
         ),
     )
 

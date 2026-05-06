@@ -136,6 +136,16 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   const yfmt = aesthetics?.y_format || 'number';
   const ylims = aesthetics?.y_lims;
   const showLegend = aesthetics?.show_legend !== false;
+  const showValues = !!aesthetics?.show_values;
+
+  // Formatea un número Y según el y_format del chart, para usar como text
+  // sobre las barras / segmentos. Devuelve "" si el valor no es numérico.
+  const fmtVal = (v) => {
+    if (v == null || isNaN(v)) return '';
+    if (yfmt === 'percent') return (v * 100).toFixed(1).replace(/\.0$/, '') + '%';
+    if (yfmt === 'int') return String(Math.round(v));
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  };
 
   const yaxisFmt = yfmt === 'percent'
     ? { tickformat: '.0%', range: ylims || [0, 1] }
@@ -158,12 +168,19 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     return {
       data: [{
         type: 'bar',
+        // Sin `name`, Plotly auto-genera "trace 0" en la leyenda. Como un
+        // bar simple es una sola serie, el nombre es redundante. Le damos
+        // un nombre vacío y desactivamos la leyenda por defecto.
+        name: '',
         x: dataset.x,
         y: dataset.y,
         marker: { color: CATEGORY_COLORS[0] },
+        text: showValues ? (dataset.y || []).map(fmtVal) : undefined,
+        textposition: showValues ? 'outside' : 'none',
         hovertemplate: yfmt === 'percent' ? '%{x}: %{y:.1%}<extra></extra>' : '%{x}: %{y}<extra></extra>',
+        showlegend: false,
       }],
-      layout: layoutBase,
+      layout: { ...layoutBase, showlegend: false },
     };
   }
 
@@ -174,22 +191,64 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       x: dataset.x,
       y: s.y,
       marker: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] },
+      text: showValues ? (s.y || []).map(fmtVal) : undefined,
+      textposition: showValues ? 'outside' : 'none',
     }));
     return { data: traces, layout: { ...layoutBase, barmode: 'group' } };
   }
 
   if (chart_type === 'stacked_bar') {
-    const palette = aesthetics?.color_palette === 'semaforo'
+    const basePalette = aesthetics?.color_palette === 'semaforo'
       ? SEMAFORO_COLORS
       : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const traces = (dataset.stacks || []).map((s, i) => ({
       type: 'bar',
       name: s.name,
       x: dataset.x,
       y: s.y,
       marker: { color: palette[i % palette.length] },
+      // En stacked, "inside" muestra el número dentro del segmento.
+      // Plotly oculta automáticamente los textos que no caben en el segmento.
+      text: showValues ? (s.y || []).map(fmtVal) : undefined,
+      textposition: showValues ? 'inside' : 'none',
+      insidetextanchor: 'middle',
     }));
     return { data: traces, layout: { ...layoutBase, barmode: 'stack', yaxis: { ...layoutBase.yaxis, tickformat: 'd' } } };
+  }
+
+  if (chart_type === 'stacked_grouped_bar') {
+    // Plotly soporta eje X categorical multi-nivel pasando x = [outer, inner].
+    // Outer = group_field (ej Curso), inner = x_field (ej Mes). Visualmente
+    // queda con una etiqueta superior por grupo y barras separadas por
+    // categoría interna debajo.
+    const basePalette = aesthetics?.color_palette === 'semaforo'
+      ? SEMAFORO_COLORS
+      : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    const xOuter = dataset.x_outer || [];
+    const xInner = dataset.x_inner || [];
+    const traces = (dataset.stacks || []).map((s, i) => ({
+      type: 'bar',
+      name: s.name,
+      x: [xOuter, xInner],
+      y: s.y,
+      marker: { color: palette[i % palette.length] },
+      text: showValues ? (s.y || []).map(v => (v && v > 0 ? fmtVal(v) : '')) : undefined,
+      textposition: showValues ? 'inside' : 'none',
+      insidetextanchor: 'middle',
+    }));
+    return {
+      data: traces,
+      layout: {
+        ...layoutBase,
+        barmode: 'stack',
+        yaxis: { ...layoutBase.yaxis, tickformat: 'd' },
+        // Mostrar líneas verticales discontinuas entre los grupos outer
+        // ayuda a separar visualmente los cursos en el eje compuesto.
+        xaxis: { ...layoutBase.xaxis, showdividers: true, dividercolor: '#cbd5e1', dividerwidth: 1 },
+      },
+    };
   }
 
   if (chart_type === 'box') {
@@ -207,39 +266,51 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     if (dataset.series) {
       const traces = dataset.series.map((s, i) => ({
         type: 'scatter',
-        mode: 'lines+markers',
+        mode: showValues ? 'lines+markers+text' : 'lines+markers',
         name: s.name,
         x: dataset.x,
         y: s.y,
         line: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], width: 2 },
         marker: { size: 6 },
+        text: showValues ? (s.y || []).map(fmtVal) : undefined,
+        textposition: 'top center',
       }));
       return { data: traces, layout: layoutBase };
     }
     return {
       data: [{
         type: 'scatter',
-        mode: 'lines+markers',
+        mode: showValues ? 'lines+markers+text' : 'lines+markers',
         x: dataset.x,
         y: dataset.y,
         line: { color: CATEGORY_COLORS[0], width: 2 },
         marker: { size: 6 },
+        text: showValues ? (dataset.y || []).map(fmtVal) : undefined,
+        textposition: 'top center',
       }],
       layout: layoutBase,
     };
   }
 
   if (chart_type === 'pie') {
+    const basePalette = aesthetics?.color_palette === 'semaforo'
+      ? SEMAFORO_COLORS
+      : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    // Para pie, eliminamos xaxis e yaxis del layout (no aplican). Pasarlos
+    // como `undefined` confunde a Plotly y puede dejar el chart colapsado
+    // a height: 0. Hacemos un layout limpio omitiéndolos por destructuring.
+    const { xaxis: _x, yaxis: _y, ...layoutPie } = layoutBase;
     return {
       data: [{
         type: 'pie',
         labels: dataset.labels,
         values: dataset.values,
-        marker: { colors: CATEGORY_COLORS },
+        marker: { colors: palette },
         hole: 0.35,
         textinfo: 'label+percent',
       }],
-      layout: { ...layoutBase, xaxis: undefined, yaxis: undefined },
+      layout: layoutPie,
     };
   }
 
@@ -256,13 +327,24 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'heatmap') {
+    // Paletas heatmap soportadas:
+    //   "viridis"     → Viridis (default fríos→cálidos, percepción uniforme)
+    //   "rojo_calor"  → YlOrRd (amarillo claro→naranja→rojo). Estándar para
+    //                   "% en riesgo / % crítico" donde rojo = peor.
+    //   (default)     → YlGnBu (amarillo→azul, neutro)
+    const palette = aesthetics?.color_palette;
+    const colorscale =
+      palette === 'viridis' ? 'Viridis'
+        : palette === 'rojo_calor' ? 'YlOrRd'
+        : 'YlGnBu';
     return {
       data: [{
         type: 'heatmap',
         x: dataset.x,
         y: dataset.y,
         z: dataset.z,
-        colorscale: aesthetics?.color_palette === 'viridis' ? 'Viridis' : 'YlGnBu',
+        colorscale,
+        reversescale: !!aesthetics?.palette_reversed,
         hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
       }],
       layout: { ...layoutBase, yaxis: { ...layoutBase.yaxis, autorange: 'reversed' } },

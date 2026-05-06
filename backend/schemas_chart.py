@@ -25,16 +25,17 @@ from pydantic import BaseModel, Field
 
 
 ChartType = Literal[
-    "bar",          # Barras simples por categoría — promedio de Y por X
-    "grouped_bar",  # Barras agrupadas — Y por X × group
-    "stacked_bar",  # Barras apiladas — count por (X, categoría)
-    "box",          # Boxplot — distribución de Y por X
-    "line",         # Línea — Y por X (típicamente temporal)
-    "pie",          # Torta — composición de una categoría
-    "histogram",    # Histograma — distribución univariada de Y
-    "heatmap",      # Matriz de calor — Y por (X, group)
-    "radar",        # Radar — perfil multi-eje
-    "gauge",        # Medidor KPI — un valor único
+    "bar",                  # Barras simples por categoría — promedio de Y por X
+    "grouped_bar",          # Barras agrupadas — Y por X × group
+    "stacked_bar",          # Barras apiladas — count por (X, categoría)
+    "stacked_grouped_bar",  # Stacked bars con eje X de 2 niveles (group_field outer × x_field inner)
+    "box",                  # Boxplot — distribución de Y por X
+    "line",                 # Línea — Y por X (típicamente temporal)
+    "pie",                  # Torta — composición de una categoría
+    "histogram",            # Histograma — distribución univariada de Y
+    "heatmap",              # Matriz de calor — Y por (X, group)
+    "radar",                # Radar — perfil multi-eje
+    "gauge",                # Medidor KPI — un valor único
 ]
 
 
@@ -59,6 +60,19 @@ CHART_TYPE_META: Dict[str, Dict[str, Any]] = {
         "required_fields": ["x_field", "stack_field"],
         "optional_fields": ["stack_order", "color_palette"],
         "plotly_component": "StackedCountByGroup",
+    },
+    "stacked_grouped_bar": {
+        "display_name": "Barras apiladas con grupo",
+        "description": (
+            "Barras apiladas con eje X de 2 niveles: agrupador externo "
+            "(group_field, ej Curso) × interno (x_field, ej Mes), apiladas "
+            "por categoría (stack_field, ej Nivel de Logro). Útil para "
+            "informes que muestran evolución de la composición por mes "
+            "dentro de cada curso, todo en un solo gráfico."
+        ),
+        "required_fields": ["x_field", "group_field", "stack_field"],
+        "optional_fields": ["stack_order", "x_order", "color_palette", "palette_reversed"],
+        "plotly_component": "StackedGroupedBar",
     },
     "box": {
         "display_name": "Boxplot",
@@ -153,11 +167,26 @@ class ChartAesthetics(BaseModel):
     y_format: Literal["number", "percent", "int"] = "number"
     y_lims: Optional[List[float]] = None  # [min, max]
     color_palette: Optional[str] = None    # ej "tab10", "Set2", "semaforo", "viridis"
+    # Si True, invierte el orden de la paleta antes de mapearla a las series.
+    # Útil cuando el stack_order natural va de "malo a bueno" pero la paleta
+    # va de "bueno a malo" (ej SIMCE Insuficiente/Elemental/Adecuado con
+    # paleta semaforo verde→rojo). El frontend invierte el array de colores
+    # en el renderer; no afecta el dataset.
+    palette_reversed: bool = False
+    # Si True, dibuja los números (Y) directamente sobre las barras / segmentos.
+    # Aplica a bar, grouped_bar, stacked_bar y line. Útil para informes
+    # impresos donde el ojo no puede pasar por el eje.
+    show_values: bool = False
     show_legend: bool = True
     legend_title: Optional[str] = None
     # Para stacked_bar, lista ordenada de los valores del stack_field para
     # asignar paleta consistente (ej ["Avanzado", "Intermedio", "Inicial"]).
+    # En grouped_bar también se usa para ordenar las series.
     stack_order: Optional[List[str]] = None
+    # Orden explícito de los valores del x_field. Útil para meses (cronológico
+    # vs alfabético) o hitos ordinales en cualquier chart con eje X
+    # categórico (bar, stacked_bar, grouped_bar, stacked_grouped_bar, line).
+    x_order: Optional[List[str]] = None
     # Para histogram
     bins: int = 10
     # Para gauge
