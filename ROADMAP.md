@@ -11,7 +11,7 @@ Pendientes, deuda técnica y mejoras planificadas para Report Generator.
 | 1 | Base de datos | ~~Base de datos en Excel sin soporte de concurrencia ni transacciones — migrar a PostgreSQL~~ ✅ **Hecho** — PostgreSQL 16 como motor principal, Excel legacy archivado en `data/database/`. |
 | 6 | Infraestructura | ~~Generación de PDFs usa LaTeX/MikTeX (~1 GB) — migrado a WeasyPrint.~~ ✅ **Hecho en M3**. Los steps LaTeX (`RenderReport`, `GenerateTables`, `GenerateGraphics`) siguen vivos pero sin tests — ver ítem #8. |
 | 8 | Steps legacy | `GenerateTables`, `GenerateGraphics`, `RenderReport` (LaTeX) y `GenerateDocxReport` están sin tests actualizados y posiblemente rotos. Auditar en rama `dev-legacy-audit` antes de construir pipelines encima. Decidir cuáles conservar, cuáles eliminar. |
-| 9 | Infraestructura | `data/org_assets/` (logos subidos por usuarios) requiere **Persistent Disk** en Render. En staging (Free tier) no hay disk — los logos se pierden en cada redeploy. Provisionar disk antes de usar logos en producción. |
+| 9 | Infraestructura | `data/org_assets/` (logos subidos por usuarios) requiere un Volume persistente en Railway. Verificar que esté provisionado en el servicio de prod antes de usar logos. |
 | 7 | Infraestructura | ~~Imagen Docker del backend usa Miniconda (~500 MB base) — migrar a `python:3.11-slim`~~ ✅ **Hecho** — Dockerfile multi-stage con `python:3.11-slim` + apt-get (ghostscript, libpango, etc.) + `requirements.txt`. |
 | 2 | Backend | ~~Helpers duplicados `get_df`/`save_df` en `routers/dimensions.py` y `routers/metrics.py` — consolidar en módulo compartido~~ ✅ **Hecho** — los routers migraron a SQLAlchemy; el módulo vestigial `backend/routers/_db.py` fue eliminado. |
 | 3 | Frontend | ~~Páginas `Results` y `Help` sin implementar (placeholders)~~ ✅ **Hecho** — ambas páginas implementadas (Results con dashboards + generación de PDF; Help con catálogo de componentes). |
@@ -39,12 +39,12 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 
 ### Infraestructura y despliegue
 - [x] Crear imagen Docker y contenerizar la aplicación
-- [x] Migrar el entorno de ejecución final a Linux (Docker + WSL en dev; Render en staging)
-- [ ] Levantar servidor de producción
-- [ ] Evaluar Free Tier en AWS o GCP para hosting (staging actual en Render Free)
-- [ ] Crear base de datos en la nube (AWS RDS u equivalente — staging usa Render Postgres; prod pendiente, probable Neon São Paulo)
-- [ ] Publicar el servicio en línea (staging disponible en `rgenerator-staging.onrender.com`)
+- [x] Migrar el entorno de ejecución final a Linux (Docker + WSL en dev; Railway en prod)
+- [x] Levantar servidor de producción (Railway us-east4)
+- [x] Crear base de datos en la nube (Supabase PG17 sa-east-1 / São Paulo)
+- [x] Publicar el servicio en línea — backend en `rgenerator-backend-production.up.railway.app`
 - [x] ~~Apagar la DB de Render staging~~ ✅ **Hecho** — apagada. Producción quedó en Railway + Supabase São Paulo.
+- [ ] Publicar el frontend (pendiente — evaluar Vercel, Cloudflare Pages o Railway Static)
 - [ ] **TODO: registrar Task Scheduler para `scripts/backup_supabase.py`** (lunes y viernes 03:00). El script y el helper `scripts/run_supabase_backup.bat` ya están listos. Falta sólo registrar la tarea con `schtasks` (ver docstring del script). Definir antes la carpeta de destino definitiva (default `backups/` dentro del repo, gitignored — alternativa: ruta fuera del repo o OneDrive).
 - [ ] **TODO: exponer endpoint `/api/health/db`** que toque la DB (SELECT 1) y configurar ping de anti-pausa de Supabase Free (cron-job.org cada ≤6 días).
 - [ ] **TODO: rotar credenciales sensibles post-merge** — (a) password Supabase prod (estuvo hardcodeada en scripts antes de mover a `_oneshot/`), (b) PAT de GitHub embebido en `git remote get-url origin`. Reconfigurar remotes con auth basada en SSH o token en credential helper.
