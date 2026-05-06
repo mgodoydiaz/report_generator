@@ -43,6 +43,7 @@ from .helpers import (
     col_agg,
     col_int,
     col_text,
+    color_overrides_from_indicator,
     color_scale_linked,
     course_selector_item,
     kpis_item,
@@ -67,6 +68,14 @@ IDEL_NIVEL_ORDER = ["Crítico", "Alto Riesgo", "Cierto Riesgo", "Bajo Riesgo"]
 
 def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int]:
     ids: Dict[str, int] = {}
+
+    # Colores oficiales por nivel — leídos del indicador IDEL para que los
+    # gráficos stacked/pie hereden exactamente los mismos colores que se ven
+    # en la configuración del indicador (Crítico=rojo, Alto Riesgo=naranja,
+    # Cierto Riesgo=amarillo, Bajo Riesgo=verde). Si el indicador todavía
+    # no tiene achievement_levels, queda {} y los charts caen al
+    # color_palette por defecto.
+    nivel_colors = color_overrides_from_indicator(db, org_id, "IDEL")
 
     # ─────────────────────────────────────────────────────────────────────
     # TABLAS
@@ -181,7 +190,8 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             "pie", METRIC_IDEL,
             titulo="Composición por Nivel de Riesgo",
             category_field="Nivel de Riesgo",
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
         ),
     )
 
@@ -199,9 +209,12 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         ),
         config=chart_config(
             "heatmap", METRIC_IDEL,
-            titulo="Cobertura — Estudiantes únicos por curso × N° de versiones",
+            titulo="Estudiantes únicos evaluados en 1, 2 o 3 versiones",
             x_field="n_versiones_estudiante", group_field="Curso", y_field="Nombre",
             aggregation="nunique", color_palette="rojo_calor", palette_reversed=True,
+            x_label="N° de versiones evaluadas (en el año)",
+            y_label="Curso",
+            y_format="int",
         ),
     )
 
@@ -241,9 +254,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             titulo="Niveles de Riesgo por Curso",
             x_field="Curso", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )
@@ -265,9 +280,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             x_field="Versión", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
             x_order=IDEL_VERSION_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )
@@ -316,9 +333,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             x_field="Versión", group_field="Curso", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
             x_order=IDEL_VERSION_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )

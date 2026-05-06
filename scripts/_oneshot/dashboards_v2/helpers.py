@@ -67,6 +67,38 @@ def color_scale_sequential_blue() -> Dict[str, Any]:
     return {"kind": "sequential", "base_color": "#3b82f6"}
 
 
+def color_overrides_from_indicator(db: Session, org_id: int, indicator_name: str) -> Dict[str, str]:
+    """Lee `achievement_levels` del indicador y devuelve un dict
+    {nombre_nivel: color_hex} apto para poner en aesthetics.color_overrides
+    de un ChartConfig.
+
+    Esto garantiza que los gráficos stacked/pie usen exactamente los mismos
+    colores definidos en el indicador (vista global consistente: lo que ve
+    el usuario en Indicadores → Niveles de logro es lo mismo que pinta el
+    chart). Si el indicador no existe o no tiene achievement_levels,
+    retorna {} silenciosamente para que el chart caiga al color_palette.
+    """
+    ind = db.query(Indicator).filter(
+        Indicator.org_id == org_id,
+        Indicator.name == indicator_name,
+    ).first()
+    if not ind or not ind.achievement_levels:
+        return {}
+    levels = ind.achievement_levels
+    if isinstance(levels, str):
+        try:
+            levels = json.loads(levels)
+        except Exception:
+            return {}
+    out: Dict[str, str] = {}
+    for lv in levels or []:
+        nm = lv.get("name")
+        col = lv.get("color")
+        if nm and col:
+            out[nm] = col
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Builders de TableConfig / ChartConfig
 # ─────────────────────────────────────────────────────────────────────────
@@ -121,6 +153,7 @@ def chart_config(
     x_label: Optional[str] = None,
     color_palette: Optional[str] = None,
     palette_reversed: bool = False,
+    color_overrides: Optional[Dict[str, str]] = None,
     stack_order: Optional[List[str]] = None,
     x_order: Optional[List[str]] = None,
     bins: int = 10,
@@ -155,6 +188,7 @@ def chart_config(
             "y_lims": y_lims,
             "color_palette": color_palette,
             "palette_reversed": palette_reversed,
+            "color_overrides": color_overrides,
             "show_legend": show_legend,
             "show_values": show_values,
             "legend_title": legend_title,

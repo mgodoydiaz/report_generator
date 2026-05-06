@@ -19,7 +19,32 @@ const CATEGORY_COLORS = [
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
 ];
 
-const SEMAFORO_COLORS = ['#22c55e', '#f59e0b', '#ef4444']; // Avanzado / Intermedio / Inicial
+const SEMAFORO_COLORS = ['#22c55e', '#f59e0b', '#ef4444']; // 3 niveles: Avanzado / Intermedio / Inicial
+// 4 niveles (IDEL: Bajo Riesgo / Cierto Riesgo / Alto Riesgo / Crítico).
+// Con palette_reversed activo, queda: rojo → naranja → amarillo → verde,
+// que es el orden natural de un stack peor→mejor (Crítico arriba, Bajo Riesgo abajo).
+const SEMAFORO_4_COLORS = ['#16a34a', '#eab308', '#f97316', '#dc2626']; // verde / amarillo / naranja / rojo
+
+// Resuelve el nombre de paleta a un array de colores. Centralizado para
+// stacked_bar, stacked_grouped_bar, pie y heatmap discretas.
+function resolvePalette(aesthetics) {
+  const name = aesthetics?.color_palette;
+  if (name === 'semaforo') return SEMAFORO_COLORS;
+  if (name === 'semaforo_4') return SEMAFORO_4_COLORS;
+  return CATEGORY_COLORS;
+}
+
+// Devuelve el color final para una serie: si aesthetics.color_overrides
+// tiene un valor explícito para `name`, lo usa; sino cae a la paleta
+// indexada (palette[i]). Permite que el usuario fije colores por categoría
+// (ej "Crítico" → "#dc2626") desde la UI de Charts.
+function pickSeriesColor(name, i, palette, aesthetics) {
+  const overrides = aesthetics?.color_overrides;
+  if (overrides && typeof overrides === 'object' && overrides[name]) {
+    return overrides[name];
+  }
+  return palette[i % palette.length];
+}
 
 export default function ChartRenderer({
   chartId,
@@ -205,16 +230,14 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'stacked_bar') {
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const traces = (dataset.stacks || []).map((s, i) => ({
       type: 'bar',
       name: s.name,
       x: dataset.x,
       y: s.y,
-      marker: { color: palette[i % palette.length] },
+      marker: { color: pickSeriesColor(s.name, i, palette, aesthetics) },
       // En stacked, "inside" muestra el número dentro del segmento.
       // Plotly oculta automáticamente los textos que no caben en el segmento.
       text: showValues ? (s.y || []).map(fmtVal) : undefined,
@@ -229,9 +252,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     // Outer = group_field (ej Curso), inner = x_field (ej Mes). Visualmente
     // queda con una etiqueta superior por grupo y barras separadas por
     // categoría interna debajo.
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const xOuter = dataset.x_outer || [];
     const xInner = dataset.x_inner || [];
@@ -240,7 +261,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       name: s.name,
       x: [xOuter, xInner],
       y: s.y,
-      marker: { color: palette[i % palette.length] },
+      marker: { color: pickSeriesColor(s.name, i, palette, aesthetics) },
       text: showValues ? (s.y || []).map(v => (v && v > 0 ? fmtVal(v) : '')) : undefined,
       textposition: showValues ? 'inside' : 'none',
       insidetextanchor: 'middle',
@@ -300,10 +321,11 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'pie') {
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    // Mapeo por etiqueta para respetar color_overrides en pie también.
+    const labels = dataset.labels || [];
+    const sliceColors = labels.map((lab, i) => pickSeriesColor(lab, i, palette, aesthetics));
     // Para pie, eliminamos xaxis e yaxis del layout (no aplican). Pasarlos
     // como `undefined` confunde a Plotly y puede dejar el chart colapsado
     // a height: 0. Hacemos un layout limpio omitiéndolos por destructuring.
@@ -313,7 +335,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         type: 'pie',
         labels: dataset.labels,
         values: dataset.values,
-        marker: { colors: palette },
+        marker: { colors: sliceColors },
         hole: 0.35,
         textinfo: 'label+percent',
       }],
