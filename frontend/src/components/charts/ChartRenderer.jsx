@@ -136,6 +136,16 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   const yfmt = aesthetics?.y_format || 'number';
   const ylims = aesthetics?.y_lims;
   const showLegend = aesthetics?.show_legend !== false;
+  const showValues = !!aesthetics?.show_values;
+
+  // Formatea un número Y según el y_format del chart, para usar como text
+  // sobre las barras / segmentos. Devuelve "" si el valor no es numérico.
+  const fmtVal = (v) => {
+    if (v == null || isNaN(v)) return '';
+    if (yfmt === 'percent') return (v * 100).toFixed(1).replace(/\.0$/, '') + '%';
+    if (yfmt === 'int') return String(Math.round(v));
+    return Number.isInteger(v) ? String(v) : v.toFixed(1);
+  };
 
   const yaxisFmt = yfmt === 'percent'
     ? { tickformat: '.0%', range: ylims || [0, 1] }
@@ -161,6 +171,8 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         x: dataset.x,
         y: dataset.y,
         marker: { color: CATEGORY_COLORS[0] },
+        text: showValues ? (dataset.y || []).map(fmtVal) : undefined,
+        textposition: showValues ? 'outside' : 'none',
         hovertemplate: yfmt === 'percent' ? '%{x}: %{y:.1%}<extra></extra>' : '%{x}: %{y}<extra></extra>',
       }],
       layout: layoutBase,
@@ -174,20 +186,28 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       x: dataset.x,
       y: s.y,
       marker: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length] },
+      text: showValues ? (s.y || []).map(fmtVal) : undefined,
+      textposition: showValues ? 'outside' : 'none',
     }));
     return { data: traces, layout: { ...layoutBase, barmode: 'group' } };
   }
 
   if (chart_type === 'stacked_bar') {
-    const palette = aesthetics?.color_palette === 'semaforo'
+    const basePalette = aesthetics?.color_palette === 'semaforo'
       ? SEMAFORO_COLORS
       : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const traces = (dataset.stacks || []).map((s, i) => ({
       type: 'bar',
       name: s.name,
       x: dataset.x,
       y: s.y,
       marker: { color: palette[i % palette.length] },
+      // En stacked, "inside" muestra el número dentro del segmento.
+      // Plotly oculta automáticamente los textos que no caben en el segmento.
+      text: showValues ? (s.y || []).map(fmtVal) : undefined,
+      textposition: showValues ? 'inside' : 'none',
+      insidetextanchor: 'middle',
     }));
     return { data: traces, layout: { ...layoutBase, barmode: 'stack', yaxis: { ...layoutBase.yaxis, tickformat: 'd' } } };
   }
@@ -207,35 +227,43 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     if (dataset.series) {
       const traces = dataset.series.map((s, i) => ({
         type: 'scatter',
-        mode: 'lines+markers',
+        mode: showValues ? 'lines+markers+text' : 'lines+markers',
         name: s.name,
         x: dataset.x,
         y: s.y,
         line: { color: CATEGORY_COLORS[i % CATEGORY_COLORS.length], width: 2 },
         marker: { size: 6 },
+        text: showValues ? (s.y || []).map(fmtVal) : undefined,
+        textposition: 'top center',
       }));
       return { data: traces, layout: layoutBase };
     }
     return {
       data: [{
         type: 'scatter',
-        mode: 'lines+markers',
+        mode: showValues ? 'lines+markers+text' : 'lines+markers',
         x: dataset.x,
         y: dataset.y,
         line: { color: CATEGORY_COLORS[0], width: 2 },
         marker: { size: 6 },
+        text: showValues ? (dataset.y || []).map(fmtVal) : undefined,
+        textposition: 'top center',
       }],
       layout: layoutBase,
     };
   }
 
   if (chart_type === 'pie') {
+    const basePalette = aesthetics?.color_palette === 'semaforo'
+      ? SEMAFORO_COLORS
+      : CATEGORY_COLORS;
+    const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     return {
       data: [{
         type: 'pie',
         labels: dataset.labels,
         values: dataset.values,
-        marker: { colors: CATEGORY_COLORS },
+        marker: { colors: palette },
         hole: 0.35,
         textinfo: 'label+percent',
       }],
@@ -263,6 +291,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         y: dataset.y,
         z: dataset.z,
         colorscale: aesthetics?.color_palette === 'viridis' ? 'Viridis' : 'YlGnBu',
+        reversescale: !!aesthetics?.palette_reversed,
         hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
       }],
       layout: { ...layoutBase, yaxis: { ...layoutBase.yaxis, autorange: 'reversed' } },

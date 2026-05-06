@@ -588,11 +588,39 @@ function AestheticsTab({ cfg, onChange }) {
       <div>
         <label className="inline-flex items-center gap-2 text-xs">
           <input
+            type="checkbox" checked={!!a.palette_reversed}
+            onChange={(e) => update({ palette_reversed: e.target.checked })}
+            className="accent-indigo-600"
+          /> Invertir paleta
+        </label>
+        <p className="text-[11px] text-slate-500 mt-1">
+          Útil cuando el orden natural de las categorías va de peor a mejor
+          (ej. Insuficiente→Adecuado) pero la paleta va de mejor a peor.
+        </p>
+      </div>
+
+      <div>
+        <label className="inline-flex items-center gap-2 text-xs">
+          <input
             type="checkbox" checked={a.show_legend !== false}
             onChange={(e) => update({ show_legend: e.target.checked })}
             className="accent-indigo-600"
           /> Mostrar leyenda
         </label>
+      </div>
+
+      <div>
+        <label className="inline-flex items-center gap-2 text-xs">
+          <input
+            type="checkbox" checked={!!a.show_values}
+            onChange={(e) => update({ show_values: e.target.checked })}
+            className="accent-indigo-600"
+          /> Mostrar valores sobre las barras
+        </label>
+        <p className="text-[11px] text-slate-500 mt-1">
+          Dibuja el número de Y (cantidad o promedio) directamente sobre cada
+          barra o segmento. Aplica a barras simples, agrupadas, apiladas y línea.
+        </p>
       </div>
 
       {cfg.chart_type === 'histogram' && (

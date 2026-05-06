@@ -153,6 +153,16 @@ class ChartAesthetics(BaseModel):
     y_format: Literal["number", "percent", "int"] = "number"
     y_lims: Optional[List[float]] = None  # [min, max]
     color_palette: Optional[str] = None    # ej "tab10", "Set2", "semaforo", "viridis"
+    # Si True, invierte el orden de la paleta antes de mapearla a las series.
+    # Útil cuando el stack_order natural va de "malo a bueno" pero la paleta
+    # va de "bueno a malo" (ej SIMCE Insuficiente/Elemental/Adecuado con
+    # paleta semaforo verde→rojo). El frontend invierte el array de colores
+    # en el renderer; no afecta el dataset.
+    palette_reversed: bool = False
+    # Si True, dibuja los números (Y) directamente sobre las barras / segmentos.
+    # Aplica a bar, grouped_bar, stacked_bar y line. Útil para informes
+    # impresos donde el ojo no puede pasar por el eje.
+    show_values: bool = False
     show_legend: bool = True
     legend_title: Optional[str] = None
     # Para stacked_bar, lista ordenada de los valores del stack_field para
