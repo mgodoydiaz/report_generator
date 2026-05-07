@@ -188,6 +188,13 @@ class ChartAesthetics(BaseModel):
     # paleta semaforo verde→rojo). El frontend invierte el array de colores
     # en el renderer; no afecta el dataset.
     palette_reversed: bool = False
+    # Overrides explícitos de color por categoría (nombre del valor del
+    # stack_field/category_field → hex "#rrggbb"). Si está definido, pisa
+    # al color que vendría de color_palette para esas categorías.
+    # Útil para alinear el gráfico con los achievement_levels del indicador
+    # (ej Crítico=#dc2626, Alto Riesgo=#f97316, etc.) en lugar de depender
+    # del orden de la paleta + palette_reversed.
+    color_overrides: Optional[Dict[str, str]] = None
     # Si True, dibuja los números (Y) directamente sobre las barras / segmentos.
     # Aplica a bar, grouped_bar, stacked_bar y line. Útil para informes
     # impresos donde el ojo no puede pasar por el eje.

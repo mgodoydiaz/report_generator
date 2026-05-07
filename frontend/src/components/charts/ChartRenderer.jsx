@@ -19,7 +19,32 @@ const CATEGORY_COLORS = [
   '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#84cc16',
 ];
 
-const SEMAFORO_COLORS = ['#22c55e', '#f59e0b', '#ef4444']; // Avanzado / Intermedio / Inicial
+const SEMAFORO_COLORS = ['#22c55e', '#f59e0b', '#ef4444']; // 3 niveles: Avanzado / Intermedio / Inicial
+// 4 niveles (IDEL: Bajo Riesgo / Cierto Riesgo / Alto Riesgo / Crítico).
+// Con palette_reversed activo, queda: rojo → naranja → amarillo → verde,
+// que es el orden natural de un stack peor→mejor (Crítico arriba, Bajo Riesgo abajo).
+const SEMAFORO_4_COLORS = ['#16a34a', '#eab308', '#f97316', '#dc2626']; // verde / amarillo / naranja / rojo
+
+// Resuelve el nombre de paleta a un array de colores. Centralizado para
+// stacked_bar, stacked_grouped_bar, pie y heatmap discretas.
+function resolvePalette(aesthetics) {
+  const name = aesthetics?.color_palette;
+  if (name === 'semaforo') return SEMAFORO_COLORS;
+  if (name === 'semaforo_4') return SEMAFORO_4_COLORS;
+  return CATEGORY_COLORS;
+}
+
+// Devuelve el color final para una serie: si aesthetics.color_overrides
+// tiene un valor explícito para `name`, lo usa; sino cae a la paleta
+// indexada (palette[i]). Permite que el usuario fije colores por categoría
+// (ej "Crítico" → "#dc2626") desde la UI de Charts.
+function pickSeriesColor(name, i, palette, aesthetics) {
+  const overrides = aesthetics?.color_overrides;
+  if (overrides && typeof overrides === 'object' && overrides[name]) {
+    return overrides[name];
+  }
+  return palette[i % palette.length];
+}
 
 export default function ChartRenderer({
   chartId,
@@ -205,16 +230,14 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'stacked_bar') {
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const traces = (dataset.stacks || []).map((s, i) => ({
       type: 'bar',
       name: s.name,
       x: dataset.x,
       y: s.y,
-      marker: { color: palette[i % palette.length] },
+      marker: { color: pickSeriesColor(s.name, i, palette, aesthetics) },
       // En stacked, "inside" muestra el número dentro del segmento.
       // Plotly oculta automáticamente los textos que no caben en el segmento.
       text: showValues ? (s.y || []).map(fmtVal) : undefined,
@@ -229,9 +252,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
     // Outer = group_field (ej Curso), inner = x_field (ej Mes). Visualmente
     // queda con una etiqueta superior por grupo y barras separadas por
     // categoría interna debajo.
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
     const xOuter = dataset.x_outer || [];
     const xInner = dataset.x_inner || [];
@@ -240,7 +261,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       name: s.name,
       x: [xOuter, xInner],
       y: s.y,
-      marker: { color: palette[i % palette.length] },
+      marker: { color: pickSeriesColor(s.name, i, palette, aesthetics) },
       text: showValues ? (s.y || []).map(v => (v && v > 0 ? fmtVal(v) : '')) : undefined,
       textposition: showValues ? 'inside' : 'none',
       insidetextanchor: 'middle',
@@ -300,10 +321,11 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
   }
 
   if (chart_type === 'pie') {
-    const basePalette = aesthetics?.color_palette === 'semaforo'
-      ? SEMAFORO_COLORS
-      : CATEGORY_COLORS;
+    const basePalette = resolvePalette(aesthetics);
     const palette = aesthetics?.palette_reversed ? [...basePalette].reverse() : basePalette;
+    // Mapeo por etiqueta para respetar color_overrides en pie también.
+    const labels = dataset.labels || [];
+    const sliceColors = labels.map((lab, i) => pickSeriesColor(lab, i, palette, aesthetics));
     // Para pie, eliminamos xaxis e yaxis del layout (no aplican). Pasarlos
     // como `undefined` confunde a Plotly y puede dejar el chart colapsado
     // a height: 0. Hacemos un layout limpio omitiéndolos por destructuring.
@@ -313,7 +335,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         type: 'pie',
         labels: dataset.labels,
         values: dataset.values,
-        marker: { colors: palette },
+        marker: { colors: sliceColors },
         hole: 0.35,
         textinfo: 'label+percent',
       }],
@@ -344,6 +366,12 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       palette === 'viridis' ? 'Viridis'
         : palette === 'rojo_calor' ? 'YlOrRd'
         : 'YlGnBu';
+    // UX-6: Tooltip respeta y_format. Para percent muestra "35.0%", para
+    // count entero, para number 2 decimales. Más útil que el genérico .2f.
+    const heatmapHover =
+      yfmt === 'percent' ? '%{y} × %{x}: %{z:.1%}<extra></extra>'
+        : yfmt === 'int' ? '%{y} × %{x}: %{z:.0f}<extra></extra>'
+        : '%{y} × %{x}: %{z:.2f}<extra></extra>';
     return {
       data: [{
         type: 'heatmap',
@@ -352,7 +380,7 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
         z: dataset.z,
         colorscale,
         reversescale: !!aesthetics?.palette_reversed,
-        hovertemplate: '%{y} × %{x}: %{z:.2f}<extra></extra>',
+        hovertemplate: heatmapHover,
       }],
       layout: { ...layoutBase, yaxis: { ...layoutBase.yaxis, autorange: 'reversed' } },
     };
@@ -460,11 +488,21 @@ function PivotMatrixTable({ data, height, className }) {
   const cols = hasOuter ? ds.col_inner : ds.cols;
   const cellsPerOuter = hasOuter ? ds.col_inner.length : 0;
   const totalCols = hasOuter ? ds.col_outer.length * cellsPerOuter : ds.cols.length;
+  // UX-5: cuando hay muchas filas (típicamente Roster sin filtro de curso),
+  // sugerir al usuario que aplique un filtro para una vista más manejable.
+  const TOO_MANY_ROWS = 60;
+  const showFilterHint = ds.rows.length > TOO_MANY_ROWS;
 
   return (
     <div className={className} style={{ height, overflow: 'auto' }}>
       {title && (
         <div className="text-center text-sm font-semibold text-slate-700 mb-2">{title}</div>
+      )}
+      {showFilterHint && (
+        <div className="mb-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded text-xs text-amber-800">
+          <span className="font-semibold">Tip:</span> Esta tabla muestra {ds.rows.length} filas.
+          Aplica un filtro (ej: Curso) en el panel superior para una vista más enfocada.
+        </div>
       )}
       <table className="text-xs border-collapse w-full">
         <thead className="sticky top-0 bg-slate-50">
@@ -501,15 +539,22 @@ function PivotMatrixTable({ data, height, className }) {
               <td className="border border-slate-300 px-2 py-1 sticky left-0 bg-white whitespace-nowrap font-medium">
                 {rowName}
               </td>
-              {ds.cells[ri].map((val, ci) => (
-                <td
-                  key={ci}
-                  className="border border-slate-300 px-1 py-1 text-center text-[11px]"
-                  style={cellStyle(val)}
-                >
-                  {val ?? '—'}
-                </td>
-              ))}
+              {ds.cells[ri].map((val, ci) => {
+                // Datos-10: celdas sin dato (combinación curso × subprueba ×
+                // versión que no rinde el protocolo, ej v3 para 5°/6° BÁSICO)
+                // se etiquetan como "N/A" en gris suave para distinguirlas
+                // visualmente de niveles bajos.
+                const isMissing = val == null || val === '';
+                return (
+                  <td
+                    key={ci}
+                    className={"border border-slate-300 px-1 py-1 text-center text-[11px] " + (isMissing ? "text-slate-400 italic bg-slate-50" : "")}
+                    style={isMissing ? undefined : cellStyle(val)}
+                  >
+                    {isMissing ? 'N/A' : val}
+                  </td>
+                );
+              })}
             </tr>
           ))}
         </tbody>

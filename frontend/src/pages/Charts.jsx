@@ -39,12 +39,14 @@ export default function Charts() {
   const [metrics, setMetrics] = useState([]);
   const [dimensions, setDimensions] = useState([]);
   const [chartTypesMeta, setChartTypesMeta] = useState({});
+  const [indicators, setIndicators] = useState([]); // para sincronizar colores con achievement_levels
 
   // Catálogos
   useEffect(() => {
     apiGet('/metrics/').then((r) => setMetrics(r || [])).catch(() => {});
     apiGet('/dimensions/').then((r) => setDimensions(r || [])).catch(() => {});
     apiGet('/charts/types').then((r) => setChartTypesMeta(r || {})).catch(() => {});
+    apiGet('/indicators/').then((r) => setIndicators(Array.isArray(r) ? r : [])).catch(() => {});
   }, []);
 
   // Lista
@@ -307,6 +309,7 @@ export default function Charts() {
           {activeTab === 'aesthetics' && (
             <AestheticsTab
               cfg={draftConfig}
+              indicators={indicators}
               onChange={(a) => updateConfig((p) => ({ ...p, aesthetics: a }))}
             />
           )}
@@ -501,9 +504,69 @@ function FieldSelector({ label, value, options, required, onChange }) {
 // Tab: Estética
 // ─────────────────────────────────────────────────────────────────────
 
-function AestheticsTab({ cfg, onChange }) {
+// Charts donde el panel de "colores por categoría" tiene sentido (cualquier
+// chart con noción de serie/segmento por categoría). Se filtra para no
+// mostrar el panel en bar/line/box/heatmap/gauge/etc — esos no consumen
+// color_overrides desde el ChartRenderer.
+const COLOR_OVERRIDES_CHART_TYPES = new Set([
+  'stacked_bar', 'stacked_grouped_bar', 'pie',
+]);
+
+function AestheticsTab({ cfg, onChange, indicators = [] }) {
   const a = cfg.aesthetics || {};
   const update = (patch) => onChange({ ...a, ...patch });
+
+  // Mapeo categoría → color desde la config actual. Usamos un objeto plano
+  // (no Map) para serializar tal cual a aesthetics.color_overrides.
+  const overrides = a.color_overrides || {};
+
+  // Categorías candidatas: vienen del stack_order (lo más explícito).
+  // Si no hay stack_order, no podemos saber qué categorías mostrar — el
+  // panel queda oculto y el usuario debe usar la paleta por orden. Esto
+  // mantiene retro-compatibilidad: sin stack_order, comportamiento idéntico
+  // al anterior.
+  const categorias = Array.isArray(a.stack_order) ? a.stack_order : [];
+  const supportsOverrides = COLOR_OVERRIDES_CHART_TYPES.has(cfg.chart_type);
+  const showColorPanel = supportsOverrides && categorias.length > 0;
+
+  // Estado local del indicador seleccionado para sincronizar.
+  const [syncIndicatorId, setSyncIndicatorId] = useState('');
+
+  // Helpers para color_overrides
+  const setColor = (cat, color) => {
+    const next = { ...(overrides || {}), [cat]: color };
+    update({ color_overrides: next });
+  };
+  const clearColor = (cat) => {
+    const next = { ...(overrides || {}) };
+    delete next[cat];
+    // Si queda vacío, lo dejamos null para que el chart caiga limpio a la paleta.
+    update({ color_overrides: Object.keys(next).length ? next : null });
+  };
+  const clearAll = () => update({ color_overrides: null });
+
+  // Sincronizar con un indicador: lee achievement_levels y hace match por
+  // nombre de categoría. Solo escribe los que matchean — preserva overrides
+  // manuales para categorías que no estén en el indicador.
+  const syncFromIndicator = (id) => {
+    const ind = indicators.find((x) => String(x.id_indicator) === String(id));
+    if (!ind) return;
+    const levels = ind.achievement_levels || [];
+    const next = { ...(overrides || {}) };
+    let matched = 0;
+    for (const lv of levels) {
+      if (lv?.name && lv?.color && categorias.includes(lv.name)) {
+        next[lv.name] = lv.color;
+        matched++;
+      }
+    }
+    update({ color_overrides: Object.keys(next).length ? next : null });
+    if (matched === 0) {
+      toast.error(`Ningún nivel del indicador coincide con stack_order. Verificá que los nombres coincidan.`);
+    } else {
+      toast.success(`${matched} de ${categorias.length} categoría${categorias.length === 1 ? '' : 's'} sincronizada${matched === 1 ? '' : 's'} con ${ind.name}`);
+    }
+  };
 
   return (
     <div className="space-y-4 text-sm">
@@ -580,7 +643,8 @@ function AestheticsTab({ cfg, onChange }) {
           className="w-full px-2 py-1.5 text-sm border border-slate-300 rounded"
         >
           <option value="">Default (categorical)</option>
-          <option value="semaforo">Semáforo (verde/naranja/rojo)</option>
+          <option value="semaforo">Semáforo 3 niveles (verde/naranja/rojo)</option>
+          <option value="semaforo_4">Semáforo 4 niveles (verde/amarillo/naranja/rojo)</option>
           <option value="viridis">Viridis (heatmap)</option>
           <option value="rojo_calor">Rojo cálido (amarillo→rojo · YlOrRd)</option>
         </select>
@@ -599,6 +663,104 @@ function AestheticsTab({ cfg, onChange }) {
           (ej. Insuficiente→Adecuado) pero la paleta va de mejor a peor.
         </p>
       </div>
+
+      {/* Panel de colores por categoría (Opción C: híbrido). Solo visible
+          cuando el chart_type lo soporta y hay stack_order definido. Cuando
+          no aplica, el chart sigue usando color_palette + palette_reversed
+          (retro-compatible 100%). */}
+      {showColorPanel && (
+        <div className="border border-slate-200 rounded-lg p-3 bg-slate-50/50">
+          <div className="flex items-center justify-between mb-2">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700">
+                Colores por categoría
+              </label>
+              <p className="text-[11px] text-slate-500">
+                Pisa la paleta para categorías específicas. Si una categoría no tiene color asignado, hereda de la paleta + invertir.
+              </p>
+            </div>
+          </div>
+
+          {/* Botón sincronizar con indicador */}
+          <div className="flex items-center gap-2 mb-3 bg-white border border-slate-200 rounded p-2">
+            <select
+              value={syncIndicatorId}
+              onChange={(e) => setSyncIndicatorId(e.target.value)}
+              className="flex-1 px-2 py-1 text-xs border border-slate-300 rounded"
+            >
+              <option value="">— Elegí un indicador —</option>
+              {indicators.map((ind) => (
+                <option key={ind.id_indicator} value={ind.id_indicator}>
+                  {ind.name} ({(ind.achievement_levels || []).length} niveles)
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!syncIndicatorId}
+              onClick={() => syncFromIndicator(syncIndicatorId)}
+              className="px-3 py-1 text-xs font-semibold bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed"
+            >
+              Sincronizar
+            </button>
+          </div>
+
+          {/* Pickers por categoría */}
+          <div className="space-y-1">
+            {categorias.map((cat) => {
+              const hasOverride = !!overrides[cat];
+              const colorValue = overrides[cat] || '#cccccc';
+              return (
+                <div key={cat} className="flex items-center gap-2 px-2 py-1.5 bg-white border border-slate-200 rounded">
+                  <input
+                    type="color"
+                    value={colorValue}
+                    onChange={(e) => setColor(cat, e.target.value)}
+                    className="w-8 h-8 rounded cursor-pointer border border-slate-200"
+                    title={`Color para "${cat}"`}
+                  />
+                  <span className="flex-1 text-xs text-slate-700">{cat}</span>
+                  {hasOverride ? (
+                    <>
+                      <span className="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded border border-amber-200">
+                        Custom
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => clearColor(cat)}
+                        className="text-[10px] text-slate-500 hover:text-rose-600 underline"
+                        title="Volver al color de la paleta"
+                      >
+                        Reset
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[10px] px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded border border-slate-200">
+                      Paleta
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {Object.keys(overrides).length > 0 && (
+            <button
+              type="button"
+              onClick={clearAll}
+              className="mt-2 text-[11px] text-slate-500 hover:text-rose-600 underline"
+            >
+              Limpiar todos los overrides
+            </button>
+          )}
+        </div>
+      )}
+
+      {supportsOverrides && categorias.length === 0 && (
+        <p className="text-[11px] text-slate-500 italic px-1">
+          Tip: definí <code>stack_order</code> en la pestaña "Tipo &amp; Mapeo" para habilitar el panel de colores por categoría.
+        </p>
+      )}
 
       <div>
         <label className="inline-flex items-center gap-2 text-xs">

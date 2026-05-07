@@ -942,6 +942,26 @@ export function ItemRenderer({ item, ctx, tabContext }) {
         );
     }
 
+    // Nota explicativa estática (texto). Útil para aclarar particularidades
+    // del dataset (ej "5° y 6° BÁSICO no tienen evaluación v3 IDEL"), notas
+    // de pie de gráfico, advertencias de muestra pequeña, etc.
+    // Item shape: {type: 'note', text: '...', tone?: 'info'|'warn'|'tip', title?: '...'}
+    if (item.type === 'note') {
+        const tone = item.tone || 'info';
+        const styles = {
+            info: 'bg-slate-50 border-slate-200 text-slate-700',
+            warn: 'bg-amber-50 border-amber-200 text-amber-800',
+            tip: 'bg-blue-50 border-blue-200 text-blue-800',
+        };
+        const cls = styles[tone] || styles.info;
+        return (
+            <div className={`px-4 py-3 border rounded-lg text-sm ${cls}`}>
+                {item.title && <div className="font-semibold mb-1">{item.title}</div>}
+                <div className="leading-relaxed">{item.text}</div>
+            </div>
+        );
+    }
+
     // Gráfico configurado (Spec type=Gráficos) — render directo con ChartRenderer.
     // Item shape: {type: 'configured_chart', spec_id: 9, title?, height?}
     if (item.type === 'configured_chart' && item.spec_id) {
@@ -952,12 +972,19 @@ export function ItemRenderer({ item, ctx, tabContext }) {
         // cursoActivo (course_selector) → filtro por nombre de dim "Curso".
         // Esa dim existe por convención en TODAS las métricas de evaluación
         // (SIMCE, DIA, IDEL, FL, CV) — ver dataProcessing.js.
-        // subpruebaActiva (subprueba_selector) → filtro "Habilidad" (rol
-        // "habilidad" mapea a la dim Habilidad en todas las evaluaciones
-        // que la usan; si la métrica no tiene esa dim, el backend ignora
-        // el filtro silenciosamente).
+        // subpruebaActiva (subprueba_selector) → en SIMCE/DIA/FL/CV la dim
+        // se llama "Habilidad"; en IDEL se llama "Subprueba". Inyectamos
+        // ambos: el backend ignora silenciosamente la dim que la métrica
+        // no tenga (igualdad por nombre), así un único selector sirve para
+        // todas las evaluaciones sin romper compatibilidad.
         if (cursoActivo) extra["Curso"] = cursoActivo;
-        if (subpruebaActiva) extra["Habilidad"] = subpruebaActiva;
+        if (subpruebaActiva) {
+            // Habilidad → SIMCE/DIA/FL/CV. Subprueba/Evaluación → IDEL.
+            // El backend ignora filtros con keys que no son dims de la métrica.
+            extra["Habilidad"] = subpruebaActiva;
+            extra["Subprueba"] = subpruebaActiva;
+            extra["Evaluación"] = subpruebaActiva;
+        }
         return (
             <div>
                 {item.title && (
@@ -981,15 +1008,17 @@ export function ItemRenderer({ item, ctx, tabContext }) {
         // como extra_filters de la tabla. El backend valida si esas
         // dimensiones existen en la métrica subyacente.
         const extra = { ...(ctx.dashboardFilters || {}) };
-        // cursoActivo (course_selector) → filtro por nombre de dim "Curso".
-        // Esa dim existe por convención en TODAS las métricas de evaluación
-        // (SIMCE, DIA, IDEL, FL, CV) — ver dataProcessing.js.
-        // subpruebaActiva (subprueba_selector) → filtro "Habilidad" (rol
-        // "habilidad" mapea a la dim Habilidad en todas las evaluaciones
-        // que la usan; si la métrica no tiene esa dim, el backend ignora
-        // el filtro silenciosamente).
+        // Mismo razonamiento que en configured_chart: Habilidad (SIMCE/DIA/
+        // FL/CV) y Subprueba (IDEL) coexisten; el backend descarta la que
+        // no aplica a la métrica.
         if (cursoActivo) extra["Curso"] = cursoActivo;
-        if (subpruebaActiva) extra["Habilidad"] = subpruebaActiva;
+        if (subpruebaActiva) {
+            // Habilidad → SIMCE/DIA/FL/CV. Subprueba/Evaluación → IDEL.
+            // El backend ignora filtros con keys que no son dims de la métrica.
+            extra["Habilidad"] = subpruebaActiva;
+            extra["Subprueba"] = subpruebaActiva;
+            extra["Evaluación"] = subpruebaActiva;
+        }
         return (
             <div>
                 {item.title && (

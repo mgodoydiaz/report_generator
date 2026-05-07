@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Charts — opciones de UI para colores</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+    .swatch { width: 28px; height: 28px; border-radius: 6px; border: 1px solid rgba(0,0,0,0.1); }
+    .palette-pill { transition: all 0.15s; }
+    .palette-pill:hover { transform: translateY(-1px); }
+    .level-row:hover { background: rgba(0,0,0,0.02); }
+    .preview-bar { transition: all 0.2s; }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen p-6">
+  <div class="max-w-6xl mx-auto">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold text-slate-800">Charts — 4 opciones de UI para configurar colores por categoría</h1>
+      <p class="text-slate-600 text-sm mt-1">
+        Datos de prueba: indicador IDEL con 4 niveles (Crítico / Alto Riesgo / Cierto Riesgo / Bajo Riesgo).
+        Decidí cuál te resulta más ágil para el flujo "tengo un chart, quiero que sus colores sean los del indicador".
+      </p>
+    </header>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+      <!-- ========================================================== -->
+      <!-- OPCIÓN A: Pickers individuales (estilo Indicadores)       -->
+      <!-- ========================================================== -->
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-widest text-indigo-600">Opción A</span>
+            <h2 class="text-lg font-bold text-slate-800">Pickers manuales por categoría</h2>
+            <p class="text-xs text-slate-500 mt-1">Igual que Indicadores: cada nivel detectado en el stack_order tiene su <code>&lt;input type="color"&gt;</code>.</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 rounded-xl p-3 space-y-1">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2 px-1">Colores por categoría</div>
+          <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+            <input type="color" value="#dc2626" class="w-9 h-9 rounded cursor-pointer border border-slate-200" />
+            <input type="text" value="Crítico" class="flex-1 px-2 py-1.5 text-sm border border-slate-300 rounded bg-white" readonly />
+            <button class="text-xs text-rose-600 hover:underline">Reset</button>
+          </div>
+          <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+            <input type="color" value="#ea580c" class="w-9 h-9 rounded cursor-pointer border border-slate-200" />
+            <input type="text" value="Alto Riesgo" class="flex-1 px-2 py-1.5 text-sm border border-slate-300 rounded bg-white" readonly />
+            <button class="text-xs text-rose-600 hover:underline">Reset</button>
+          </div>
+          <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+            <input type="color" value="#eab308" class="w-9 h-9 rounded cursor-pointer border border-slate-200" />
+            <input type="text" value="Cierto Riesgo" class="flex-1 px-2 py-1.5 text-sm border border-slate-300 rounded bg-white" readonly />
+            <button class="text-xs text-rose-600 hover:underline">Reset</button>
+          </div>
+          <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+            <input type="color" value="#22c55e" class="w-9 h-9 rounded cursor-pointer border border-slate-200" />
+            <input type="text" value="Bajo Riesgo" class="flex-1 px-2 py-1.5 text-sm border border-slate-300 rounded bg-white" readonly />
+            <button class="text-xs text-rose-600 hover:underline">Reset</button>
+          </div>
+        </div>
+
+        <div class="mt-3 flex justify-between items-center text-xs">
+          <span class="text-slate-500">4 niveles detectados desde stack_order</span>
+          <button class="text-slate-600 hover:text-slate-800">Limpiar todos</button>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Preview</div>
+          <div class="flex gap-1 h-12">
+            <div class="preview-bar flex-1 rounded" style="background: #dc2626"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #ea580c"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #eab308"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #22c55e"></div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-xs space-y-1">
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> Control fino: el usuario elige cualquier color.</div>
+          <div class="flex items-center gap-2 text-rose-700"><span>✗</span> Si el indicador cambia colores oficiales, el chart queda desincronizado.</div>
+        </div>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- OPCIÓN B: Sincronizar con indicador (1 click)              -->
+      <!-- ========================================================== -->
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-widest text-emerald-600">Opción B</span>
+            <h2 class="text-lg font-bold text-slate-800">Sincronizar con indicador (1 click)</h2>
+            <p class="text-xs text-slate-500 mt-1">Solo un botón: leé los <code>achievement_levels</code> del indicador linked y aplicalos. Sin pickers manuales.</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <div class="text-sm font-medium text-slate-700">Colores heredados de</div>
+              <div class="text-xs text-slate-500">Indicador <span class="font-mono bg-white px-1.5 py-0.5 rounded border border-slate-200">IDEL</span></div>
+            </div>
+            <button class="px-3 py-2 bg-indigo-600 text-white text-xs font-semibold rounded-lg hover:bg-indigo-700 flex items-center gap-1.5">
+              <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9c2.5 0 4.7 1 6.4 2.6L21 8"/><path d="M21 3v5h-5"/></svg>
+              Sincronizar
+            </button>
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex items-center gap-3 text-sm">
+              <div class="swatch" style="background: #dc2626"></div>
+              <span class="text-slate-700">Crítico</span>
+              <span class="ml-auto text-[11px] font-mono text-slate-400">#dc2626</span>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <div class="swatch" style="background: #ea580c"></div>
+              <span class="text-slate-700">Alto Riesgo</span>
+              <span class="ml-auto text-[11px] font-mono text-slate-400">#ea580c</span>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <div class="swatch" style="background: #eab308"></div>
+              <span class="text-slate-700">Cierto Riesgo</span>
+              <span class="ml-auto text-[11px] font-mono text-slate-400">#eab308</span>
+            </div>
+            <div class="flex items-center gap-3 text-sm">
+              <div class="swatch" style="background: #22c55e"></div>
+              <span class="text-slate-700">Bajo Riesgo</span>
+              <span class="ml-auto text-[11px] font-mono text-slate-400">#22c55e</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Preview</div>
+          <div class="flex gap-1 h-12">
+            <div class="preview-bar flex-1 rounded" style="background: #dc2626"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #ea580c"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #eab308"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #22c55e"></div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-xs space-y-1">
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> Cero fricción: 1 click y consistencia 100% con Indicadores.</div>
+          <div class="flex items-center gap-2 text-rose-700"><span>✗</span> No deja personalizar para casos puntuales (ej overlay con paleta del cliente).</div>
+        </div>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- OPCIÓN C: Híbrido — sincronizar + override puntual         -->
+      <!-- ========================================================== -->
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-widest text-purple-600">Opción C ⭐</span>
+            <h2 class="text-lg font-bold text-slate-800">Híbrido: sincronizar + override puntual</h2>
+            <p class="text-xs text-slate-500 mt-1">Botón "Sincronizar" arriba + picker individual al lado de cada nivel (cuando se quiera customizar uno).</p>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 rounded-xl p-3">
+          <div class="flex items-center justify-between mb-3 px-1">
+            <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500">Colores por categoría</div>
+            <button class="px-2.5 py-1 bg-white border border-slate-300 hover:border-indigo-400 hover:text-indigo-600 text-[11px] font-medium rounded flex items-center gap-1">
+              <svg width="11" height="11" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-9-9c2.5 0 4.7 1 6.4 2.6L21 8"/><path d="M21 3v5h-5"/></svg>
+              Sincronizar con IDEL
+            </button>
+          </div>
+          <div class="space-y-1">
+            <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+              <input type="color" value="#dc2626" class="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+              <span class="flex-1 text-sm text-slate-700">Crítico</span>
+              <span class="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">Indicador</span>
+            </div>
+            <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+              <input type="color" value="#ea580c" class="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+              <span class="flex-1 text-sm text-slate-700">Alto Riesgo</span>
+              <span class="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">Indicador</span>
+            </div>
+            <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+              <input type="color" value="#f59e0b" class="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+              <span class="flex-1 text-sm text-slate-700">Cierto Riesgo</span>
+              <span class="text-[10px] px-1.5 py-0.5 bg-amber-50 text-amber-700 rounded border border-amber-200">Custom</span>
+            </div>
+            <div class="level-row flex items-center gap-3 px-2 py-1.5 rounded-lg">
+              <input type="color" value="#22c55e" class="w-8 h-8 rounded cursor-pointer border border-slate-200" />
+              <span class="flex-1 text-sm text-slate-700">Bajo Riesgo</span>
+              <span class="text-[10px] px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-200">Indicador</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Preview (con override en "Cierto Riesgo")</div>
+          <div class="flex gap-1 h-12">
+            <div class="preview-bar flex-1 rounded" style="background: #dc2626"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #ea580c"></div>
+            <div class="preview-bar flex-1 rounded ring-2 ring-amber-400 ring-offset-1" style="background: #f59e0b"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #22c55e"></div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-xs space-y-1">
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> Default rápido (sincronizar) + flexibilidad (overrides puntuales).</div>
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> Badge muestra de dónde viene cada color.</div>
+          <div class="flex items-center gap-2 text-rose-700"><span>✗</span> Más componentes = más espacio vertical.</div>
+        </div>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- OPCIÓN D: Galería de paletas (estilo Tableau / Excel)      -->
+      <!-- ========================================================== -->
+      <section class="bg-white rounded-2xl shadow-sm border border-slate-200 p-5">
+        <div class="flex items-start justify-between mb-3">
+          <div>
+            <span class="text-xs font-bold uppercase tracking-widest text-orange-600">Opción D</span>
+            <h2 class="text-lg font-bold text-slate-800">Galería de paletas predefinidas</h2>
+            <p class="text-xs text-slate-500 mt-1">Click en una "tarjeta de paleta". Sin picker manual, solo presets curados (incluido "Del indicador").</p>
+          </div>
+        </div>
+
+        <div class="space-y-2">
+          <!-- Card 1: del indicador (seleccionado) -->
+          <div class="palette-pill flex items-center gap-3 p-3 bg-indigo-50 border-2 border-indigo-500 rounded-xl cursor-pointer">
+            <div class="flex gap-1">
+              <div class="w-7 h-7 rounded-md" style="background: #dc2626"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #ea580c"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #eab308"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #22c55e"></div>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Del indicador IDEL</div>
+              <div class="text-[11px] text-slate-500">Hereda achievement_levels (recomendado)</div>
+            </div>
+            <svg width="16" height="16" class="text-indigo-600" fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <!-- Card 2: semáforo 4 -->
+          <div class="palette-pill flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer">
+            <div class="flex gap-1">
+              <div class="w-7 h-7 rounded-md" style="background: #16a34a"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #eab308"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #f97316"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #dc2626"></div>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Semáforo 4 niveles</div>
+              <div class="text-[11px] text-slate-500">Verde / amarillo / naranja / rojo</div>
+            </div>
+          </div>
+          <!-- Card 3: semáforo 3 -->
+          <div class="palette-pill flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer">
+            <div class="flex gap-1">
+              <div class="w-7 h-7 rounded-md" style="background: #22c55e"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #f59e0b"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #ef4444"></div>
+              <div class="w-7 h-7 rounded-md bg-slate-200 border border-dashed border-slate-300"></div>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Semáforo 3 niveles</div>
+              <div class="text-[11px] text-slate-500">Mejor para SIMCE (3 niveles); recicla en IDEL</div>
+            </div>
+          </div>
+          <!-- Card 4: viridis -->
+          <div class="palette-pill flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer">
+            <div class="flex gap-1">
+              <div class="w-7 h-7 rounded-md" style="background: #440154"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #3b528b"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #21908d"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #fde725"></div>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Viridis (heatmap)</div>
+              <div class="text-[11px] text-slate-500">Percepción uniforme; daltonismo-friendly</div>
+            </div>
+          </div>
+          <!-- Card 5: rojo cálido -->
+          <div class="palette-pill flex items-center gap-3 p-3 bg-white border border-slate-200 hover:border-slate-300 rounded-xl cursor-pointer">
+            <div class="flex gap-1">
+              <div class="w-7 h-7 rounded-md" style="background: #fff5b1"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #fdc671"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #f25f52"></div>
+              <div class="w-7 h-7 rounded-md" style="background: #b30000"></div>
+            </div>
+            <div class="flex-1">
+              <div class="text-sm font-semibold text-slate-800">Rojo cálido (YlOrRd)</div>
+              <div class="text-[11px] text-slate-500">Para mapas de intensidad / riesgo</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-4 border-t border-slate-100">
+          <div class="text-[10px] font-bold uppercase tracking-widest text-slate-500 mb-2">Preview (Del indicador IDEL)</div>
+          <div class="flex gap-1 h-12">
+            <div class="preview-bar flex-1 rounded" style="background: #dc2626"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #ea580c"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #eab308"></div>
+            <div class="preview-bar flex-1 rounded" style="background: #22c55e"></div>
+          </div>
+        </div>
+
+        <div class="mt-4 text-xs space-y-1">
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> UX más simple: "elegí una".</div>
+          <div class="flex items-center gap-2 text-emerald-700"><span>✓</span> Visualmente atractivo, fácil de comparar.</div>
+          <div class="flex items-center gap-2 text-rose-700"><span>✗</span> Sin overrides finos: si el usuario quiere cambiar 1 solo color, no puede.</div>
+        </div>
+      </section>
+
+    </div>
+
+    <footer class="mt-8 bg-white rounded-2xl border border-slate-200 p-5">
+      <h3 class="text-sm font-bold uppercase tracking-widest text-slate-500 mb-3">Mi recomendación</h3>
+      <p class="text-sm text-slate-700 leading-relaxed">
+        <span class="font-semibold text-purple-700">Opción C (Híbrido)</span> — el botón "Sincronizar con indicador" cubre el 90% de los casos
+        con 1 click, y los pickers individuales quedan disponibles cuando hace falta un override puntual.
+        El badge "Indicador" / "Custom" hace explícito de dónde viene cada color, así no hay ambigüedad.
+      </p>
+      <p class="text-sm text-slate-700 leading-relaxed mt-2">
+        Si querés mínima fricción y todos los gráficos del proyecto van a usar achievement_levels: <span class="font-semibold text-emerald-700">Opción B</span>.
+      </p>
+    </footer>
+  </div>
+</body>
+</html>

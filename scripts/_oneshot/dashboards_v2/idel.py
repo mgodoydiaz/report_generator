@@ -43,10 +43,13 @@ from .helpers import (
     col_agg,
     col_int,
     col_text,
+    color_overrides_from_indicator,
     color_scale_linked,
     course_selector_item,
     kpis_item,
+    note_item,
     row,
+    subprueba_selector_item,
     tab,
     table_config,
     update_indicator_layout,
@@ -65,6 +68,14 @@ IDEL_NIVEL_ORDER = ["Crítico", "Alto Riesgo", "Cierto Riesgo", "Bajo Riesgo"]
 
 def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int]:
     ids: Dict[str, int] = {}
+
+    # Colores oficiales por nivel — leídos del indicador IDEL para que los
+    # gráficos stacked/pie hereden exactamente los mismos colores que se ven
+    # en la configuración del indicador (Crítico=rojo, Alto Riesgo=naranja,
+    # Cierto Riesgo=amarillo, Bajo Riesgo=verde). Si el indicador todavía
+    # no tiene achievement_levels, queda {} y los charts caen al
+    # color_palette por defecto.
+    nivel_colors = color_overrides_from_indicator(db, org_id, "IDEL")
 
     # ─────────────────────────────────────────────────────────────────────
     # TABLAS
@@ -125,19 +136,25 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         ),
     )
 
+    # Estudiantes en riesgo persistente: ordenado desc por Versiones_en_Riesgo
+    # (derived field que cuenta cuántas versiones del estudiante en la
+    # subprueba están en Crítico o Alto Riesgo). Persistente = ≥2.
+    # 3 = Crítico/Alto en TODAS las versiones (peor)
+    # 2 = en 2 versiones (persistente)
+    # 1 = un riesgo aislado (recuperable)
+    # 0 = sin riesgo
     ids["t_riesgo"] = upsert_table(
         db, org_id,
-        name="IDEL — Estudiantes en Riesgo",
+        name="IDEL — Estudiantes en Riesgo Persistente",
         description=(
-            "Estudiantes con nivel de riesgo Crítico o Alto Riesgo. La tabla "
-            "está ordenada para mostrar primero los casos más severos. "
-            "Filtrar por curso y subprueba para ver listado focalizado."
+            "Estudiantes con nivel Crítico o Alto Riesgo, ordenados por "
+            "persistencia. Versiones_en_Riesgo cuenta en cuántas de las 3 "
+            "evaluaciones del año el estudiante estuvo en riesgo para esa "
+            "subprueba. Valor 2 o 3 indica caso persistente que requiere "
+            "intervención prioritaria."
         ),
         config=table_config(
             metric_id=METRIC_IDEL,
-            # Filter: solo Crítico/Alto Riesgo (filtro server-side via
-            # data_source.filters porque el field es value, no dimension)
-            filters={},
             columns=[
                 col_text("Nombre", "Estudiante", pinned=True),
                 col_text("Curso", "Curso"),
@@ -148,11 +165,14 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                     "key": "Nivel de Riesgo", "header": "Nivel", "format": "text",
                     "color_scale": color_scale_linked(indicator_id_idel, "Nivel de Riesgo"),
                 },
+                col_int("Versiones_en_Riesgo", "Versiones en Riesgo"),
                 col_text("Evaluadora", "Evaluadora"),
             ],
             sorting=[
+                # Primero los más persistentes (3, 2), luego 1, después 0.
+                {"column": "Versiones_en_Riesgo", "dir": "desc"},
                 {"column": "Curso", "dir": "asc"},
-                {"column": "Puntaje", "dir": "asc"},
+                {"column": "Nombre", "dir": "asc"},
             ],
             page_size=80,
         ),
@@ -170,7 +190,31 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             "pie", METRIC_IDEL,
             titulo="Composición por Nivel de Riesgo",
             category_field="Nivel de Riesgo",
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
+        ),
+    )
+
+    # Cobertura: heatmap Curso × n_versiones_estudiante con count distinct
+    # de Nombre. Replica la "Cobertura de estudiantes por curso" del
+    # informe pág 1 (estudiantes únicos / en 1 eval / en 2 / en 3).
+    ids["c_cobertura"] = upsert_chart(
+        db, org_id,
+        name="IDEL — Cobertura de Estudiantes por Curso",
+        description=(
+            "Matriz Curso × N° de versiones evaluadas. Cada celda muestra "
+            "cuántos estudiantes únicos del curso participaron en exactamente "
+            "1, 2 o 3 versiones del año. Replica la tabla 'Cobertura' de la "
+            "página 1 del informe IDEL."
+        ),
+        config=chart_config(
+            "heatmap", METRIC_IDEL,
+            titulo="Estudiantes únicos evaluados en 1, 2 o 3 versiones",
+            x_field="n_versiones_estudiante", group_field="Curso", y_field="Nombre",
+            aggregation="nunique", color_palette="rojo_calor", palette_reversed=True,
+            x_label="N° de versiones evaluadas (en el año)",
+            y_label="Curso",
+            y_format="int",
         ),
     )
 
@@ -210,9 +254,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             titulo="Niveles de Riesgo por Curso",
             x_field="Curso", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )
@@ -234,9 +280,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             x_field="Versión", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
             x_order=IDEL_VERSION_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )
@@ -285,9 +333,11 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             x_field="Versión", group_field="Curso", stack_field="Nivel de Riesgo",
             stack_order=IDEL_NIVEL_ORDER,
             x_order=IDEL_VERSION_ORDER,
-            color_palette="semaforo", palette_reversed=True,
+            color_palette="semaforo_4", palette_reversed=True,
+            color_overrides=nivel_colors,
             show_values=True,
             y_label="N° Evaluaciones",
+            y_format="int",
             legend_title="Nivel",
         ),
     )
@@ -302,6 +352,7 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                 # se mostrará solo Total Alumnos + Nivel Predominante.
                 row([kpis_item()], cols=4),
                 row([cfg_table_item(ids["t_resumen_curso"], "Resumen por Curso")], cols=1),
+                row([cfg_chart_item(ids["c_cobertura"], "Cobertura de Estudiantes por Curso")], cols=1),
                 row([cfg_chart_item(ids["c_mapa_riesgo"], "Mapa de Riesgo (Curso × Subprueba)")], cols=1),
                 row([
                     cfg_chart_item(ids["c_pie_riesgo"], "Composición Global"),
@@ -310,11 +361,21 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             ]),
             tab("curso", "Por Curso", [
                 row([course_selector_item()], cols=1),
+                # Selector de subprueba (Evaluación) — al activarlo, el Roster
+                # y los listados se filtran a esa subprueba específica.
+                row([subprueba_selector_item(field="_habilidad")], cols=1),
                 row([cfg_chart_item(ids["c_roster"], "Roster — Niveles por Estudiante × Subprueba × Versión")], cols=1),
                 row([cfg_table_item(ids["t_alumno"], "Listado de Estudiantes")], cols=1),
                 row([cfg_table_item(ids["t_riesgo"], "Estudiantes en Riesgo")], cols=1),
             ]),
             tab("tendencia", "Tendencia", [
+                row([note_item(
+                    "5° y 6° BÁSICO no rinden la evaluación v3 según el protocolo IDEL. "
+                    "Para esos cursos la columna v3 aparece vacía en el Roster y los "
+                    "porcentajes de tendencia se calculan solo sobre 1° a 4° BÁSICO.",
+                    tone="info",
+                    title="Sobre las versiones evaluadas",
+                )], cols=1),
                 row([cfg_chart_item(ids["c_stack_riesgo_version"], "Niveles de Riesgo por Versión")], cols=1),
                 row([cfg_chart_item(ids["c_stack_curso_version"], "Niveles por Curso y Versión (réplica informe pág 2)")], cols=1),
             ]),
