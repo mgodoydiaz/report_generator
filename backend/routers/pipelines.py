@@ -323,7 +323,9 @@ async def download_artifact(
         except Exception as e:
             print(f"Error generando Excel: {e}")
             output = BytesIO()
-            artifact.to_csv(output, index=False)
+            # Separador ';' para que Excel en español (Chile) abra
+            # directo como columnas. utf-8-sig agrega BOM para tildes.
+            artifact.to_csv(output, index=False, sep=";", encoding="utf-8-sig")
             output.seek(0)
             headers = {"Content-Disposition": f'attachment; filename="{artifact_key}.csv"'}
             return StreamingResponse(output, headers=headers, media_type="text/csv")

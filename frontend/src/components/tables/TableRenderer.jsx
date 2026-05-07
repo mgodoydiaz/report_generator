@@ -158,9 +158,11 @@ export default function TableRenderer({
       toast.error('No hay datos para exportar');
       return;
     }
-    const headers = columns.map((c) => csvEscape(c.header)).join(',');
+    // Separador ';' (punto y coma) — Excel en español/Chile lo abre
+    // directo como columnas. Con ',' obliga al usuario a importar manualmente.
+    const headers = columns.map((c) => csvEscape(c.header)).join(';');
     const lines = rows.map((row) =>
-      columns.map((c) => csvEscape(row[c.key]?.formatted ?? '')).join(',')
+      columns.map((c) => csvEscape(row[c.key]?.formatted ?? '')).join(';')
     );
     const blob = new Blob(['﻿' + [headers, ...lines].join('\n')], {
       type: 'text/csv;charset=utf-8;',
@@ -291,7 +293,8 @@ export default function TableRenderer({
 
 function csvEscape(v) {
   const s = v == null ? '' : String(v);
-  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  // Escapar si contiene el separador (;), la coma, comillas o saltos de línea.
+  if (/[";,\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
   return s;
 }
 

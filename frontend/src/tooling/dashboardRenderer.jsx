@@ -760,13 +760,15 @@ function recordsToCsv(records) {
             if (!seen.has(k)) { seen.add(k); keys.push(k); }
         }
     }
+    // Separador ';' (punto y coma) — Excel en español/Chile lo abre
+    // directo sin pasar por el wizard de importación.
     const esc = (v) => {
         if (v == null) return '';
         const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
-        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        return /[";,\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const lines = [keys.join(',')];
-    for (const r of records) lines.push(keys.map(k => esc(r[k])).join(','));
+    const lines = [keys.join(';')];
+    for (const r of records) lines.push(keys.map(k => esc(r[k])).join(';'));
     return lines.join('\n');
 }
 
