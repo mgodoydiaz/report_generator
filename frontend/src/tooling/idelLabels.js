@@ -17,13 +17,16 @@
  * filtros que dependan del valor original.
  */
 
+// Nombres oficiales según protocolo PDL IDEL-Woodcock (confirmados con
+// la fundación 2026-05-06). FUENTE DE VERDAD — ver CLAUDE.md sección
+// "Siglas IDEL" para más contexto.
 export const IDEL_SUBPRUEBA_LABELS = {
   CT:  'Comprensión de Textos',
-  FLO: 'Fluidez Lectora',
-  FNL: 'Segmentación Fonémica',
-  FSF: 'Fluidez Silábica/Fonémica',
+  FLO: 'Fluidez en la Lectura Oral',
+  FNL: 'Fluidez en Nombrar Letras',
+  FSF: 'Fluidez en Segmentación de Fonemas',
   ILP: 'Identificación de Letras y Palabras',
-  VSD: 'Vocabulario sobre Dibujo',
+  VSD: 'Vocabulario Sobre Dibujos',
 };
 
 /**

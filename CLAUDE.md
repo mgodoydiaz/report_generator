@@ -219,6 +219,50 @@ Runbook completo en **[DEPLOYMENT.md](./DEPLOYMENT.md)** y estado vivo en `memor
 
 ---
 
+## Glosario de dominio
+
+### Siglas IDEL (PDL IDEL-Woodcock)
+
+El indicador IDEL maneja 6 subpruebas. En la base de datos se almacenan como **siglas** (raw values) — los nombres largos solo se muestran en UI y reportes. Confirmado con la fundación 2026-05-06:
+
+| Sigla | Nombre oficial |
+|---|---|
+| CT  | Comprensión de Textos |
+| FLO | Fluidez en la Lectura Oral |
+| FNL | Fluidez en Nombrar Letras |
+| FSF | Fluidez en Segmentación de Fonemas |
+| ILP | Identificación de Letras y Palabras |
+| VSD | Vocabulario Sobre Dibujos |
+
+**No confundir** (errores históricos a evitar):
+- FNL ≠ "Segmentación Fonémica" — esa es FSF.
+- FLO ≠ "Fluidez Lectora" a secas — la oficial incluye "Oral".
+- VSD: "Dibujos" en plural y "Sobre" con S mayúscula en estilo informe.
+
+**Fuentes de verdad** (mantener sincronizadas si se cambia algo):
+- `frontend/src/tooling/idelLabels.js` (export `IDEL_SUBPRUEBA_LABELS`)
+- `scripts/_oneshot/dashboards_v2/helpers.py` (const `IDEL_SUBPRUEBA_ALIASES`, formato "SIGLA · Nombre")
+- `scripts/report_pdl_idel.py` (dict de mapping en cabecera)
+
+### Niveles de riesgo IDEL
+
+4 niveles ordinales (peor → mejor) con colores oficiales en `Indicator.achievement_levels`:
+
+| Nivel | Color hex |
+|---|---|
+| Crítico | #dc2626 |
+| Alto Riesgo | #ea580c |
+| Cierto Riesgo | #eab308 |
+| Bajo Riesgo | #22c55e |
+
+Los gráficos del dashboard heredan estos colores via `aesthetics.color_overrides` (no via paleta), lo que garantiza consistencia con la página de Indicadores. El usuario puede ajustar por chart desde `/charts` → tab Estética.
+
+### Versiones IDEL
+
+Cada año tiene 3 versiones (`v1`, `v2`, `v3`) excepto **5° y 6° BÁSICO que no rinden v3** (protocolo). El dashboard tiene una nota explicativa en el tab Tendencia. La columna `Versión` se almacena como string ordinal (no numérico).
+
+---
+
 ## Skills de administración
 
 Tareas recurrentes documentadas en **[.agents/workflows/](./.agents/workflows/)**:
