@@ -34,6 +34,9 @@ from typing import Dict
 
 from sqlalchemy.orm import Session
 
+from backend.rgenerator.tooling.curso_order import sort_cursos
+from backend.routers.tables import _load_metric_to_df
+
 from .helpers import (
     cfg_chart_item,
     cfg_table_item,
@@ -78,6 +81,20 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
     # EXPERTO verde). Heredan del achievement_levels para garantizar
     # consistencia con la página de Indicadores.
     nivel_colors = color_overrides_from_indicator(db, org_id, "Cálculo Veloz")
+
+    # Orden chileno de cursos: I°A < I°B < ... < II°A < ... < III°A < ...
+    # Se calcula leyendo los cursos reales del df y aplicándolos como
+    # x_order en cada chart con eje Curso. Sin esto, pandas/Plotly ordenan
+    # alfabético y "III°A" sale antes de "II°A" rompiendo la lectura.
+    df_full = _load_metric_to_df(db, org_id, METRIC_CV)
+    curso_order = sort_cursos(df_full["Curso"].dropna().unique()) if "Curso" in df_full.columns else []
+    # Subset de cursos que rinden la última eval (algunos cursos no la
+    # administran). Se usa solo en charts del tab "Última Evaluación".
+    df_ultima = df_full[
+        (df_full["Mes"] == CV_ULTIMA_EVAL_FILTERS["Mes"]) &
+        (df_full["N Prueba"].astype(str) == str(CV_ULTIMA_EVAL_FILTERS["N Prueba"]))
+    ] if "Mes" in df_full.columns and "N Prueba" in df_full.columns else df_full
+    curso_order_ultima = sort_cursos(df_ultima["Curso"].dropna().unique()) if "Curso" in df_ultima.columns else []
 
     # ─────────────────────────────────────────────────────────────────────
     # TABLAS
@@ -233,6 +250,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             titulo="Niveles por Curso (anual)",
             x_field="Curso", stack_field="Nivel",
             stack_order=CV_NIVEL_ORDER,
+            x_order=curso_order,
             color_overrides=nivel_colors,
             y_label="N° Evaluaciones",
             y_format="int",
@@ -251,6 +269,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             x_field="Curso", y_field="Nota",
             y_label="Nota promedio",
             x_label="Curso",
+            x_order=curso_order,
             show_values=True,
         ),
     )
@@ -281,6 +300,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             titulo="Niveles por Curso — Última Evaluación",
             x_field="Curso", stack_field="Nivel",
             stack_order=CV_NIVEL_ORDER,
+            x_order=curso_order_ultima,
             color_overrides=nivel_colors,
             y_label="N° Estudiantes",
             y_format="int",
@@ -300,6 +320,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             x_field="Curso", y_field="Nota",
             y_label="Nota",
             x_label="Curso",
+            x_order=curso_order_ultima,
             show_values=True,
             filters=CV_ULTIMA_EVAL_FILTERS,
         ),
@@ -315,6 +336,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             x_field="Curso", y_field="Puntaje",
             y_label="Puntaje",
             x_label="Curso",
+            x_order=curso_order_ultima,
             filters=CV_ULTIMA_EVAL_FILTERS,
         ),
     )
@@ -402,6 +424,7 @@ def seed_cv(db: Session, org_id: int, indicator_id_cv: int) -> Dict[str, int]:
             x_field="Curso", y_field="Puntaje",
             y_label="Puntaje",
             x_label="Curso",
+            x_order=curso_order,
         ),
     )
 

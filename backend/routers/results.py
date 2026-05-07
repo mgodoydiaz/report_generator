@@ -11,8 +11,36 @@ from backend.models import (
     User, Indicator, IndicatorMetric,
     Metric, MetricDimension, MetricData, Dimension,
 )
+from backend.rgenerator.tooling.curso_order import curso_sort_key
 
 router = APIRouter(prefix="/api/results", tags=["results"])
+
+
+# Orden cronológico de meses académicos (en mayúsculas como vienen en BD).
+# Cubre los meses que efectivamente se usan en CV/IDEL/SIMCE/etc.
+_MES_ORDER = {
+    name: i for i, name in enumerate([
+        "MARZO", "ABRIL", "MAYO", "JUNIO", "JUNIO-JULIO", "JULIO",
+        "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+    ])
+}
+
+
+def _smart_sort_dim_values(dim_name: str, values):
+    """Ordena los valores de una dimensión respetando su semántica:
+
+    - "Mes": orden cronológico (no alfabético)
+    - "Curso": orden chileno (I°A < II°A < III°A...)
+    - "Versión": orden ordinal (v1 < v2 < v3) — funciona como alfabético
+    - Otros: orden alfabético (default)
+    """
+    vals = list(values)
+    name_lower = (dim_name or "").lower()
+    if name_lower == "mes":
+        return sorted(vals, key=lambda v: (_MES_ORDER.get(str(v).upper(), 999), str(v)))
+    if name_lower == "curso":
+        return sorted(vals, key=curso_sort_key)
+    return sorted(vals)
 
 
 def _parse_json_field(value, default):
@@ -135,7 +163,8 @@ async def get_indicator_data(
         # Add unique values to dims_map
         for dk, vals in unique_dim_values.items():
             if dk in dims_map:
-                dims_map[dk]["values"] = sorted(list(vals))
+                dim_name = dims_map[dk].get("name", "")
+                dims_map[dk]["values"] = _smart_sort_dim_values(dim_name, list(vals))
 
         # 6.5. Aplicar derived_columns ANTES de filtrar por dimensiones temporales.
         # Cada entry: {metric_id, temporal_dim_ids: [..], configs: [..]}.
@@ -319,7 +348,8 @@ async def get_indicator_data(
                         v = djson.get(dim_key)
                         if v is not None and str(v) != "":
                             values_acc.add(str(v))
-                dims_map[dim_key]["values"] = sorted(values_acc)
+                dim_name = dims_map[dim_key].get("name", "")
+                dims_map[dim_key]["values"] = _smart_sort_dim_values(dim_name, values_acc)
 
         # 8. Parse object-type values
         for mid in data_by_metric:

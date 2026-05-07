@@ -146,6 +146,20 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         if m.x_field not in df.columns or m.y_field not in df.columns:
             return {"empty": True}
         g = df.groupby(m.x_field, as_index=False)[m.y_field].agg(agg)
+        # Si aesthetics.x_order está definido, lo usamos para ordenar las
+        # categorías (ej meses cronológicos, cursos chilenos). Solo se
+        # mantienen las x que existen en el dataset; valores en x_order
+        # ausentes se omiten silenciosamente.
+        if cfg.aesthetics and cfg.aesthetics.x_order:
+            existing = set(g[m.x_field].astype(str))
+            ordered_x = [x for x in cfg.aesthetics.x_order if x in existing]
+            extras = [x for x in g[m.x_field].astype(str) if x not in cfg.aesthetics.x_order]
+            ordered_x = ordered_x + extras
+            g_idx = g.set_index(m.x_field)
+            return {
+                "x": [str(x) for x in ordered_x],
+                "y": [g_idx.loc[x, m.y_field] for x in ordered_x],
+            }
         return {"x": g[m.x_field].astype(str).tolist(), "y": g[m.y_field].tolist()}
 
     if ct == "grouped_bar":
@@ -244,12 +258,21 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             raise ValueError("box requiere x_field y y_field")
         if any(c not in df.columns for c in [m.x_field, m.y_field]):
             return {"empty": True}
-        # Box necesita los valores crudos por categoría
-        out = {"x": [], "y_arrays": []}
+        # Box necesita los valores crudos por categoría.
+        groups = {}
         for cat, sub in df.groupby(m.x_field):
-            out["x"].append(str(cat))
-            out["y_arrays"].append(sub[m.y_field].dropna().tolist())
-        return out
+            groups[str(cat)] = sub[m.y_field].dropna().tolist()
+        # Aplicar x_order si existe (ej cursos chilenos, meses cronológicos).
+        if cfg.aesthetics and cfg.aesthetics.x_order:
+            ordered = [str(x) for x in cfg.aesthetics.x_order if str(x) in groups]
+            extras = [k for k in groups if k not in [str(x) for x in cfg.aesthetics.x_order]]
+            ordered = ordered + extras
+        else:
+            ordered = list(groups.keys())
+        return {
+            "x": ordered,
+            "y_arrays": [groups[k] for k in ordered],
+        }
 
     if ct == "line":
         if not (m.x_field and m.y_field):
@@ -260,15 +283,21 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             g = df.groupby([m.x_field, m.group_field], as_index=False)[m.y_field].agg(agg)
             # x_order tiene precedencia (cronológico). Default: orden
             # alfabético de aparición.
-            x_vals = (
-                cfg.aesthetics.x_order
-                or sorted(g[m.x_field].astype(str).unique().tolist())
-            )
+            existing_x = set(g[m.x_field].astype(str))
+            if cfg.aesthetics.x_order:
+                x_vals = [str(x) for x in cfg.aesthetics.x_order if str(x) in existing_x]
+                extras = [x for x in g[m.x_field].astype(str).unique() if x not in [str(o) for o in cfg.aesthetics.x_order]]
+                x_vals = x_vals + sorted(extras)
+            else:
+                x_vals = sorted(g[m.x_field].astype(str).unique().tolist())
             # stack_order también ordena las series (curso/establecimiento).
-            series_order = (
-                cfg.aesthetics.stack_order
-                or g[m.group_field].astype(str).unique().tolist()
-            )
+            existing_series = set(g[m.group_field].astype(str))
+            if cfg.aesthetics.stack_order:
+                series_order = [str(s) for s in cfg.aesthetics.stack_order if str(s) in existing_series]
+                series_extras = [s for s in g[m.group_field].astype(str).unique() if s not in [str(o) for o in cfg.aesthetics.stack_order]]
+                series_order = series_order + sorted(series_extras)
+            else:
+                series_order = g[m.group_field].astype(str).unique().tolist()
             series = []
             for name in series_order:
                 sub = g[g[m.group_field].astype(str) == str(name)].set_index(m.x_field)[m.y_field]
@@ -278,10 +307,13 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
             if any(c not in df.columns for c in [m.x_field, m.y_field]):
                 return {"empty": True}
             g = df.groupby(m.x_field, as_index=False)[m.y_field].agg(agg)
-            x_vals = (
-                cfg.aesthetics.x_order
-                or g[m.x_field].astype(str).tolist()
-            )
+            existing_x = set(g[m.x_field].astype(str))
+            if cfg.aesthetics.x_order:
+                x_vals = [str(x) for x in cfg.aesthetics.x_order if str(x) in existing_x]
+                extras = [x for x in g[m.x_field].astype(str).unique() if x not in [str(o) for o in cfg.aesthetics.x_order]]
+                x_vals = x_vals + extras
+            else:
+                x_vals = g[m.x_field].astype(str).tolist()
             sub = g.set_index(m.x_field)[m.y_field]
             return {"x": x_vals, "y": [sub.get(x, None) for x in x_vals]}
 
