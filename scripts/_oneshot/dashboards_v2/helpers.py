@@ -355,16 +355,19 @@ def col_text(key: str, header: str, **kwargs) -> Dict[str, Any]:
 
 
 # Etiquetas largas de subpruebas IDEL Woodcock — espejo del frontend
-# `frontend/src/tooling/idelLabels.js`. Mantener sincronizado con ese archivo.
-# Se inyectan como `value_aliases` en columnas de tablas IDEL para que la
-# celda muestre "CT · Comprensión de Textos" en lugar de solo "CT".
+# `frontend/src/tooling/idelLabels.js`. Mantener sincronizado con ese
+# archivo y con CLAUDE.md sección "Siglas IDEL".
+# Nombres oficiales del protocolo PDL IDEL-Woodcock confirmados con la
+# fundación 2026-05-06. Se inyectan como `value_aliases` en columnas de
+# tablas IDEL para que la celda muestre "CT · Comprensión de Textos" en
+# lugar de solo "CT".
 IDEL_SUBPRUEBA_ALIASES = {
     "CT":  "CT · Comprensión de Textos",
-    "FLO": "FLO · Fluidez Lectora",
-    "FNL": "FNL · Segmentación Fonémica",
-    "FSF": "FSF · Fluidez Silábica/Fonémica",
+    "FLO": "FLO · Fluidez en la Lectura Oral",
+    "FNL": "FNL · Fluidez en Nombrar Letras",
+    "FSF": "FSF · Fluidez en Segmentación de Fonemas",
     "ILP": "ILP · Identificación de Letras y Palabras",
-    "VSD": "VSD · Vocabulario sobre Dibujo",
+    "VSD": "VSD · Vocabulario Sobre Dibujos",
 }
 
 
