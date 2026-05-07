@@ -381,17 +381,22 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
     # ─────────────────────────────────────────────────────────────────────
     layout = {
         "tabs": [
+            # Vista General — layout definitivo decidido por el usuario el
+            # 2026-05-06. ORDEN ESTABLE:
+            #   1. KPIs (4 cols)
+            #   2. Composición Global + Niveles por Curso (2 cols)
+            #   3. Mapa de Riesgo (1 col)
+            # NO agregar Resumen por Curso ni Cobertura aquí — esos specs
+            # siguen existiendo en el catálogo /charts y /tables, pero no
+            # van en este tab. Si en el futuro se quieren reincorporar,
+            # hablar con el dueño del producto antes de tocar este orden.
             tab("general", "Vista General", [
-                # KPIs: como column_roles ya no tiene logro_1 (Puntaje),
-                # se mostrará solo Total Alumnos + Nivel Predominante.
                 row([kpis_item()], cols=4),
-                row([cfg_table_item(ids["t_resumen_curso"], "Resumen por Curso")], cols=1),
-                row([cfg_chart_item(ids["c_cobertura"], "Cobertura de Estudiantes por Curso")], cols=1),
-                row([cfg_chart_item(ids["c_mapa_riesgo"], "Mapa de Riesgo (Curso × Subprueba)")], cols=1),
                 row([
                     cfg_chart_item(ids["c_pie_riesgo"], "Composición Global"),
                     cfg_chart_item(ids["c_stack_riesgo_curso"], "Niveles por Curso"),
                 ], cols=2),
+                row([cfg_chart_item(ids["c_mapa_riesgo"], "Mapa de Riesgo (Curso × Subprueba)")], cols=1),
             ]),
             tab("curso", "Por Curso", [
                 row([course_selector_item()], cols=1),
