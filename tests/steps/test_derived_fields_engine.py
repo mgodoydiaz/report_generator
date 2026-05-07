@@ -800,12 +800,78 @@ class TestLookupDict:
             })
 
 
+class TestTemporalValueAt:
+    """Kind temporal_value_at: extrae el valor de value_field en la primera
+    o última observación temporal por entity, broadcast al grupo.
+    """
+    def _df(self):
+        return pd.DataFrame({
+            "Nombre": ["ana", "ana", "ana", "beto", "beto", "cris"],
+            "Sub": ["CT", "CT", "CT", "CT", "CT", "CT"],
+            "Versión": ["v2", "v3", "v1", "v1", "v3", "v2"],
+            "Nivel": ["Crítico", "Bajo", "Crítico", "Alto", "Cierto", "Alto"],
+        })
+
+    def test_first_y_last_categorical(self):
+        df = apply_derived_fields(self._df(), [
+            {"kind": "temporal_value_at", "name": "nivel_v1", "value_field": "Nivel",
+             "entity_field": ["Nombre", "Sub"], "time_field": "Versión",
+             "when": "first", "time_type": "ordinal", "time_ordinal_levels": ["v1","v2","v3"]},
+            {"kind": "temporal_value_at", "name": "nivel_final", "value_field": "Nivel",
+             "entity_field": ["Nombre", "Sub"], "time_field": "Versión",
+             "when": "last", "time_type": "ordinal", "time_ordinal_levels": ["v1","v2","v3"]},
+        ])
+        # ana CT: v1=Crítico, v3=Bajo
+        ana = df[df["Nombre"] == "ana"].iloc[0]
+        assert ana["nivel_v1"] == "Crítico"
+        assert ana["nivel_final"] == "Bajo"
+        # beto CT: v1=Alto, v3=Cierto
+        beto = df[df["Nombre"] == "beto"].iloc[0]
+        assert beto["nivel_v1"] == "Alto"
+        assert beto["nivel_final"] == "Cierto"
+        # cris CT: solo v2 → ambos = Alto
+        cris = df[df["Nombre"] == "cris"].iloc[0]
+        assert cris["nivel_v1"] == "Alto"
+        assert cris["nivel_final"] == "Alto"
+
+    def test_min_points_filtra(self):
+        # cris solo tiene 1 versión; con min_points=2 debe ser NaN
+        df = apply_derived_fields(self._df(), [
+            {"kind": "temporal_value_at", "name": "nivel_v1", "value_field": "Nivel",
+             "entity_field": ["Nombre", "Sub"], "time_field": "Versión",
+             "when": "first", "time_type": "ordinal", "time_ordinal_levels": ["v1","v2","v3"],
+             "min_points": 2},
+        ])
+        ana = df[df["Nombre"] == "ana"].iloc[0]
+        assert ana["nivel_v1"] == "Crítico"
+        cris = df[df["Nombre"] == "cris"].iloc[0]
+        assert pd.isna(cris["nivel_v1"])
+
+    def test_when_invalido_explota(self):
+        with pytest.raises(ValueError, match="when"):
+            apply_derived_fields(self._df(), [
+                {"kind": "temporal_value_at", "name": "x", "value_field": "Nivel",
+                 "entity_field": ["Nombre"], "time_field": "Versión",
+                 "when": "middle", "time_type": "ordinal",
+                 "time_ordinal_levels": ["v1","v2","v3"]},
+            ])
+
+    def test_value_field_inexistente_explota(self):
+        with pytest.raises(KeyError, match="NoExiste"):
+            apply_derived_fields(self._df(), [
+                {"kind": "temporal_value_at", "name": "x", "value_field": "NoExiste",
+                 "entity_field": ["Nombre"], "time_field": "Versión",
+                 "time_type": "ordinal", "time_ordinal_levels": ["v1","v2","v3"]},
+            ])
+
+
 class TestRegistry:
     def test_kinds_esperados(self):
         assert set(KIND_REGISTRY.keys()) == {
             "agg", "slope", "delta",
             "row_mean_dynamic", "row_threshold", "normalize_name",
             "lookup_range", "lookup_dict", "piecewise_linear",
+            "temporal_value_at",
         }
 
     def test_metadata_introspection_first_check(self):

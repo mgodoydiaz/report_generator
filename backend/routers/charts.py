@@ -309,6 +309,21 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         pivot = df.pivot_table(
             index=m.group_field, columns=m.x_field, values=m.y_field, aggfunc=agg
         )
+        # Reordenar filas/cols según x_order/stack_order si están definidos.
+        # Convención: aesthetics.x_order ordena el x_field (cols); stack_order
+        # ordena el group_field (rows). Esto es esencial para matrices de
+        # transición y heatmaps con niveles ordinales (peor→mejor) — sin
+        # esto, pandas usa orden alfabético que no tiene sentido semántico.
+        x_order = cfg.aesthetics.x_order if cfg.aesthetics else None
+        row_order = cfg.aesthetics.stack_order if cfg.aesthetics else None
+        if row_order:
+            ordered_rows = [r for r in row_order if r in pivot.index]
+            extras = [r for r in pivot.index if r not in row_order]
+            pivot = pivot.reindex(ordered_rows + extras)
+        if x_order:
+            ordered_cols = [c for c in x_order if c in pivot.columns]
+            extras = [c for c in pivot.columns if c not in x_order]
+            pivot = pivot.reindex(columns=ordered_cols + extras)
         # `pivot.fillna(None)` es un no-op en pandas (None != NaN). Para que
         # json.dumps acepte el resultado hay que reemplazar NaN por None
         # explícitamente con .where + .astype(object).

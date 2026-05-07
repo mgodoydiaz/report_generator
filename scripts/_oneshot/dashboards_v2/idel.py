@@ -316,6 +316,40 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
         ),
     )
 
+    # Matriz de transición — replica las 6 matrices de la pág 4 del informe
+    # (una por subprueba). Heatmap de count(estudiantes únicos) cruzando
+    # nivel_inicial × nivel_final. Diagonal = mantuvo, sobre diagonal =
+    # mejoró, debajo = empeoró. El subprueba_selector permite ver subprueba
+    # por subprueba; sin selector se mezcla todo (vista global).
+    ids["c_transicion"] = upsert_chart(
+        db, org_id,
+        name="IDEL — Matriz de Transición (Nivel inicial × Nivel final)",
+        description=(
+            "Heatmap del recorrido entre v1 y la última versión disponible. "
+            "Filas = nivel inicial; Columnas = nivel final. Cada celda es la "
+            "cantidad de estudiantes únicos que pasaron de ese nivel inicial "
+            "al final, dentro de la subprueba activa. Diagonal = mantuvo, "
+            "sobre diagonal = mejoró, bajo diagonal = empeoró. Replica las 6 "
+            "matrices de transición de la página 4 del informe IDEL Woodcock. "
+            "RECOMENDACIÓN: usar el selector de subprueba para una lectura "
+            "limpia (sin selector mezcla las 6 subpruebas)."
+        ),
+        config=chart_config(
+            "heatmap", METRIC_IDEL,
+            titulo="Matriz de Transición — Nivel inicial → Nivel final",
+            x_field="nivel_final",       # columnas
+            group_field="nivel_inicial", # filas
+            y_field="Nombre",
+            aggregation="nunique",
+            color_palette="rojo_calor", palette_reversed=True,
+            x_label="Nivel final",
+            y_label="Nivel inicial",
+            y_format="int",
+            stack_order=IDEL_NIVEL_ORDER,  # orden cols (peor→mejor)
+            x_order=IDEL_NIVEL_ORDER,      # orden rows
+        ),
+    )
+
     # Stacked agrupado curso × versión × nivel — replica el informe pág 2
     # ("Distribución de niveles por evaluación") por cada curso.
     ids["c_stack_curso_version"] = upsert_chart(
@@ -378,6 +412,16 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
                 )], cols=1),
                 row([cfg_chart_item(ids["c_stack_riesgo_version"], "Niveles de Riesgo por Versión")], cols=1),
                 row([cfg_chart_item(ids["c_stack_curso_version"], "Niveles por Curso y Versión (réplica informe pág 2)")], cols=1),
+                row([note_item(
+                    "Filtrá una subprueba para una lectura más precisa: sin filtro la matriz mezcla "
+                    "las 6 subpruebas. Cada celda es la cantidad de estudiantes únicos que pasaron del "
+                    "nivel inicial (filas) al final (columnas). Diagonal = mantuvo, sobre diagonal = "
+                    "mejoró, bajo diagonal = empeoró.",
+                    tone="tip",
+                    title="Cómo leer la matriz de transición",
+                )], cols=1),
+                row([subprueba_selector_item(field="_habilidad")], cols=1),
+                row([cfg_chart_item(ids["c_transicion"], "Matriz de Transición — Nivel inicial → Nivel final")], cols=1),
             ]),
         ]
     }
