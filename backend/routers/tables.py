@@ -517,9 +517,17 @@ def _render_table_data(
                 src = c.resolved_source_key()
                 lookup = src if src in df_page.columns else None
             raw = row.get(lookup) if lookup else None
+            # value_aliases se aplica al raw antes de _apply_format. Esto
+            # cambia solo `formatted` — `raw` queda intacto para filtros,
+            # exports CSV/XLSX y comparaciones.
+            display = raw
+            if c.value_aliases and raw is not None:
+                key_str = str(raw)
+                if key_str in c.value_aliases:
+                    display = c.value_aliases[key_str]
             cell: Dict[str, Any] = {
                 "raw": None if (isinstance(raw, float) and pd.isna(raw)) else raw,
-                "formatted": _apply_format(raw, c.format, c.decimals),
+                "formatted": _apply_format(display, c.format, c.decimals),
             }
             if include_styles and c.color_scale:
                 color = _resolve_color_for_value(raw, c.color_scale.model_dump(), row.to_dict(), indicator_levels_cache)

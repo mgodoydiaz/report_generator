@@ -46,6 +46,7 @@ from .helpers import (
     color_overrides_from_indicator,
     color_scale_linked,
     course_selector_item,
+    IDEL_SUBPRUEBA_ALIASES,
     kpis_item,
     note_item,
     row,
@@ -122,7 +123,7 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             columns=[
                 col_text("Nombre", "Estudiante", pinned=True),
                 col_text("Curso", "Curso"),
-                col_text("Evaluación", "Subprueba"),
+                col_text("Evaluación", "Subprueba", value_aliases=IDEL_SUBPRUEBA_ALIASES),
                 col_text("Versión", "Versión"),
                 col_int("Puntaje", "Puntaje"),
                 {
@@ -158,7 +159,7 @@ def seed_idel(db: Session, org_id: int, indicator_id_idel: int) -> Dict[str, int
             columns=[
                 col_text("Nombre", "Estudiante", pinned=True),
                 col_text("Curso", "Curso"),
-                col_text("Evaluación", "Subprueba"),
+                col_text("Evaluación", "Subprueba", value_aliases=IDEL_SUBPRUEBA_ALIASES),
                 col_text("Versión", "Versión"),
                 col_int("Puntaje", "Puntaje"),
                 {

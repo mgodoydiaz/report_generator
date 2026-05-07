@@ -41,6 +41,7 @@ import { microcopyFor } from './plotly-charts/microcopy';
 import { EmptyState, emptyReason } from './plotly-charts/emptyState';
 import { TableRenderer } from '../components/tables';
 import { ChartRenderer } from '../components/charts';
+import { getSubpruebaLabel } from './idelLabels';
 
 // ── Preset SIMCE — disponible en el Editor de Layout como opción de carga ────
 // No se usa como fallback automático. Exportado para que LayoutEditorModal lo ofrezca.
@@ -934,8 +935,9 @@ export function ItemRenderer({ item, ctx, tabContext }) {
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
                         )}
                         style={subpruebaActiva === s ? { background: CURSO_COLORS[i % CURSO_COLORS.length] } : {}}
+                        title={getSubpruebaLabel(s, 'long')}
                     >
-                        {s}
+                        {getSubpruebaLabel(s, 'short_with_long')}
                     </button>
                 ))}
             </div>

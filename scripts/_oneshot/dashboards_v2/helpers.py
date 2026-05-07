@@ -354,6 +354,20 @@ def col_text(key: str, header: str, **kwargs) -> Dict[str, Any]:
     return {"key": key, "header": header, "format": "text", **kwargs}
 
 
+# Etiquetas largas de subpruebas IDEL Woodcock — espejo del frontend
+# `frontend/src/tooling/idelLabels.js`. Mantener sincronizado con ese archivo.
+# Se inyectan como `value_aliases` en columnas de tablas IDEL para que la
+# celda muestre "CT · Comprensión de Textos" en lugar de solo "CT".
+IDEL_SUBPRUEBA_ALIASES = {
+    "CT":  "CT · Comprensión de Textos",
+    "FLO": "FLO · Fluidez Lectora",
+    "FNL": "FNL · Segmentación Fonémica",
+    "FSF": "FSF · Fluidez Silábica/Fonémica",
+    "ILP": "ILP · Identificación de Letras y Palabras",
+    "VSD": "VSD · Vocabulario sobre Dibujo",
+}
+
+
 def col_int(key: str, header: str, **kwargs) -> Dict[str, Any]:
     return {"key": key, "header": header, "format": "int", **kwargs}
 
