@@ -818,6 +818,78 @@ def apply_piecewise_linear(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Kind: temporal_value_at (valor en momento "first"/"last" por entidad)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_temporal_value_at(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Devuelve el valor de `value_field` en la fila más temprana/tardía
+    por entity, broadcast a todas las filas del mismo entity.
+
+    Caso de uso: matriz de transición IDEL — para cada (Estudiante, Subprueba)
+    necesitamos saber el "Nivel de Riesgo" en v1 y en la última versión
+    disponible para luego cruzarlos en un heatmap.
+
+    Config esperado:
+        name: nombre de la columna nueva
+        value_field: columna a extraer (puede ser categórica/string)
+        entity_field: columna o lista (ej ["Nombre", "Subprueba"])
+        time_field: columna que define el orden temporal
+        when: "first" | "last"  (default "last")
+        time_type: 'numeric' (default) | 'ordinal'
+        time_ordinal_levels: lista (requerido si ordinal). Útil cuando
+            time_field es texto categórico ordenable (ej ["v1","v2","v3"]).
+        min_points: filas mínimas para que el cálculo sea válido (default 1).
+            Si la entidad tiene menos, NaN.
+
+    Retorna df con la columna `name` agregada.
+
+    Notas:
+        - value_field NO se convierte a numérico — el broadcast preserva el
+          tipo original (categórico, string, fecha, etc).
+        - Si time_field tiene NaN, esas filas no participan del orden pero
+          siguen recibiendo el valor broadcast del entity.
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"temporal_value_at '{name}'")
+    time_field = config["time_field"]
+    when = config.get("when", "last")
+    if when not in ("first", "last"):
+        raise ValueError(f"temporal_value_at '{name}': when debe ser 'first' o 'last', recibido: {when!r}")
+    time_type = config.get("time_type", "numeric")
+    time_ordinal_levels = config.get("time_ordinal_levels")
+    min_points = int(config.get("min_points", 1))
+
+    for f in (value_field, time_field):
+        if f not in df.columns:
+            raise KeyError(f"temporal_value_at '{name}': columna '{f}' no existe en el DataFrame")
+
+    df = df.copy()
+    # Numerizamos solo el time_field (no el value); soporta ordinales.
+    df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
+
+    # Para cada entity, ordenamos por _time_num y tomamos first/last NO-NaN.
+    sub = df.dropna(subset=["_time_num"]).copy()
+    sub.sort_values(entity_keys + ["_time_num"], kind="mergesort", inplace=True)
+    if when == "first":
+        picked = sub.groupby(entity_keys, as_index=False, sort=False).first()
+    else:
+        picked = sub.groupby(entity_keys, as_index=False, sort=False).last()
+    counts = sub.groupby(entity_keys, sort=False).size().rename("_count").reset_index()
+    picked = picked.merge(counts, on=entity_keys, how="left")
+    # Aplicar min_points
+    if min_points > 1:
+        picked.loc[picked["_count"] < min_points, value_field] = np.nan
+
+    out_df = picked[entity_keys + [value_field]].rename(columns={value_field: name})
+    if name in df.columns:
+        df = df.drop(columns=[name])
+    df = df.merge(out_df, on=entity_keys, how="left")
+    df.drop(columns=["_time_num"], inplace=True)
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Registry + orquestador
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -884,6 +956,13 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "description": "y = slope*x + intercept por tramos. Caso CV: Puntaje → Nota con dos rectas según rango. Soporta clamp y redondeo.",
         "required_args": ["name", "value_field", "segments"],
         "optional_args": ["match", "round_to", "clamp_min", "clamp_max"],
+    },
+    "temporal_value_at": {
+        "fn": apply_temporal_value_at,
+        "display_name": "Valor en primer/último hito",
+        "description": "Devuelve el valor de value_field en la fila más temprana ('first') o tardía ('last') por entity. Broadcast a todas las filas. Soporta categóricos. Caso IDEL: nivel de riesgo en v1 y en la última versión para matrices de transición.",
+        "required_args": ["name", "value_field", "entity_field", "time_field"],
+        "optional_args": ["when", "time_type", "time_ordinal_levels", "min_points"],
     },
 }
 
