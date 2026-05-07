@@ -82,7 +82,7 @@ class TableColumn(BaseModel):
     decimals: int = 1
     # Aggregación cuando hay grouping. None = no agrega (toma el primer
     # valor o pasa raw si la columna es de la dimensión de agrupación).
-    agg: Optional[Literal["mean", "sum", "min", "max", "count", "nunique", "first", "std"]] = None
+    agg: Optional[Literal["mean", "median", "sum", "min", "max", "count", "nunique", "first", "std"]] = None
     color_scale: Optional[ColorScale] = None
     width: Optional[int] = None
     # Si True, columna fija a la izquierda (no scrollea horizontalmente).
