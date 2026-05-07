@@ -90,6 +90,12 @@ class TableColumn(BaseModel):
     # Si True, esta columna NO aparece en la tabla pero queda disponible
     # para sorting/filtering/agg.
     hidden: bool = False
+    # Mapeo opcional `valor_raw → label_legible` que se aplica al value antes
+    # de format. Útil para mostrar siglas con nombre largo (ej IDEL: CT →
+    # "CT · Comprensión de Textos"). Si una clave no está en el dict, el
+    # valor pasa sin alterar; los filtros y joins siguen usando el raw, así
+    # que el dashboard sigue funcionando igual.
+    value_aliases: Optional[Dict[str, str]] = None
 
     def resolved_source_key(self) -> str:
         """Devuelve el campo real del df: source_key si está definido, key si no."""

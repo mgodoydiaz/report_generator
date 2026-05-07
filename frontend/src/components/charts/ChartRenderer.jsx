@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react';
 import Plot from 'react-plotly.js';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { API_BASE_URL } from '../../constants';
+import { getSubpruebaLabel, IDEL_SUBPRUEBA_LABELS } from '../../tooling/idelLabels';
 
 const CATEGORY_COLORS = [
   '#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444',
@@ -372,10 +373,18 @@ function buildPlotProps({ chart_type, mapping, aesthetics, dataset }) {
       yfmt === 'percent' ? '%{y} × %{x}: %{z:.1%}<extra></extra>'
         : yfmt === 'int' ? '%{y} × %{x}: %{z:.0f}<extra></extra>'
         : '%{y} × %{x}: %{z:.2f}<extra></extra>';
+    // Si el eje X tiene siglas conocidas de IDEL, las reemplazamos por el
+    // label legible. Detección defensiva: solo aplica si TODOS los valores
+    // están en el map (evita romper otros heatmaps con strings random).
+    const xVals = Array.isArray(dataset.x) ? dataset.x : [];
+    const allIdelSubpruebas = xVals.length > 0 && xVals.every((v) => v in IDEL_SUBPRUEBA_LABELS);
+    const xDisplay = allIdelSubpruebas
+      ? xVals.map((v) => getSubpruebaLabel(v, 'short_with_long'))
+      : dataset.x;
     return {
       data: [{
         type: 'heatmap',
-        x: dataset.x,
+        x: xDisplay,
         y: dataset.y,
         z: dataset.z,
         colorscale,
@@ -510,8 +519,13 @@ function PivotMatrixTable({ data, height, className }) {
             <tr>
               <th className="border border-slate-300 bg-slate-100 px-2 py-1 sticky left-0 z-10" rowSpan={2}>Estudiante</th>
               {ds.col_outer.map((g) => (
-                <th key={g} colSpan={cellsPerOuter} className="border border-slate-300 bg-slate-100 px-2 py-1 text-center font-bold">
-                  {g}
+                <th
+                  key={g}
+                  colSpan={cellsPerOuter}
+                  className="border border-slate-300 bg-slate-100 px-2 py-1 text-center font-bold"
+                  title={getSubpruebaLabel(g, 'long')}
+                >
+                  {getSubpruebaLabel(g, 'short_with_long')}
                 </th>
               ))}
             </tr>
