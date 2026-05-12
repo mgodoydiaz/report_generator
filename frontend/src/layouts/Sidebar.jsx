@@ -7,6 +7,7 @@ import {
   Play,         // Execution
   BookSearch,   // Values
   ChartColumn,  // Results
+  Sparkles,     // Próximos módulos
   Settings,     // Settings
   Layers,       // Dimensions
   Box,          // Metrics
@@ -59,6 +60,10 @@ export default function Sidebar() {
         <NavLink to="/results" className={linkClass}>
           <ChartColumn size={18} />
           Resultados
+        </NavLink>
+        <NavLink to="/live-tracking" className={linkClass}>
+          <Sparkles size={18} />
+          Próximos módulos
         </NavLink>
 
         {/* SECCIÓN CONFIGURACIÓN */}
