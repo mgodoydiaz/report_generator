@@ -69,6 +69,11 @@ _COLUMN_NAME_OVERRIDES = {
     "_anio": "Año",
     "_ano": "Año",
     "_año": "Año",
+    # SIMCE Panguipulli (metric 24/26) — fields camelCase del meta_json
+    "_porclogro": "PorcLogro",
+    "_logronormalizado": "LogroNormalizado",
+    "_logrohabilidad": "LogroHabilidad",
+    "_logrocurso": "LogroCurso",
 }
 
 

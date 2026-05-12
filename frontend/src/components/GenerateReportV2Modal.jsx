@@ -42,6 +42,12 @@ export default function GenerateReportV2Modal({
             line3: 'Mes Año',
             autor: 'Miguel Godoy Díaz',
         },
+        simce_panguipulli: {
+            line1: 'Informe SIMCE Panguipulli',
+            line2: 'Asignatura · Nivel · Curso',
+            line3: 'Mes Año',
+            autor: 'Miguel Godoy Díaz',
+        },
         dia: {
             line1: 'Informe DIA Diagnóstico',
             line2: 'Asignatura Nivel Medio',
