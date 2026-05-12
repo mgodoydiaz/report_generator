@@ -7,7 +7,6 @@ import {
   Play,         // Execution
   BookSearch,   // Values
   ChartColumn,  // Results
-  Radio,        // Live tracking
   Settings,     // Settings
   Layers,       // Dimensions
   Box,          // Metrics
@@ -60,14 +59,6 @@ export default function Sidebar() {
         <NavLink to="/results" className={linkClass}>
           <ChartColumn size={18} />
           Resultados
-        </NavLink>
-        <NavLink to="/live-tracking" className={linkClass}>
-          <Radio size={18} />
-          <span className="flex-1">Seguimiento en vivo</span>
-          <span className="relative flex h-2 w-2 shrink-0">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-          </span>
         </NavLink>
 
         {/* SECCIÓN CONFIGURACIÓN */}

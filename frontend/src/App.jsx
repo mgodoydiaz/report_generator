@@ -12,7 +12,6 @@ import Tables from "./pages/Tables.jsx";
 import Charts from "./pages/Charts.jsx";
 import Results from "./pages/Results.jsx";
 import ResultsRecharts from "./pages/ResultsRecharts.jsx";
-import LiveTracking from "./pages/LiveTracking.jsx";
 import Execution from "./pages/Execution.jsx";
 import Values from "./pages/Values.jsx";
 import Dimensions from "./pages/Dimensions.jsx";
@@ -49,7 +48,6 @@ export default function App() {
                   <Route path="/tables" element={<Tables />} />
                   <Route path="/charts" element={<Charts />} />
                   <Route path="/results" element={<Results />} />
-                  <Route path="/live-tracking" element={<LiveTracking />} />
                   <Route path="/results-recharts" element={<ResultsRecharts />} />
                   <Route path="/execution" element={<Execution />} />
                   <Route path="/values" element={<Values />} />
