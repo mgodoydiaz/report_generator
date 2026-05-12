@@ -25,6 +25,7 @@ from backend.rgenerator.reports import runtime
 from backend.rgenerator.reports.data import cargar_dataframes_indicator
 from backend.rgenerator.reports.dia import crear_informe as dia_informe
 from backend.rgenerator.reports.simce import crear_informe as simce_informe
+from backend.rgenerator.reports.simce_panguipulli import crear_informe as simce_panguipulli_informe
 
 
 router = APIRouter(prefix="/api/reports", tags=["reports-v2"])
@@ -50,6 +51,7 @@ async def listar_tipos(user: User = Depends(get_current_user)):
     """
     return [
         {"tipo": "simce", "label": "Informe SIMCE", "params_esperados": ["asignatura", "numero_prueba"]},
+        {"tipo": "simce_panguipulli", "label": "Informe SIMCE Panguipulli", "params_esperados": ["asignatura", "numero_prueba"]},
         {"tipo": "dia", "label": "Informe DIA", "params_esperados": ["asignatura", "hito"]},
     ]
 
@@ -104,8 +106,8 @@ async def generar_reporte(
         400 si el indicator no se encuentra o no tiene metrics.
         500 si la generación falla.
     """
-    if tipo not in ("simce", "dia"):
-        raise HTTPException(404, f"Tipo '{tipo}' no soportado. Disponibles: simce, dia")
+    if tipo not in ("simce", "simce_panguipulli", "dia"):
+        raise HTTPException(404, f"Tipo '{tipo}' no soportado. Disponibles: simce, simce_panguipulli, dia")
 
     # Validación: el motor v2 está pensado para UNA evaluación. Sin filtro
     # temporal mezclaría datos de múltiples meses/hitos y los gráficos
@@ -114,6 +116,7 @@ async def generar_reporte(
     filtros_aplicados = body.filtros or {}
     filtros_temporales = {
         "simce": ["Mes", "N Prueba", "Numero_Prueba"],
+        "simce_panguipulli": ["Mes", "N Prueba", "Numero_Prueba"],
         "dia": ["Hito", "Año"],
     }
     requeridos = filtros_temporales.get(tipo, [])
@@ -168,6 +171,44 @@ async def generar_reporte(
             pdf_bytes = simce_informe.construir(
                 df_estudiantes,
                 df_preguntas,
+                asignatura=asignatura,
+                numero_prueba=numero_prueba,
+                mes=mes,
+                overrides=body.overrides,
+            )
+        elif tipo == "simce_panguipulli":
+            # Variante Panguipulli: usa df_estudiantes (metric 24) + df_habilidad
+            # (metric 26) en lugar de df_preguntas. data.py asigna a metric 26 el
+            # rol "otros" → key "metric_26"; el detector aquí intenta varias
+            # claves conocidas para localizarlo.
+            asignatura = filtros_estructurales.get("Asignatura", "LENGUAJE")
+            mes = filtros_temporales_dict.get("Mes")
+            n_prueba_raw = filtros_temporales_dict.get("N Prueba") or filtros_temporales_dict.get("Numero_Prueba", 4)
+            try:
+                numero_prueba = int(n_prueba_raw)
+            except (TypeError, ValueError):
+                numero_prueba = 4
+            df_estudiantes = dataframes.get("estudiantes", None)
+            # Buscar el DataFrame de habilidad por las keys posibles que asigna
+            # `cargar_dataframes_indicator` (rol detectado por nombre). No uso
+            # `or` porque pandas no permite evaluar la verdad de un DataFrame.
+            df_habilidad = dataframes.get("habilidad")
+            if df_habilidad is None:
+                df_habilidad = dataframes.get("metric_26")
+            if df_habilidad is None:
+                df_habilidad = next(
+                    (v for k, v in dataframes.items() if k.startswith("metric_")),
+                    None,
+                )
+            if df_estudiantes is None or df_habilidad is None:
+                raise HTTPException(
+                    400,
+                    "El indicator SIMCE Panguipulli debe tener metrics 'por Estudiante' "
+                    "y 'por Habilidad' asociadas",
+                )
+            pdf_bytes = simce_panguipulli_informe.construir(
+                df_estudiantes,
+                df_habilidad,
                 asignatura=asignatura,
                 numero_prueba=numero_prueba,
                 mes=mes,

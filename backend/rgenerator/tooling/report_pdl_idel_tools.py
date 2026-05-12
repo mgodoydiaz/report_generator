@@ -112,27 +112,55 @@ def _load_dataframe_from_orm(
 
 def _translate_filters(filters: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Convierte los filtros del modal ({id_dimension_str: valor}) a los kwargs
-    que acepta _load_dataframe_from_orm. Se ignora cualquier filtro sobre
-    dimensiones desconocidas para este informe.
+    Convierte los filtros del modal ({id_dimension_str: valor | [valores]})
+    a los kwargs que acepta _load_dataframe_from_orm. Se ignora cualquier
+    filtro sobre dimensiones desconocidas para este informe.
+
+    El frontend pasó a multi-valor en B9: ahora las dimensiones llegan como
+    listas (`{"4": ["2025"]}`) en vez de strings (`{"4": "2025"}`). Para no
+    romper el flujo viejo y soportar el nuevo, normalizamos a primer valor
+    en los campos escalares (anio, establecimiento) y a lista completa en
+    los plurales (cursos, versiones). Si la lista está vacía, el filtro se
+    omite (= "todos"), igual que si la key no existiera.
     """
     if not filters:
         return {}
+
+    def _as_list(val: Any) -> list:
+        """Normaliza un valor a lista. None / '' / [] → []. Lista → lista.
+        Escalar → [escalar]. Filtra None y '' del resultado."""
+        if val is None or val == "":
+            return []
+        if isinstance(val, (list, tuple)):
+            return [v for v in val if v not in (None, "")]
+        return [val]
+
     kwargs: Dict[str, Any] = {}
-    if filters.get(DIM_ESTABLECIMIENTO):
-        kwargs["establecimiento"] = str(filters[DIM_ESTABLECIMIENTO])
-    if filters.get(DIM_ANIO):
+
+    est_vals = _as_list(filters.get(DIM_ESTABLECIMIENTO))
+    if est_vals:
+        # Establecimiento: tomamos el primer valor (el informe asume uno solo)
+        kwargs["establecimiento"] = str(est_vals[0])
+
+    anio_vals = _as_list(filters.get(DIM_ANIO))
+    if anio_vals:
         try:
-            kwargs["anio"] = int(filters[DIM_ANIO])
+            # Año: int. Si vienen varios, tomamos el primero (informe asume uno).
+            kwargs["anio"] = int(anio_vals[0])
         except (TypeError, ValueError):
             pass
-    if filters.get(DIM_CURSO):
-        kwargs["cursos"] = [str(filters[DIM_CURSO])]
-    if filters.get(DIM_VERSION):
+
+    curso_vals = _as_list(filters.get(DIM_CURSO))
+    if curso_vals:
+        kwargs["cursos"] = [str(c) for c in curso_vals]
+
+    version_vals = _as_list(filters.get(DIM_VERSION))
+    if version_vals:
         try:
-            kwargs["versiones"] = [int(filters[DIM_VERSION])]
+            kwargs["versiones"] = [int(v) for v in version_vals]
         except (TypeError, ValueError):
             pass
+
     return kwargs
 
 

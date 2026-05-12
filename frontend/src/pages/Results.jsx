@@ -312,7 +312,9 @@ export default function Results() {
                             {(() => {
                                 const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
                                 const nombre = (ind?.name || '').toLowerCase();
-                                const tipoV2 = nombre.includes('simce') ? 'simce'
+                                // 'simce panguipulli' debe matchear ANTES que 'simce' suelto.
+                                const tipoV2 = nombre.includes('panguipulli') ? 'simce_panguipulli'
+                                    : nombre.includes('simce') ? 'simce'
                                     : nombre.includes('dia') ? 'dia'
                                     : null;
                                 if (!tipoV2) return null;
@@ -329,7 +331,7 @@ export default function Results() {
                                     params[dimName] = arr.length === 1 ? arr[0] : arr;
                                 });
                                 // El motor v2 requiere al menos UN filtro temporal por tipo.
-                                const filtrosTemporales = tipoV2 === 'simce'
+                                const filtrosTemporales = (tipoV2 === 'simce' || tipoV2 === 'simce_panguipulli')
                                     ? ['Mes', 'N Prueba', 'Numero_Prueba']
                                     : ['Hito', 'Año'];
                                 const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
