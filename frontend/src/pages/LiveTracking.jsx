@@ -20,14 +20,13 @@ const MODULOS = [
         color: 'indigo',
         resumen: 'Cada vez que subes una evaluación, el sistema te cuenta qué cambió. En frases que entiende cualquiera.',
         descripcion:
-            'Pensado para que dirección reciba un brief semanal de 5 frases y sepa, sin abrir Excel, ' +
+            'Pensado para que UTP reciba un brief semanal de 5 frases y sepa, sin abrir Excel, ' +
             'qué cursos subieron, cuáles requieren atención y qué brechas se cerraron. Convierte los datos ' +
             'en un relato que se puede leer en el café de la mañana.',
         features: [
             'Titulares automáticos por curso después de cada lectura',
             'Detección de alertas tempranas sin que nadie tenga que mirar',
             'Resumen ejecutivo semanal listo para WhatsApp o correo',
-            'Marcado de noticias vistas y archivo histórico',
         ],
         estado: 'En diseño',
     },
