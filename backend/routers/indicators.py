@@ -188,6 +188,10 @@ def create_indicator(
         db.refresh(new_ind)
 
         return {"status": "success", "data": _indicator_to_dict(new_ind)}
+    except HTTPException:
+        # Re-raise HTTPException intactas (ej 400 de _validate_metric_ids)
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -421,10 +425,14 @@ def delete_indicator(
             Indicator.id_indicator == indicator_id,
             Indicator.org_id == user.org_id,
         ).first()
-        if record:
-            db.delete(record)  # cascade deletes IndicatorMetric links
-            db.commit()
+        if not record:
+            # 404 también si pertenece a otra org (no revelar existencia).
+            raise HTTPException(status_code=404, detail="Indicador no encontrado")
+        db.delete(record)  # cascade deletes IndicatorMetric links
+        db.commit()
         return {"status": "success"}
+    except HTTPException:
+        raise
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

@@ -88,20 +88,34 @@ def engine():
 
 @pytest.fixture
 def db_session(engine):
-    """Sesión SQLAlchemy aislada por test.
+    """Sesión SQLAlchemy aislada por test usando SAVEPOINT anidado.
 
-    Cada test corre dentro de una transacción que se rollback al final →
-    los tests no se contaminan entre sí. Mucho más rápido que recrear las
-    tablas en cada test.
+    El test corre dentro de una transacción "outer" (que rollback al final).
+    Los `db.commit()` que hagan los endpoints solo cierran un SAVEPOINT
+    anidado, no la transaction outer. Esto permite que el endpoint vea sus
+    propios cambios pero al terminar el test todo se descarta.
+
+    Patrón estándar de SQLAlchemy para tests: ver
+    https://docs.sqlalchemy.org/en/20/orm/session_transaction.html#joining-a-session-into-an-external-transaction-such-as-for-test-suites
     """
+    from sqlalchemy import event
+
     connection = engine.connect()
     transaction = connection.begin()
     SessionLocal = sessionmaker(bind=connection, autocommit=False, autoflush=False)
     session = SessionLocal()
 
-    # Invalidar cache TTL de _load_metric_to_df para que no se filtren
-    # datos entre tests (event listeners de SQLAlchemy escriben al cache
-    # global del módulo).
+    # Iniciar SAVEPOINT al comenzar. Si el código bajo test hace commit(),
+    # se cierra el SAVEPOINT, no la outer transaction. Re-iniciamos uno nuevo.
+    nested = connection.begin_nested()
+
+    @event.listens_for(session, "after_transaction_end")
+    def _restart_savepoint(session, transaction_):
+        nonlocal nested
+        if not nested.is_active:
+            nested = connection.begin_nested()
+
+    # Invalidar cache TTL de _load_metric_to_df para no leak entre tests.
     try:
         from backend.routers.tables import invalidate_metric_df_cache
         invalidate_metric_df_cache()
