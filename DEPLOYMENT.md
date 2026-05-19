@@ -9,7 +9,7 @@ Runbook operacional de Report Generator en producción.
 | Componente | Proveedor | Región | Plan |
 |---|---|---|---|
 | Backend FastAPI | Railway | `us-east4-eqdc4a` (Virginia, USA) | Hobby ($5/mes) |
-| Base de datos PostgreSQL | Supabase | `sa-east-1` (São Paulo, Brasil) | Free |
+| Base de datos PostgreSQL | Supabase | `us-east-1` (N. Virginia, USA) | Free |
 | Frontend | _pendiente_ | — | — |
 
 URL pública del backend: `https://rgenerator-backend-production.up.railway.app`
@@ -18,8 +18,8 @@ Versión productiva actual: tag `v0.2.x` en rama `main`.
 
 ### Por qué esta combinación
 
-- **Supabase São Paulo**: latencia mínima desde Chile y Perú (mercados objetivo de la fundación). PG 17 administrado, backup manual via `pg_dump`.
-- **Railway us-east4**: la región más cercana a São Paulo disponible en plan Hobby (~150 ms ↔ Supabase). No se pausa por inactividad. $5 incluye uso típico de FastAPI ligero.
+- **Supabase Virginia (us-east-1)**: misma región que el backend en Railway para minimizar RTT (~10 ms en lugar de ~150 ms del setup anterior cross-continente). Migrada el 2026-05-19 desde sa-east-1 (São Paulo); el original tenía sentido para latencia directa a usuarios chilenos pero el frontend nunca habla con la DB — solo el backend, así que la región que importa es la del backend. PG 17 administrado, backup manual via `pg_dump`.
+- **Railway us-east4**: misma región (Virginia) que la DB. No se pausa por inactividad. $5 incluye uso típico de FastAPI ligero.
 
 ---
 
@@ -29,7 +29,7 @@ Configuradas en Railway → Service `rgenerator-backend` → Variables. La copia
 
 | Variable | Descripción |
 |---|---|
-| `DATABASE_URL` | Supabase Session pooler (`aws-1-sa-east-1.pooler.supabase.com:5432`). Password URL-encoded |
+| `DATABASE_URL` | Supabase Session pooler (`aws-1-us-east-1.pooler.supabase.com:5432`). Password URL-encoded |
 | `JWT_SECRET` | 32 bytes hex (`secrets.token_hex(32)`). Distinto del local |
 | `JWT_EXPIRE_HOURS` | `8` |
 | `ENVIRONMENT` | `production` |
@@ -113,14 +113,14 @@ python scripts/backup_supabase.py --keep 16
 # 2. Restaurar el dump elegido (drop + recreate de objetos)
 PGPASSWORD='<password-supabase>' pg_restore \
   --clean --if-exists --no-owner --no-acl \
-  -h aws-1-sa-east-1.pooler.supabase.com -p 5432 \
-  -U postgres.xcpywlikzjdvhihlfbrn -d postgres \
+  -h aws-1-us-east-1.pooler.supabase.com -p 5432 \
+  -U postgres.crxuzhniutxkqlgfaolz -d postgres \
   backups/supabase_YYYYMMDD_HHMMSS.dump
 
 # 3. Resetear secuencias (idempotente)
 PGPASSWORD='<password-supabase>' psql \
-  -h aws-1-sa-east-1.pooler.supabase.com -p 5432 \
-  -U postgres.xcpywlikzjdvhihlfbrn -d postgres \
+  -h aws-1-us-east-1.pooler.supabase.com -p 5432 \
+  -U postgres.crxuzhniutxkqlgfaolz -d postgres \
   -f scripts/_reset_sequences.sql   # si existe; sino ver "Apéndice: reset secuencias"
 ```
 

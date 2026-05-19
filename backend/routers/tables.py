@@ -16,12 +16,15 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import threading
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
+from sqlalchemy import event
 from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
@@ -104,8 +107,75 @@ def _get_spec_or_404(db: Session, table_id: int, org_id: int) -> Spec:
 # ─────────────────────────────────────────────────────────────────────────
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Cache TTL para _load_metric_to_df
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Un dashboard llena ~10 charts/tables, muchos de ellos sobre la misma
+# métrica. Sin cache cada uno repite las queries y el parsing de JSON.
+# Con TTL corto el segundo+ load del mismo (metric, filtros) es instantáneo.
+# El TTL de 60s acota la ventana de obsolescencia tras un ETL.
+_METRIC_DF_CACHE: Dict[Tuple, Tuple[float, pd.DataFrame]] = {}
+_METRIC_DF_CACHE_LOCK = threading.Lock()
+_METRIC_DF_CACHE_TTL = 60.0
+
+
+def _metric_df_cache_key(org_id: int, metric_id: int,
+                         filters: Optional[Dict[str, Any]]) -> Tuple:
+    if not filters:
+        return (org_id, metric_id, None)
+    items = []
+    for k in sorted(filters.keys()):
+        v = filters[k]
+        if isinstance(v, (list, tuple, set)):
+            v = tuple(sorted(str(x) for x in v))
+        items.append((str(k), v))
+    return (org_id, metric_id, tuple(items))
+
+
+def invalidate_metric_df_cache(metric_id: Optional[int] = None) -> None:
+    """Invalida entradas del cache. Si metric_id es None, limpia todo.
+
+    Llamar desde endpoints que escriben MetricData (carga ETL, edición de
+    valores, etc.) para que el siguiente read vea los nuevos datos sin
+    esperar al TTL.
+    """
+    with _METRIC_DF_CACHE_LOCK:
+        if metric_id is None:
+            _METRIC_DF_CACHE.clear()
+            return
+        keys = [k for k in _METRIC_DF_CACHE if k[1] == metric_id]
+        for k in keys:
+            _METRIC_DF_CACHE.pop(k, None)
+
+
 def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
                        filters: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """Wrapper cacheado de _load_metric_to_df_uncached. Devuelve una copia
+    del DataFrame para que el caller pueda mutarla sin afectar el cache.
+    """
+    key = _metric_df_cache_key(org_id, metric_id, filters)
+    now = time.time()
+    with _METRIC_DF_CACHE_LOCK:
+        cached = _METRIC_DF_CACHE.get(key)
+        if cached and (now - cached[0]) < _METRIC_DF_CACHE_TTL:
+            return cached[1].copy()
+
+    df = _load_metric_to_df_uncached(db, org_id, metric_id, filters)
+
+    with _METRIC_DF_CACHE_LOCK:
+        _METRIC_DF_CACHE[key] = (now, df)
+        # Cleanup de entradas expiradas (>2x TTL) para evitar memory leak
+        cutoff = now - 2 * _METRIC_DF_CACHE_TTL
+        expired = [k for k, (t, _) in _METRIC_DF_CACHE.items() if t < cutoff]
+        for k in expired:
+            _METRIC_DF_CACHE.pop(k, None)
+
+    return df.copy()
+
+
+def _load_metric_to_df_uncached(db: Session, org_id: int, metric_id: int,
+                                filters: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
     """Carga metric_data + dimensiones a DataFrame plano, aplicando filtros
     por igualdad simple sobre nombres de dimensiones.
 
@@ -602,3 +672,17 @@ def preview_table_config(
         payload.limit, payload.offset, payload.include_styles,
         payload.extra_filters,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Invalidación automática del cache cuando cambia MetricData
+# ─────────────────────────────────────────────────────────────────────────
+#
+# Cubre los endpoints HTTP de metrics, los steps de pipelines (SaveToMetric)
+# y cualquier otra escritura que use la sesión SQLAlchemy. Garantiza que el
+# dashboard refleje los cambios sin esperar el TTL.
+@event.listens_for(MetricData, "after_insert")
+@event.listens_for(MetricData, "after_update")
+@event.listens_for(MetricData, "after_delete")
+def _invalidate_on_metric_data_change(mapper, connection, target):
+    invalidate_metric_df_cache(target.id_metric)
