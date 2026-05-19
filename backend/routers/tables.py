@@ -127,6 +127,14 @@ def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
 
     rows = db.query(MetricData).filter(MetricData.id_metric == metric_id).all()
 
+    # Parse de meta_json UNA sola vez fuera del loop: es invariante por métrica
+    # y antes se parseaba O(N) veces (una por row).
+    try:
+        meta = json.loads(metric.meta_json or "{}") if isinstance(metric.meta_json, str) else (metric.meta_json or {})
+    except Exception:
+        meta = {}
+    meta_fields = meta.get("fields", []) if isinstance(meta, dict) else []
+
     flat: List[Dict[str, Any]] = []
     for r in rows:
         item: Dict[str, Any] = {}
@@ -138,14 +146,13 @@ def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
         for dim_id, name in dims_map.items():
             item[name] = dims_json.get(str(dim_id))
         # Valor (object → expandido a fields, simple → 1 columna)
-        meta = json.loads(metric.meta_json or "{}") if isinstance(metric.meta_json, str) else (metric.meta_json or {})
         val = r.value
         if metric.data_type == "object":
             try:
                 val_obj = json.loads(val) if isinstance(val, str) else val
             except Exception:
                 val_obj = {}
-            for f in meta.get("fields", []):
+            for f in meta_fields:
                 fname = f["name"]
                 item[fname] = val_obj.get(fname)
         else:
