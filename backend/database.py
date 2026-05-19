@@ -21,15 +21,19 @@ if not DATABASE_URL:
         "o ejecuta con Docker (docker compose up)."
     )
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,       # reconecta si la conexión se cayó
-    pool_size=5,
-    max_overflow=10,
+_engine_kwargs = {
     # SQL_ECHO: imprime cada query SQL. Independiente de DEBUG para poder
     # debuggear la app sin inundar los logs con consultas de SQLAlchemy.
-    echo=os.getenv("SQL_ECHO", "false").lower() == "true",
-)
+    "echo": os.getenv("SQL_ECHO", "false").lower() == "true",
+}
+# pool_size + max_overflow no aplican a SQLite (usa SingletonThreadPool).
+# Solo se setean para PostgreSQL/MySQL/etc.
+if not DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["pool_pre_ping"] = True   # reconecta si la conexión se cayó
+    _engine_kwargs["pool_size"] = 5
+    _engine_kwargs["max_overflow"] = 10
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

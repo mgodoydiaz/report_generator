@@ -69,12 +69,27 @@ npm run dev
 
 ## Tests y scripts
 
-```bash
-# Tests unitarios de steps
-pytest tests/steps/test_pipeline_steps.py -v
+Ver **[TESTING.md](./TESTING.md)** para el plan completo, capas (unit/integration/E2E),
+fixtures (`db_session`, `client`, `client_auth`) y convenciones.
 
-# Con cobertura
-pytest tests/steps/test_pipeline_steps.py --cov=rgenerator
+```bash
+# Toda la suite (sin lentos)
+pytest -q -m "not slow"
+
+# Solo unit (rápido, ideal pre-commit)
+pytest -q -m unit
+
+# Solo integration (con DB SQLite in-memory + TestClient FastAPI)
+pytest -q -m integration
+
+# Coverage de backend
+pytest --cov=backend --cov-report=term-missing
+
+# Archivo específico
+pytest tests/steps/test_derived_fields_engine.py -v
+
+# Reintentar lo que falló la última vez
+pytest --lf
 
 # ETL desde CLI
 python scripts/run_etl.py ./config/simce_estudiantes_lenguaje.txt

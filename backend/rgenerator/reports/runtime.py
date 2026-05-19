@@ -28,7 +28,10 @@ from typing import Any
 
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader
-from weasyprint import HTML as WeasyprintHTML
+
+# weasyprint requiere libs nativas (Pango/Cairo/GLib) que pueden no estar
+# presentes en hosts Windows. Import lazy dentro de la función que lo usa
+# para que importar este módulo no falle en setups de testing/dev.
 
 from . import charts, tables
 from .helpers import df_a_html_table, embed_png_b64
@@ -252,5 +255,6 @@ def construir_pdf(
             report_date=date.today().strftime("%d/%m/%Y"),
         )
 
-        # WeasyPrint
+        # WeasyPrint — import lazy: requiere libs nativas no presentes en todo host
+        from weasyprint import HTML as WeasyprintHTML
         return WeasyprintHTML(string=html_str, base_url=str(REPORTS_DIR)).write_pdf()
