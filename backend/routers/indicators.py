@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Any, List, Optional, Dict
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
 from backend.auth import get_current_user
@@ -138,7 +138,15 @@ def get_indicators(
     user: User = Depends(get_current_user),
 ):
     try:
-        indicators = db.query(Indicator).filter(Indicator.org_id == user.org_id).all()
+        # selectinload evita N+1: en vez de 1 query por indicador para leer
+        # metric_links (lazy load dentro de _indicator_to_dict), trae todos
+        # los links en una segunda query con WHERE id_indicator IN (...).
+        indicators = (
+            db.query(Indicator)
+            .options(selectinload(Indicator.metric_links))
+            .filter(Indicator.org_id == user.org_id)
+            .all()
+        )
         return [_indicator_to_dict(i) for i in indicators]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
