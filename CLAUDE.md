@@ -23,7 +23,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Entorno | Backend | DB | Frontend |
 |---|---|---|---|
 | **Local (WSL)** | `python backend/api.py` en conda env `rgenerator` | Docker PostgreSQL (`report_generator-db-1`) | `npm run dev` en `frontend/` |
-| **Producción** | Railway us-east4 (Docker, rama `main`) — `rgenerator-backend-production.up.railway.app` | Supabase PG17, región `sa-east-1` (São Paulo) | Pendiente |
+| **Producción** | Railway us-east4 (Docker, rama `main`) — `api.rgenerator.mgodoy.dev` | Supabase PG17 `us-east-1` (N. Virginia) — proyecto `rgenerator-us` | Railway, dominio `rgenerator.mgodoy.dev` |
 
 Detalle vivo del deploy en `DEPLOYMENT.md` y `memory/project_deploy_status.md`.
 
@@ -211,7 +211,7 @@ En Railway, `data/pipeline_runs/` y `data/output/` viven en un Volume montado al
 ## Deploy a Producción
 
 - **Backend**: Railway us-east4, sigue `main`. Auto-deploya en push. Dockerfile multi-stage target `prod`.
-- **DB**: Supabase PG17 `sa-east-1`. Conexión via `DATABASE_URL` configurada en Railway → Variables.
+- **DB**: Supabase PG17 `us-east-1` (proyecto `rgenerator-us`). Conexión via `DATABASE_URL` configurada en Railway → Variables. Migrada desde `sa-east-1` el 2026-05-19 para colocar DB y backend en la misma región (RTT 150 ms → 10 ms).
 - **Seed inicial / migraciones de specs**: correr `scripts/_oneshot/_seed_dashboards_v2.py` y `scripts/db_seed.py` desde el contenedor de prod o desde local apuntando al `DATABASE_URL` externo.
 - **Variables de entorno**: ver `DEPLOYMENT.md` para la lista completa. Copia local de referencia en `.env.railway` (gitignored).
 
