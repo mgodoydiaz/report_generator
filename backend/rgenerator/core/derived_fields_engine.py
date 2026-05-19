@@ -277,7 +277,13 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             return np.nan
         return slope_map.get((ev, float(tn)), np.nan)
 
-    df[name] = df.apply(_lookup, axis=1)
+    # Si df está vacío (p.ej. filtro previo dejó 0 filas), df.apply puede
+    # devolver un DataFrame en lugar de Series y romper la asignación.
+    # Asignamos NaN explícito y salimos.
+    if df.empty:
+        df[name] = np.nan
+    else:
+        df[name] = df.apply(_lookup, axis=1)
     df.drop(columns=["_value_num", "_time_num"], inplace=True)
     return df
 
@@ -342,12 +348,18 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             row[name] = delta_val
             delta_records.append(row)
 
-    deltas_df = pd.DataFrame(delta_records)
     # Si `name` ya existía en df (re-aplicación), drop antes del merge para
     # evitar que pandas rename a name_x / name_y.
     if name in df.columns:
         df = df.drop(columns=[name])
-    df = df.merge(deltas_df, on=entity_keys, how="left")
+    # Si no se generaron deltas (p.ej. df entrante vacío tras un filtro
+    # previo) el merge fallaría porque pd.DataFrame([]) no tiene las
+    # columnas de entity_keys. Devolvemos df con la columna name=NaN.
+    if not delta_records:
+        df[name] = np.nan
+    else:
+        deltas_df = pd.DataFrame(delta_records)
+        df = df.merge(deltas_df, on=entity_keys, how="left")
     df.drop(columns=["_value_num", "_time_num"], inplace=True)
     return df
 
