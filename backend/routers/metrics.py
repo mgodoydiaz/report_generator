@@ -102,7 +102,7 @@ def _metric_to_dict(m: Metric) -> dict:
 # --- Endpoints: Metrics Definitions ---
 
 @router.get("/")
-async def get_metrics(
+def get_metrics(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -114,7 +114,7 @@ async def get_metrics(
 
 
 @router.post("/")
-async def create_metric(
+def create_metric(
     metric: MetricCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -146,7 +146,7 @@ async def create_metric(
 
 
 @router.put("/{metric_id}")
-async def update_metric(
+def update_metric(
     metric_id: int,
     metric: MetricUpdate,
     db: Session = Depends(get_db),
@@ -186,7 +186,7 @@ async def update_metric(
 
 
 @router.delete("/{metric_id}")
-async def delete_metric(
+def delete_metric(
     metric_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -208,7 +208,7 @@ async def delete_metric(
 # --- Endpoints: Metric Data values ---
 
 @router.get("/{metric_id}/data")
-async def get_metric_data(
+def get_metric_data(
     metric_id: int,
     page: int = 1,
     page_size: int = 50,
@@ -272,7 +272,7 @@ async def get_metric_data(
 
 
 @router.post("/{metric_id}/data")
-async def add_metric_data_point(
+def add_metric_data_point(
     metric_id: int,
     point: MetricDataPoint,
     request: Request,
@@ -324,7 +324,7 @@ async def add_metric_data_point(
 
 
 @router.post("/{metric_id}/clear")
-async def clear_metric_data(
+def clear_metric_data(
     metric_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -352,7 +352,7 @@ async def clear_metric_data(
 
 
 @router.delete("/data/{data_id}")
-async def delete_data_point(
+def delete_data_point(
     data_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -378,7 +378,7 @@ async def delete_data_point(
 
 
 @router.put("/data/{data_id}")
-async def update_metric_data(
+def update_metric_data(
     data_id: int,
     point: MetricDataPoint,
     db: Session = Depends(get_db),
@@ -415,7 +415,7 @@ async def update_metric_data(
 
 
 @router.post("/data/batch-delete")
-async def delete_metric_data_batch(
+def delete_metric_data_batch(
     req: BatchDeleteRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -442,7 +442,7 @@ async def delete_metric_data_batch(
 
 
 @router.get("/{metric_id}/export")
-async def export_metric_data(
+def export_metric_data(
     metric_id: int,
     format: str = "excel",
     include_audit: bool = False,
@@ -535,7 +535,7 @@ async def export_metric_data(
 
 
 @router.get("/{metric_id}/distinct/{column}")
-async def get_metric_distinct_values(
+def get_metric_distinct_values(
     metric_id: int,
     column: str,
     db: Session = Depends(get_db),
@@ -584,7 +584,7 @@ async def get_metric_distinct_values(
 
 
 @router.get("/{metric_id}/template")
-async def get_metric_template(
+def get_metric_template(
     metric_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

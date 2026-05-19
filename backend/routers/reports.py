@@ -43,7 +43,7 @@ class ReportRequest(BaseModel):
 # ─────────────────────────────────────────────────────────────────────────
 
 @router.get("/tipos")
-async def listar_tipos(user: User = Depends(get_current_user)):
+def listar_tipos(user: User = Depends(get_current_user)):
     """Tipos de informe que el motor v2 puede generar.
 
     Cada tipo tiene un esquema declarativo en
@@ -57,7 +57,7 @@ async def listar_tipos(user: User = Depends(get_current_user)):
 
 
 @router.get("/charts")
-async def listar_charts(user: User = Depends(get_current_user)):
+def listar_charts(user: User = Depends(get_current_user)):
     """Lista las funciones de gráfico disponibles + sus metadatos.
 
     Útil para que el frontend ofrezca selector "agregar gráfico" en un
@@ -71,7 +71,7 @@ async def listar_charts(user: User = Depends(get_current_user)):
 
 
 @router.get("/tablas")
-async def listar_tablas(user: User = Depends(get_current_user)):
+def listar_tablas(user: User = Depends(get_current_user)):
     """Lista las funciones de tabla disponibles + sus metadatos."""
     from backend.rgenerator.reports.tables import TABLE_REGISTRY
     return {
@@ -85,7 +85,7 @@ async def listar_tablas(user: User = Depends(get_current_user)):
 # ─────────────────────────────────────────────────────────────────────────
 
 @router.post("/{tipo}")
-async def generar_reporte(
+def generar_reporte(
     tipo: str,
     body: ReportRequest,
     db: Session = Depends(get_db),

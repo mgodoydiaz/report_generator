@@ -29,6 +29,13 @@ frontend/package-lock.json
 # Credenciales
 aux_files/credentials.json
 
+# Coverage
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.pytest_cache/
+
 # Variables de entorno con secrets (nunca subir al repo)
 .env
 .env.local
