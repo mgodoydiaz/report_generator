@@ -125,7 +125,7 @@ def _indicator_to_dict(ind: Indicator) -> dict:
 # --- Endpoints ---
 
 @router.get("/export-pdf/engines")
-async def list_report_engines(
+def list_report_engines(
     user: User = Depends(get_current_user),
 ):
     """Lista los motores de informe PDF disponibles (para poblar el modal de generación)."""
@@ -133,7 +133,7 @@ async def list_report_engines(
 
 
 @router.get("/")
-async def get_indicators(
+def get_indicators(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -145,7 +145,7 @@ async def get_indicators(
 
 
 @router.post("/")
-async def create_indicator(
+def create_indicator(
     indicator: IndicatorCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -186,7 +186,7 @@ async def create_indicator(
 
 
 @router.put("/{indicator_id}")
-async def update_indicator(
+def update_indicator(
     indicator_id: int,
     indicator: IndicatorUpdate,
     db: Session = Depends(get_db),
@@ -252,7 +252,7 @@ class LayoutUpsert(BaseModel):
 
 
 @router.post("/{indicator_id}/layout")
-async def upsert_layout(
+def upsert_layout(
     indicator_id: int,
     body: LayoutUpsert,
     db: Session = Depends(get_db),
@@ -285,7 +285,7 @@ async def upsert_layout(
 
 
 @router.post("/{indicator_id}/export-pdf")
-async def export_pdf(
+def export_pdf(
     indicator_id: int,
     body: Optional[ExportPDFRequest] = None,
     db: Session = Depends(get_db),
@@ -403,7 +403,7 @@ async def export_pdf(
 
 
 @router.delete("/{indicator_id}")
-async def delete_indicator(
+def delete_indicator(
     indicator_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

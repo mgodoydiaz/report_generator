@@ -261,7 +261,7 @@ def _load_indicator_levels(db: Session, org_id: int, indicator_ids: List[int]) -
 
 
 @router.get("/", response_model=List[TableSummary])
-async def list_tables(
+def list_tables(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -270,7 +270,7 @@ async def list_tables(
 
 
 @router.post("/")
-async def create_table(
+def create_table(
     payload: TableCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -295,7 +295,7 @@ async def create_table(
 
 
 @router.get("/{table_id}")
-async def get_table(
+def get_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -305,7 +305,7 @@ async def get_table(
 
 
 @router.put("/{table_id}")
-async def update_table(
+def update_table(
     table_id: int,
     payload: TableUpdate,
     db: Session = Depends(get_db),
@@ -329,7 +329,7 @@ async def update_table(
 
 
 @router.delete("/{table_id}")
-async def delete_table(
+def delete_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -341,7 +341,7 @@ async def delete_table(
 
 
 @router.post("/{table_id}/duplicate")
-async def duplicate_table(
+def duplicate_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -546,7 +546,7 @@ def _render_table_data(
 
 
 @router.get("/{table_id}/data")
-async def get_table_data(
+def get_table_data(
     table_id: int,
     limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
@@ -583,7 +583,7 @@ class TablePreviewRequest(BaseModel):
 
 
 @router.post("/preview")
-async def preview_table_config(
+def preview_table_config(
     payload: "TablePreviewRequest",
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

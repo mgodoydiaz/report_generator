@@ -57,7 +57,7 @@ def _parse_json_field(value, default):
 
 
 @router.get("/indicator/{indicator_id}/data")
-async def get_indicator_data(
+def get_indicator_data(
     indicator_id: int,
     filters: Optional[str] = Query(None),
     db: Session = Depends(get_db),
