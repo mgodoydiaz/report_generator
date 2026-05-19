@@ -127,6 +127,14 @@ def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
 
     rows = db.query(MetricData).filter(MetricData.id_metric == metric_id).all()
 
+    # Parse de meta_json UNA sola vez fuera del loop: es invariante por métrica
+    # y antes se parseaba O(N) veces (una por row).
+    try:
+        meta = json.loads(metric.meta_json or "{}") if isinstance(metric.meta_json, str) else (metric.meta_json or {})
+    except Exception:
+        meta = {}
+    meta_fields = meta.get("fields", []) if isinstance(meta, dict) else []
+
     flat: List[Dict[str, Any]] = []
     for r in rows:
         item: Dict[str, Any] = {}
@@ -138,14 +146,13 @@ def _load_metric_to_df(db: Session, org_id: int, metric_id: int,
         for dim_id, name in dims_map.items():
             item[name] = dims_json.get(str(dim_id))
         # Valor (object → expandido a fields, simple → 1 columna)
-        meta = json.loads(metric.meta_json or "{}") if isinstance(metric.meta_json, str) else (metric.meta_json or {})
         val = r.value
         if metric.data_type == "object":
             try:
                 val_obj = json.loads(val) if isinstance(val, str) else val
             except Exception:
                 val_obj = {}
-            for f in meta.get("fields", []):
+            for f in meta_fields:
                 fname = f["name"]
                 item[fname] = val_obj.get(fname)
         else:
@@ -261,7 +268,7 @@ def _load_indicator_levels(db: Session, org_id: int, indicator_ids: List[int]) -
 
 
 @router.get("/", response_model=List[TableSummary])
-async def list_tables(
+def list_tables(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -270,7 +277,7 @@ async def list_tables(
 
 
 @router.post("/")
-async def create_table(
+def create_table(
     payload: TableCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -295,7 +302,7 @@ async def create_table(
 
 
 @router.get("/{table_id}")
-async def get_table(
+def get_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -305,7 +312,7 @@ async def get_table(
 
 
 @router.put("/{table_id}")
-async def update_table(
+def update_table(
     table_id: int,
     payload: TableUpdate,
     db: Session = Depends(get_db),
@@ -329,7 +336,7 @@ async def update_table(
 
 
 @router.delete("/{table_id}")
-async def delete_table(
+def delete_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -341,7 +348,7 @@ async def delete_table(
 
 
 @router.post("/{table_id}/duplicate")
-async def duplicate_table(
+def duplicate_table(
     table_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -546,7 +553,7 @@ def _render_table_data(
 
 
 @router.get("/{table_id}/data")
-async def get_table_data(
+def get_table_data(
     table_id: int,
     limit: int = Query(50, ge=1, le=2000),
     offset: int = Query(0, ge=0),
@@ -583,7 +590,7 @@ class TablePreviewRequest(BaseModel):
 
 
 @router.post("/preview")
-async def preview_table_config(
+def preview_table_config(
     payload: "TablePreviewRequest",
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

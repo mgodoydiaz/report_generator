@@ -566,7 +566,7 @@ def _render_chart_data(
 
 
 @router.get("/types")
-async def list_chart_types(user: User = Depends(get_current_user)):
+def list_chart_types(user: User = Depends(get_current_user)):
     """Devuelve la metadata de los tipos de gráfico disponibles. El
     frontend la usa para popular el selector y mostrar la lista de
     fields requeridos por tipo. Requiere autenticación (todos los
@@ -575,7 +575,7 @@ async def list_chart_types(user: User = Depends(get_current_user)):
 
 
 @router.get("/", response_model=List[ChartSummary])
-async def list_charts(
+def list_charts(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -586,7 +586,7 @@ async def list_charts(
 
 
 @router.post("/")
-async def create_chart(
+def create_chart(
     payload: ChartCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -611,7 +611,7 @@ async def create_chart(
 
 
 @router.get("/{chart_id}")
-async def get_chart(
+def get_chart(
     chart_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -621,7 +621,7 @@ async def get_chart(
 
 
 @router.put("/{chart_id}")
-async def update_chart(
+def update_chart(
     chart_id: int,
     payload: ChartUpdate,
     db: Session = Depends(get_db),
@@ -645,7 +645,7 @@ async def update_chart(
 
 
 @router.delete("/{chart_id}")
-async def delete_chart(
+def delete_chart(
     chart_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -657,7 +657,7 @@ async def delete_chart(
 
 
 @router.post("/{chart_id}/duplicate")
-async def duplicate_chart(
+def duplicate_chart(
     chart_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -678,7 +678,7 @@ async def duplicate_chart(
 
 
 @router.get("/{chart_id}/data")
-async def get_chart_data(
+def get_chart_data(
     chart_id: int,
     extra_filters: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -710,7 +710,7 @@ class ChartPreviewRequest(BaseModel):
 
 
 @router.post("/preview")
-async def preview_chart_config(
+def preview_chart_config(
     payload: ChartPreviewRequest,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),

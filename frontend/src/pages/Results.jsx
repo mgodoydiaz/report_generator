@@ -37,6 +37,10 @@ export default function Results() {
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
     const indicatorsRef = useRef([]); // ref para acceder a indicators sin crear dependencias reactivas
+    // Evita el doble-fetch al cambiar de indicador: loadIndicatorDims ya
+    // cargó la data sin filtros, y luego reseteamos selectedFilters a {} —
+    // ese reset NO debe disparar otra llamada idéntica vía useEffect[selectedFilters].
+    const skipNextFilterFetch = useRef(false);
 
     // ── Carga inicial ──
     useEffect(() => {
@@ -83,6 +87,7 @@ export default function Results() {
                 const result = await dataRes.json();
                 setIndicatorDims(result.dimensions || {});
                 setFilterDimensionIds(result.filter_dimensions || []);
+                skipNextFilterFetch.current = true;
                 setSelectedFilters({});
                 setCursoActivo(null);
                 setSubpruebaActiva(null);
@@ -116,8 +121,13 @@ export default function Results() {
     useEffect(() => {
         if (!selectedIndicator) return;
 
-        // No relanzar en el primer render cuando selectedFilters está vacío
-        // (la carga inicial ya se hizo sin filtros)
+        // Si el reset de filtros vino de cambiar de indicador, loadIndicatorDims
+        // ya cargó la data sin filtros — no relanzar la misma request.
+        if (skipNextFilterFetch.current) {
+            skipNextFilterFetch.current = false;
+            return;
+        }
+
         clearTimeout(debounceTimer.current);
         debounceTimer.current = setTimeout(() => {
             fetchDashboard(selectedIndicator, selectedFilters);

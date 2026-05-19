@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Any, List, Optional, Dict
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
 from backend.auth import get_current_user
@@ -125,7 +125,7 @@ def _indicator_to_dict(ind: Indicator) -> dict:
 # --- Endpoints ---
 
 @router.get("/export-pdf/engines")
-async def list_report_engines(
+def list_report_engines(
     user: User = Depends(get_current_user),
 ):
     """Lista los motores de informe PDF disponibles (para poblar el modal de generación)."""
@@ -133,19 +133,27 @@ async def list_report_engines(
 
 
 @router.get("/")
-async def get_indicators(
+def get_indicators(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     try:
-        indicators = db.query(Indicator).filter(Indicator.org_id == user.org_id).all()
+        # selectinload evita N+1: en vez de 1 query por indicador para leer
+        # metric_links (lazy load dentro de _indicator_to_dict), trae todos
+        # los links en una segunda query con WHERE id_indicator IN (...).
+        indicators = (
+            db.query(Indicator)
+            .options(selectinload(Indicator.metric_links))
+            .filter(Indicator.org_id == user.org_id)
+            .all()
+        )
         return [_indicator_to_dict(i) for i in indicators]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/")
-async def create_indicator(
+def create_indicator(
     indicator: IndicatorCreate,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -186,7 +194,7 @@ async def create_indicator(
 
 
 @router.put("/{indicator_id}")
-async def update_indicator(
+def update_indicator(
     indicator_id: int,
     indicator: IndicatorUpdate,
     db: Session = Depends(get_db),
@@ -252,7 +260,7 @@ class LayoutUpsert(BaseModel):
 
 
 @router.post("/{indicator_id}/layout")
-async def upsert_layout(
+def upsert_layout(
     indicator_id: int,
     body: LayoutUpsert,
     db: Session = Depends(get_db),
@@ -285,7 +293,7 @@ async def upsert_layout(
 
 
 @router.post("/{indicator_id}/export-pdf")
-async def export_pdf(
+def export_pdf(
     indicator_id: int,
     body: Optional[ExportPDFRequest] = None,
     db: Session = Depends(get_db),
@@ -403,7 +411,7 @@ async def export_pdf(
 
 
 @router.delete("/{indicator_id}")
-async def delete_indicator(
+def delete_indicator(
     indicator_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
