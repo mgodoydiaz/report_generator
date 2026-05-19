@@ -294,6 +294,16 @@ def get_indicator_data(
                 # Falla en derived_columns no debe romper el endpoint completo.
                 traceback.print_exc()
 
+        # Snapshot de dimensions_json ANTES del filtrado — necesario para el
+        # cascading del paso 7.5. Evita re-querying la BD (que era N queries
+        # extra, una por métrica) reusando lo ya cargado en el paso 6.
+        all_dims_by_metric = None
+        if dim_filters:
+            all_dims_by_metric = {
+                mid: [item.get("dimensions_json", {}) for item in items]
+                for mid, items in data_by_metric.items()
+            }
+
         # 7. Apply dimension filters (single-value o multi-valor con list)
         # B9: si fv es list/tuple, hace IN; si es str, igualdad. Permite
         # filtros multi-select desde el frontend ({Curso: ["II A", "II B"]}).
@@ -317,28 +327,14 @@ def get_indicator_data(
         # (ej: si Año=2026, Asignatura solo lista las asignaturas que
         # existen en 2026), sin que el dropdown de Año pierda sus opciones
         # al estar él mismo filtrado.
-        if dim_filters:
-            # Re-cargar todos los rows de las metrics involucradas (sin
-            # filtrar) para tener el universo completo. Esto es ligeramente
-            # redundante con el paso 6 que ya cargó todo, pero allí se
-            # mutó data_by_metric ya filtrado en el paso 7. Mantenemos una
-            # estructura aparte para no costar memoria adicional grande.
-            all_rows_by_metric = {}
-            for mid in metric_ids:
-                rows = db.query(MetricData.dimensions_json).filter(
-                    MetricData.id_metric == mid
-                ).all()
-                all_rows_by_metric[mid] = [
-                    _parse_json_field(r[0], {}) for r in rows
-                ]
-
+        if dim_filters and all_dims_by_metric is not None:
             for dim_key in list(dims_map.keys()):
                 # Filtros activos sin el de la dimensión D
                 other_filters = {
                     fk: fv for fk, fv in dim_filters.items() if str(fk) != str(dim_key)
                 }
                 values_acc = set()
-                for mid, dims_list in all_rows_by_metric.items():
+                for mid, dims_list in all_dims_by_metric.items():
                     for djson in dims_list:
                         if not all(
                             _matches(djson.get(fk, ""), fv)
