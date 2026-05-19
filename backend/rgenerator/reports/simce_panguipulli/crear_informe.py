@@ -47,11 +47,18 @@ def construir(
         Bytes del PDF generado.
     """
     # Filtrar por asignatura. Soportamos que la columna no exista (en cuyo caso
-    # se usa todo el dataset).
+    # se usa todo el dataset). Comparación case-insensitive — BD usa
+    # "Lenguaje"/"Matemáticas" pero el default y los filtros pueden venir en
+    # otro casing.
+    _asig_norm = str(asignatura).strip().casefold()
     if "Asignatura" in df_estudiantes.columns:
-        df_estudiantes = df_estudiantes[df_estudiantes["Asignatura"] == asignatura].copy()
+        df_estudiantes = df_estudiantes[
+            df_estudiantes["Asignatura"].astype(str).str.strip().str.casefold() == _asig_norm
+        ].copy()
     if "Asignatura" in df_habilidad.columns:
-        df_habilidad = df_habilidad[df_habilidad["Asignatura"] == asignatura].copy()
+        df_habilidad = df_habilidad[
+            df_habilidad["Asignatura"].astype(str).str.strip().str.casefold() == _asig_norm
+        ].copy()
 
     # Aplicar derived_fields ANTES del filtro a una sola prueba — slope/delta
     # necesitan ver todo el histórico del estudiante. Las columnas derivadas

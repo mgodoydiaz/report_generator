@@ -58,10 +58,17 @@ def construir(
     # de columnas (DB del proyecto usa "N Prueba" con espacio, no
     # "Numero_Prueba"). Si la columna del nº de prueba no existe o todos
     # sus valores son null, no filtra (usa todo el dataset).
+    # Comparación case-insensitive: la BD tiene "Lenguaje"/"Matemáticas"
+    # pero el default y los filtros pueden venir en otro casing.
+    _asig_norm = str(asignatura).strip().casefold()
     if "Asignatura" in df_estudiantes.columns:
-        df_estudiantes = df_estudiantes[df_estudiantes["Asignatura"] == asignatura].copy()
+        df_estudiantes = df_estudiantes[
+            df_estudiantes["Asignatura"].astype(str).str.strip().str.casefold() == _asig_norm
+        ].copy()
     if "Asignatura" in df_preguntas.columns:
-        df_preguntas = df_preguntas[df_preguntas["Asignatura"] == asignatura].copy()
+        df_preguntas = df_preguntas[
+            df_preguntas["Asignatura"].astype(str).str.strip().str.casefold() == _asig_norm
+        ].copy()
 
     # Aplicar derived_fields ANTES del filtro a una sola prueba. slope/delta
     # necesitan ver todas las pruebas del estudiante para calcular. El df ya
