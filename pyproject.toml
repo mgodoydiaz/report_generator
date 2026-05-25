@@ -47,3 +47,37 @@ include = ["rgenerator", "rgenerator.*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "rgenerator._version.__version__"}
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Coverage config (pytest-cov lee esto)
+# ─────────────────────────────────────────────────────────────────────────
+
+[tool.coverage.run]
+source = ["backend"]
+# Archivos que no son módulos de producción — su 0% de cobertura sería
+# ruido. Si alguno se vuelve relevante en el futuro, removerlo de aquí.
+omit = [
+    "backend/test_eval.py",            # scratch experimental para eval() con pandas
+    "backend/read_pipe.py",            # script one-shot de migración XLSX→JSON
+    "backend/init_indicators_db.py",   # bootstrap legacy pre-DB con path Windows hardcoded
+    "backend/cli.py",                  # CLI admin, no se invoca desde tests
+    "backend/__main__.py",
+    # Tests mismos no deberían contar
+    "*/tests/*",
+    # Migrations Alembic (autogeneradas, sin valor de testing)
+    "*/alembic/*",
+    "*/migrations/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+# Líneas que cuentan como "cubiertas si nadie las llama" — el reporte
+# las muestra como omitidas en lugar de no-cubiertas.
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
