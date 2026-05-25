@@ -2,7 +2,7 @@
 
 Plan y convenciones de testing para Report Generator.
 
-> **CI**: por ahora se corre **localmente** (no hay GitHub Action). Cuando el setup esté maduro se podrá portar.
+> **CI**: corre en **local** vía git hook `pre-push` (no GitHub Actions). La suite "not slow" toma ~11s en local vs varios minutos en un runner remoto que tiene que armar la env conda desde cero. Activar el hook una sola vez con `git config core.hooksPath .githooks`.
 
 ---
 
@@ -121,12 +121,12 @@ Tests que **fallarían sin el fix correspondiente**:
 
 Orden de prioridad:
 
-1. **`auth.py`** — JWT, bcrypt, expiración, `get_current_user`
-2. **`/api/indicators`** — CRUD + multi-tenancy 401/403
-3. **`/api/results/indicator/{id}/data`** — el más complejo: filtros, cascading, derived_fields, paso 7.5
-4. **`/api/reports/{tipo}`** — PDF v2 (verificar generación sin crash, validar headers HTTP)
-5. **`/api/metrics`** + `/api/metrics/{id}/data` — CRUD + import + paginación
-6. **`/api/charts`** + `/api/tables` — render dataset, Pydantic schemas
+1. **`auth.py`** — JWT, bcrypt, expiración, `get_current_user` ✅ (100% cov)
+2. **`/api/indicators`** — CRUD + multi-tenancy 401/403 (54% cov)
+3. **`/api/results/indicator/{id}/data`** — el más complejo: filtros, cascading, derived_fields, paso 7.5 (54% cov)
+4. **`/api/reports/{tipo}`** — PDF v2 (verificar generación sin crash, validar headers HTTP) (56% cov)
+5. **`/api/metrics`** + `/api/metrics/{id}/data` — CRUD + import + paginación (23% cov)
+6. **`/api/charts`** + `/api/tables` — render dataset, Pydantic schemas ✅ charts 82% (Sprint 2)
 
 Patrón por endpoint: `test_success`, `test_404`, `test_403_other_org`, `test_validation_error`, `test_edge_case_empty_data`.
 
@@ -160,16 +160,34 @@ Patrón por endpoint: `test_success`, `test_404`, `test_403_other_org`, `test_va
 
 ---
 
-## Local "CI" recomendado
+## CI local con `pre-push` hook
 
-Sin GitHub Action, lo más simple:
+Setup one-time (cada clon nuevo del repo):
 
 ```bash
-# Antes de mergear a main, correr:
-pytest -q && echo "✅ ready to merge"
+git config core.hooksPath .githooks
 ```
 
-Si querés un pre-commit hook automático:
+Eso le dice a git que use los hooks versionados en [`.githooks/`](.githooks/) en lugar del default `.git/hooks/` (que es local, no versionado). El hook [`.githooks/pre-push`](.githooks/pre-push) corre:
+
+```bash
+pytest -q -m "not slow"
+```
+
+antes de cada `git push`. Si algún test falla, el push se aborta y muestra el output.
+
+**Bypass de emergencia** (cuando sabes lo que haces — bug en CI, push de docs sin código, etc.):
+
+```bash
+git push --no-verify
+```
+
+**Por qué local y no GitHub Actions**:
+- 11s en local vs ~5min en un runner remoto que arma la env conda desde cero.
+- No depende de minutos de GitHub Actions ni de su disponibilidad.
+- El feedback es inmediato: si los tests fallan, los ves antes que tu push llegue a un PR.
+
+**Alternativa más estricta — pre-commit hook** (corre en cada commit, no en push):
 
 ```yaml
 # .pre-commit-config.yaml
@@ -186,6 +204,16 @@ repos:
 ```bash
 pip install pre-commit && pre-commit install
 ```
+
+## Configuración de coverage
+
+[`pyproject.toml`](./pyproject.toml) tiene `[tool.coverage.run]` y `[tool.coverage.report]`. Archivos omitidos del cálculo (scratchpads y scripts legacy que ensucian el reporte sin valor de testing):
+
+- `backend/test_eval.py` — scratch para `eval()` con pandas
+- `backend/read_pipe.py` — script one-shot XLSX→JSON
+- `backend/init_indicators_db.py` — bootstrap legacy con path Windows hardcoded
+- `backend/cli.py`, `backend/__main__.py`
+- `*/alembic/*`, `*/migrations/*`
 
 ---
 
