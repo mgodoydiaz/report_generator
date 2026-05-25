@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+# Git pre-push hook — corre la suite de tests "not slow" antes de cada
+# `git push`. Si algún test falla, el push se aborta.
+#
+# Setup (una sola vez por clon del repo):
+#     git config core.hooksPath .githooks
+#
+# Bypass de emergencia (con justificación):
+#     git push --no-verify
+#
+# Convenciones:
+#  - Salta limpio si conda no está disponible (entornos minimalistas).
+#  - Activa la env `rgenerator` automáticamente si miniconda está instalada
+#    en una ubicación estándar de Linux/WSL o Windows.
+#  - Salida verbosa: -v para que se vean los nombres de los tests.
+set -euo pipefail
+
+# Color codes (saltea si la terminal no soporta tput)
+if command -v tput >/dev/null 2>&1 && [ -t 1 ]; then
+    GREEN=$(tput setaf 2); RED=$(tput setaf 1); YELLOW=$(tput setaf 3); RESET=$(tput sgr0)
+else
+    GREEN=""; RED=""; YELLOW=""; RESET=""
+fi
+
+echo "${YELLOW}[pre-push]${RESET} corriendo pytest -q -m 'not slow' antes del push…"
+
+# Detectar conda en ubicaciones típicas (orden: PATH, miniconda3, anaconda3)
+if command -v conda >/dev/null 2>&1; then
+    CONDA_BASE="$(conda info --base 2>/dev/null || true)"
+elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/miniconda3"
+elif [ -f "$HOME/anaconda3/etc/profile.d/conda.sh" ]; then
+    CONDA_BASE="$HOME/anaconda3"
+else
+    CONDA_BASE=""
+fi
+
+if [ -n "${CONDA_BASE}" ] && [ -f "${CONDA_BASE}/etc/profile.d/conda.sh" ]; then
+    # shellcheck disable=SC1091
+    source "${CONDA_BASE}/etc/profile.d/conda.sh"
+    conda activate rgenerator
+elif ! command -v pytest >/dev/null 2>&1; then
+    echo "${RED}[pre-push]${RESET} no se encontró pytest ni la env conda 'rgenerator'."
+    echo "  Instala miniconda + 'conda env create -f environment.yml', o salta el hook con --no-verify."
+    exit 1
+fi
+
+# Correr la suite. -q (quiet) imprime un punto por test; -m "not slow"
+# excluye los marcadores @pytest.mark.slow (PDFs, ETL pesado).
+if pytest -q -m "not slow"; then
+    echo "${GREEN}[pre-push] ✅ todos los tests pasaron${RESET}"
+    exit 0
+else
+    echo "${RED}[pre-push] ❌ tests fallidos — push abortado${RESET}"
+    echo "  Para bypass de emergencia: git push --no-verify"
+    exit 1
+fi
