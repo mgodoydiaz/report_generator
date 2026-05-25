@@ -125,8 +125,9 @@ Orden de prioridad:
 2. **`/api/indicators`** — CRUD + multi-tenancy 401/403 (54% cov)
 3. **`/api/results/indicator/{id}/data`** — el más complejo: filtros, cascading, derived_fields, paso 7.5 (54% cov)
 4. **`/api/reports/{tipo}`** — PDF v2 (verificar generación sin crash, validar headers HTTP) (56% cov)
-5. **`/api/metrics`** + `/api/metrics/{id}/data` — CRUD + import + paginación (23% cov)
-6. **`/api/charts`** + `/api/tables` — render dataset, Pydantic schemas ✅ charts 82% (Sprint 2)
+5. **`/api/metrics`** + `/api/metrics/{id}/data` — CRUD + import + paginación ✅ 66% (Sprint 5, falta `/import` con multipart upload)
+6. **`/api/charts`** + `/api/tables` — render dataset, Pydantic schemas ✅ charts 82% (Sprint 2), tables 76% (Sprint 5)
+7. **`/api/pipelines`** — CRUD + config (Sprint 5 → 41%, falta cubrir endpoints de ejecución que requieren PipelineRunner activo en memoria)
 
 Patrón por endpoint: `test_success`, `test_404`, `test_403_other_org`, `test_validation_error`, `test_edge_case_empty_data`.
 
