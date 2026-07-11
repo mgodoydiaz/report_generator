@@ -103,3 +103,4 @@ data/input/emn_panguipulli/
 # Imágenes temporales en raíz (debug, screenshots descartables).
 /tmp_img_*.png
 /inspect_*.png
+graphify-out/
