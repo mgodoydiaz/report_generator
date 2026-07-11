@@ -81,6 +81,88 @@ def listar_tablas(user: User = Depends(get_current_user)):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Informes Word (docxtpl) — registro por nombre de archivo
+# ─────────────────────────────────────────────────────────────────────────
+
+class WordReportRequest(BaseModel):
+    """Request body para POST /api/reports/word/{nombre}."""
+    indicator_id: int
+    filtros: dict[str, Any] | None = None
+    params: dict[str, Any] | None = None  # llegan a construir_contexto del informe
+
+
+@router.get("/word/informes")
+def listar_informes_word(user: User = Depends(get_current_user)):
+    """Informes Word registrados (un módulo Python por informe).
+
+    El campo `nombre` es el identificador para POST /api/reports/word/{nombre}.
+    """
+    from backend.rgenerator.reports import word as word_reports
+    return word_reports.listar_informes()
+
+
+@router.get("/word/informes/{nombre}/placeholders")
+def placeholders_informe_word(nombre: str, user: User = Depends(get_current_user)):
+    """Códigos {{valor}} que la plantilla Word del informe espera."""
+    from backend.rgenerator.reports import word as word_reports
+    try:
+        modulo = word_reports.obtener_modulo(nombre)
+        return {"nombre": nombre, "placeholders": word_reports.listar_placeholders(modulo)}
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+
+
+@router.post("/word/{nombre}")
+def generar_informe_word(
+    nombre: str,
+    body: WordReportRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Genera el informe Word `nombre` con datos del Indicator.
+
+    El nombre asocia directamente al archivo
+    `backend/rgenerator/reports/word/informes/<nombre>.py` y su plantilla
+    `templates/<nombre>.docx`. Devuelve el .docx binario.
+    """
+    from backend.rgenerator.reports import word as word_reports
+
+    try:
+        modulo = word_reports.obtener_modulo(nombre)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+    try:
+        dataframes = cargar_dataframes_indicator(
+            db,
+            indicator_id=body.indicator_id,
+            org_id=user.org_id,
+            filtros=body.filtros or {},
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, f"Error cargando datos: {type(e).__name__}: {e}")
+
+    try:
+        docx_bytes = word_reports.render_informe(modulo, dataframes, body.params)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(500, f"Error generando Word: {type(e).__name__}: {e}")
+
+    return Response(
+        content=docx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={"Content-Disposition": f'attachment; filename="informe_{nombre}.docx"'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Generación de PDF
 # ─────────────────────────────────────────────────────────────────────────
 
