@@ -1,5 +1,11 @@
 # Plan: tablas y gráficos modulares (Python + JavaScript)
 
+> **NOTA (2026-07-11)**: este plan fue absorbido como workstream **W3** del
+> [Plan Maestro de Arquitectura](./plan_maestro_arquitectura.md), que lo
+> actualiza con la visión completa (multi-pivote, agentes IA, móvil, ingesta
+> API). Usar el plan maestro como referencia de secuenciación; este documento
+> queda como detalle técnico de las fases F0-F4.
+
 Fecha: 2026-07-11 · Basado en el recorrido con agentes sobre la rama `dev`.
 
 ## Diagnóstico (estado actual)
