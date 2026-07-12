@@ -209,3 +209,20 @@ def client_auth(client, auth_headers):
     """TestClient con headers Authorization pre-cargados — atajo cómodo."""
     client.headers.update(auth_headers)
     return client
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Rate limiter de login — estado global in-memory que NO debe filtrar
+# fallos entre tests (varios tests hacen logins inválidos a propósito).
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _reset_login_limiters():
+    yield
+    try:
+        from backend.routers import auth as auth_router
+        auth_router._limiter_cuenta.clear()
+        auth_router._limiter_ip.clear()
+    except ImportError:
+        pass

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import shutil
 import time
 from datetime import datetime
@@ -44,6 +45,13 @@ ACTIVE_RUNNERS: Dict[RunnerKey, PipelineRunner] = {}
 _RUNNER_LAST_ACTIVITY: Dict[RunnerKey, float] = {}
 
 RUNNER_TTL_SECONDS = 30 * 60  # 30 minutos
+
+# ─── Límites de upload ───────────────────────────────────────────────────
+# input_key viene de un Form y se usa como nombre de directorio: solo
+# identificadores simples (los roles reales son "estudiantes", "preguntas",
+# etc.). Cualquier otra cosa (../, /, espacios raros) se rechaza.
+_INPUT_KEY_RE = re.compile(r"^[A-Za-z0-9_\-]{1,64}$")
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
 
 def _key(user: User, pipeline_id: int) -> RunnerKey:
@@ -137,17 +145,45 @@ async def upload_pipeline_files(
         if not row:
             return {"error": "Pipeline no encontrado"}
 
+        # input_key y filename se usan para construir paths: sanitizar
+        # SIEMPRE (path traversal). El nombre se reduce a su basename y el
+        # path final debe quedar dentro del upload_dir.
+        if not _INPUT_KEY_RE.match(input_key or ""):
+            return {"error": f"input_key inválido: {input_key!r}"}
+
         upload_dir = UPLOADS_DIR / str(pipeline_id) / input_key
         if upload_dir.exists():
             shutil.rmtree(upload_dir)
         upload_dir.mkdir(parents=True, exist_ok=True)
+        upload_root = upload_dir.resolve()
 
         saved_files = []
         for file in files:
-            file_path = upload_dir / file.filename
+            safe_name = Path(file.filename or "").name.strip()
+            if not safe_name or safe_name in (".", ".."):
+                return {"error": f"Nombre de archivo inválido: {file.filename!r}"}
+            file_path = (upload_dir / safe_name).resolve()
+            if upload_root not in file_path.parents:
+                return {"error": f"Nombre de archivo inválido: {file.filename!r}"}
+
+            # Copia por chunks con límite de tamaño (evita cargar archivos
+            # gigantes: DoS por memoria/disco).
+            size = 0
+            excede = False
             with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(file.file, buffer)
-            saved_files.append(file.filename)
+                while chunk := file.file.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > MAX_UPLOAD_BYTES:
+                        excede = True
+                        break
+                    buffer.write(chunk)
+            if excede:
+                file_path.unlink(missing_ok=True)
+                return {"error": (
+                    f"Archivo '{safe_name}' supera el máximo de "
+                    f"{MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+                )}
+            saved_files.append(safe_name)
 
         return {
             "status": "success",
@@ -183,6 +219,9 @@ async def execute_pipeline(
             ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
 
         runner = ACTIVE_RUNNERS[key]
+        # El runner puede venir cacheado de un request anterior cuya sesión
+        # DB ya fue cerrada por get_db(). Siempre inyectar la sesión fresca.
+        runner.refresh_db(db)
         _touch_runner(key)
         results = runner.run_all()
         _touch_runner(key)
@@ -218,6 +257,8 @@ async def submit_pipeline_input(
             return {"error": "La sesión del pipeline no está activa."}
 
         runner = ACTIVE_RUNNERS[key]
+        # Sesión fresca: la del request que creó el runner ya está cerrada.
+        runner.refresh_db(db)
         _touch_runner(key)
 
         if input_data.get("type") == "enrich_per_file":
@@ -274,6 +315,8 @@ async def execute_pipeline_step(
             ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
 
         runner = ACTIVE_RUNNERS[key]
+        # Sesión fresca: la del request que creó el runner ya está cerrada.
+        runner.refresh_db(db)
         _touch_runner(key)
         result = runner.step()
         _touch_runner(key)

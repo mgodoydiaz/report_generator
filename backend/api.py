@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
@@ -15,10 +16,22 @@ from backend.database import init_db
 
 app = FastAPI()
 
-# Configurar CORS
+# Configurar CORS. Orígenes explícitos: "*" + allow_credentials es una
+# combinación inválida para los navegadores y abre la API a cualquier
+# sitio. Sobreescribir con CORS_ORIGINS (coma-separado) en cada entorno.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "https://rgenerator.mgodoy.dev"
+)
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -36,3 +36,4 @@ docxtpl
 docx2pdf
 weasyprint
 jinja2
+simpleeval

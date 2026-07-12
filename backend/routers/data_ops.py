@@ -30,6 +30,7 @@ from backend.auth import get_current_user
 from backend.database import get_db
 from backend.models import Dimension, Metric, MetricData, MetricDimension, Spec, User
 from backend.routers.mappings import apply_mapping
+from backend.routers.tables import invalidate_metric_df_cache
 from backend.schemas_mapping import MappingConfig
 
 router = APIRouter(prefix="/api/data-ops", tags=["data-ops"])
@@ -279,6 +280,7 @@ async def replace_values(
 
     if not payload.dry_run:
         db.commit()
+        invalidate_metric_df_cache(metric.id_metric)
 
     return {
         "n_total_rows": len(rows),
@@ -371,6 +373,7 @@ async def recalculate_column(
 
     if not payload.dry_run:
         db.commit()
+        invalidate_metric_df_cache(metric.id_metric)
 
     return {
         "n_total_rows": len(rows),

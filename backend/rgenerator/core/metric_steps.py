@@ -168,6 +168,16 @@ class SaveToMetric(Step):
         else:
             print(f"[{self.name}] No se generaron registros nuevos.")
 
+        # Invalidar el cache de DataFrames del router de tablas: sin esto los
+        # dashboards siguen sirviendo datos pre-ETL hasta que expire el TTL.
+        # Import lazy para no acoplar rgenerator → backend.routers en import time.
+        if self.clear_existing or new_data_points:
+            try:
+                from backend.routers.tables import invalidate_metric_df_cache
+                invalidate_metric_df_cache(self.metric_id)
+            except ImportError:
+                pass  # rgenerator usado standalone (CLI sin backend completo)
+
 
 class LoadMetricToDF(Step):
     """

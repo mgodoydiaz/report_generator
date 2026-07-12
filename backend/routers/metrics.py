@@ -13,6 +13,7 @@ from backend.database import get_db
 from backend.auth import get_current_user
 from backend.auditing import client_ip, make_metric_data
 from backend.models import User, Metric, MetricDimension, MetricData, Dimension
+from backend.routers.tables import invalidate_metric_df_cache
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -199,6 +200,7 @@ def delete_metric(
         if record:
             db.delete(record)  # cascade deletes MetricDimension, MetricData
             db.commit()
+            invalidate_metric_df_cache(metric_id)
         return {"status": "success"}
     except Exception as e:
         db.rollback()
@@ -305,6 +307,7 @@ def add_metric_data_point(
         db.add(new_dp)
         db.commit()
         db.refresh(new_dp)
+        invalidate_metric_df_cache(metric_id)
 
         return {
             "status": "success",
@@ -343,6 +346,7 @@ def clear_metric_data(
             .delete(synchronize_session=False)
         )
         db.commit()
+        invalidate_metric_df_cache(metric_id)
         return {"status": "success", "cleared_count": deleted}
     except HTTPException:
         raise
@@ -369,6 +373,7 @@ def delete_data_point(
                 raise HTTPException(status_code=403, detail="Acceso denegado")
             db.delete(record)
             db.commit()
+            invalidate_metric_df_cache(metric.id_metric)
         return {"status": "success"}
     except HTTPException:
         raise
@@ -406,6 +411,7 @@ def update_metric_data(
         record.value = final_val
         record.dimensions_json = json.dumps(point.dimensions_json) if isinstance(point.dimensions_json, dict) else point.dimensions_json
         db.commit()
+        invalidate_metric_df_cache(metric.id_metric)
         return {"status": "success", "id_data": data_id}
     except HTTPException:
         raise
@@ -426,6 +432,17 @@ def delete_metric_data_batch(
             m.id_metric
             for m in db.query(Metric.id_metric).filter(Metric.org_id == user.org_id).all()
         ]
+        # Métricas afectadas ANTES del delete, para invalidar su cache
+        afectadas = {
+            r[0]
+            for r in db.query(MetricData.id_metric)
+            .filter(
+                MetricData.id_data.in_(req.ids),
+                MetricData.id_metric.in_(org_metric_ids),
+            )
+            .distinct()
+            .all()
+        }
         deleted = (
             db.query(MetricData)
             .filter(
@@ -435,6 +452,8 @@ def delete_metric_data_batch(
             .delete(synchronize_session=False)
         )
         db.commit()
+        for mid in afectadas:
+            invalidate_metric_df_cache(mid)
         return {"status": "success", "deleted_count": deleted}
     except Exception as e:
         db.rollback()
@@ -726,6 +745,7 @@ async def import_metric_data(
         if new_data_points:
             db.add_all(new_data_points)
             db.commit()
+            invalidate_metric_df_cache(metric_id)
 
         return {"status": "success", "imported": len(new_data_points)}
     except HTTPException:
