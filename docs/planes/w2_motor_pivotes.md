@@ -148,3 +148,98 @@ tabla del dashboard antes/después de la migración — mismos números, mismo l
    depende hasta que esto esté verde. (Opus — correctitud matemática crítica.)
 2. **W2-B**: los tres consumidores + migración del pivote existente + tests de
    integración y paridad. (Sobre el motor ya probado.)
+
+---
+
+## Estado de implementación — PARTE B1 (consumidores backend + migración)
+
+Hecho sobre el motor ya probado (PARTE A). Todo lo de W2-B1 usa el mismo
+`pivot(df, spec)` → una sola fuente de verdad.
+
+### Consumidores cableados
+
+1. **Dashboard web** — `backend/routers/tables.py`.
+   Una `TableConfig` gana el campo opcional `pivot: PivotSpec`
+   (`backend/schemas_table.py`). Si está definido:
+   - `GET /api/tables/{id}/data` y `POST /api/tables/preview` devuelven el
+     `PivotResult` en vez de la respuesta tabular clásica. **Forma exacta**:
+     ```json
+     {
+       "mode": "pivot",
+       "pivot": { /* PivotResult.model_dump(mode="json") */ },
+       "n_rows": 120
+     }
+     ```
+     Cuando `pivot` es `None` la respuesta tabular clásica
+     (`{columns, rows, total_rows, limit, offset}`) queda intacta — sin
+     regresión para las tablas existentes.
+   - El `data_source` (metric_id + filters + derived_fields_override) se usa
+     igual para cargar el df; el `PivotSpec` opera sobre ese df ya cargado.
+     Las `columns`/`behavior` clásicas se ignoran en modo pivote.
+
+2. **Informe PDF v2** — `backend/rgenerator/reports/`.
+   - `tables.py`: nueva fn `tabla_pivote(df, spec, filtro=None, **params)`
+     registrada en `TABLE_REGISTRY`. Envuelve
+     `pivot_to_dataframe(pivot(df, spec))`. `filtro={campo: valor}`
+     pre-filtra el df (para pivotes por curso/categoría).
+   - `runtime.py`: nuevo tipo de sección `"pivot"` (azúcar sobre
+     `tabla_pivote`): la sección declara `spec` (un PivotSpec) y opcional
+     `filtro`. También funciona la vía `{"tipo": "table", "fn":
+     "tabla_pivote", "params": {"spec": {...}}}`.
+   - **Multi-pivote**: varias secciones `pivot`. **Pivote por curso**: usar
+     las secciones dinámicas (`iterar_por`) + `filtro={"Curso": "{curso}"}`
+     — la interpolación `{curso}` del runtime concreta el valor por iteración.
+
+3. **Export Excel** — `GET /api/tables/{id}/export-pivot`
+   (`backend/routers/tables.py`). Corre el motor sobre el df de la tabla
+   (modo pivote) y devuelve un `.xlsx` (openpyxl) con **valores crudos** y
+   `number_format` derivado del `format` del spec (`.1%`→`0.0%`,
+   `.2f`→`0.00`, count→`0`). Auth JWT + multi-tenant por `org_id` (404
+   cross-org). 400 si la tabla no está en modo pivote.
+
+### Contrato para la PARTE B2 (frontend)
+
+- **Cómo el usuario declara un pivote**: en el editor de tablas, setear el
+  campo `pivot` de la `TableConfig` con un `PivotSpec`
+  (`rows`, `cols`, `values:[{field, agg, label, format}]`, `totals`,
+  `order`, `fill_value`, `total_label`). Si `pivot` está presente la tabla
+  es un pivote; si es `null` es tabular clásica.
+- **Endpoint a consumir**: `GET /api/tables/{id}/data` (o `POST
+  /api/tables/preview` con la config en el body). Respuesta con
+  `{"mode": "pivot", "pivot": <PivotResult>, "n_rows"}`.
+- **Forma del `PivotResult`** (ver `pivot_engine.py`): `row_fields`,
+  `col_fields`, `columns:[{keys, field, agg, label, is_total}]`,
+  `rows:[{keys, cells:[{value, display}], is_total}]`, `meta`. `cells[i]`
+  está alineada posicionalmente con `columns[i]`. `value` = número crudo (o
+  `null`); `display` = string ya formateado.
+- **Descarga Excel**: `GET /api/tables/{id}/export-pivot`.
+
+### Migración del pivote existente
+
+- **`_table_section` PivotTable (PDF v1)** — `report_steps.py`: MIGRADO.
+  Ahora delega la agregación en `pivot_engine` vía el helper
+  `_pivot_table_via_engine`, conservando byte-a-byte el formato de salida
+  histórico (`{columns, rows}`, orden lexicográfico, 2 decimales, conteo
+  entero, "—"). Regresión fijada con snapshot en
+  `tests/steps/test_pivot_migration.py`.
+
+- **`pivot_matrix` chart_type (`charts.py _build_dataset`)** — **NO
+  migrado (TODO justificado)**. `pivot_matrix` no es un pivote numérico:
+  cada celda es un **valor categórico** ("primer" `Nivel de Riesgo` por
+  combinación) que luego se colorea según `achievement_levels`. El motor
+  W2 produce **agregaciones numéricas** (`PivotCell.value: Optional[float]`)
+  y no puede representar celdas string sin cambiar su firma/tests (fuera de
+  alcance por instrucción). Es un "roster matrix", concepto distinto al
+  pivote de este workstream. Se deja como está, con este TODO citando el
+  diseño; migrarlo requeriría extender el contrato del motor con un modo
+  categórico/`first` — evaluar en un workstream aparte.
+
+### Tests
+
+- `tests/routers/test_pivot_endpoints.py` — integración de los 3
+  consumidores (dashboard PivotResult, Excel .xlsx válido, PDF v2 bytes sin
+  `{{`), paridad de números entre los tres, y multi-tenant (404 cross-org).
+- `tests/steps/test_pivot_migration.py` — regresión del PivotTable v1
+  (snapshot pre-migración).
+- Suite completa: **703 passed, 3 skipped** (`pytest -q -m "not slow"`),
+  cero regresiones sobre la base de 685.

@@ -644,6 +644,111 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
     return base64.b64encode(buf.read()).decode()
 
 
+def _pivot_table_via_engine(records: list[dict], row_fields: list,
+                            col_fields: list, values_cfg: list) -> dict:
+    """PivotTable (PDF v1) calculado con el motor de pivotes W2.
+
+    Delega toda la agregación en `backend.rgenerator.core.pivot_engine.pivot`
+    (única fuente de verdad para pivotes) pero reconstruye el formato de
+    salida histórico ({columns, rows}) del PDF v1: orden lexicográfico de
+    filas/columnas, 2 decimales para agregaciones numéricas, conteo entero,
+    y "—" para celdas sin datos. Ver docs/planes/w2_motor_pivotes.md.
+
+    Args:
+        records: filas (list de dicts) del informe.
+        row_fields: campos de agrupación en filas.
+        col_fields: campos de agrupación en columnas (puede ser vacío).
+        values_cfg: lista de {field, aggregation, label}.
+
+    Returns:
+        {'columns': [...], 'rows': [[...], ...]} idéntico al de v1.
+    """
+    from .pivot_engine import pivot
+    from backend.schemas_pivot import PivotSpec, PivotValue
+
+    def _map_agg(a):
+        a = a or 'avg'
+        if a in ('sum', 'count', 'min', 'max'):
+            return a
+        # 'avg', 'mean' y cualquier otro → promedio (default v1).
+        return 'mean'
+
+    value_fields: list = []
+    for vc in values_cfg:
+        if vc['field'] not in value_fields:
+            value_fields.append(vc['field'])
+
+    # DataFrame con dimensiones stringificadas (igual que v1, que agrupaba por
+    # str(rec.get(campo, ''))) y valores coercionados a numérico (float() con
+    # exclusión de no convertibles → NaN, que el motor ignora).
+    data: dict = {}
+    for f in row_fields + col_fields:
+        data[f] = [str(rec.get(f, '')) for rec in records]
+    for f in value_fields:
+        data[f] = [rec.get(f) for rec in records]
+    df = pd.DataFrame(data)
+    for f in value_fields:
+        df[f] = pd.to_numeric(df[f], errors='coerce')
+
+    spec = PivotSpec(
+        rows=list(row_fields),
+        cols=list(col_fields),
+        values=[
+            PivotValue(field=vc['field'], agg=_map_agg(vc.get('aggregation')),
+                       label=vc.get('label', vc['field']))
+            for vc in values_cfg
+        ],
+        totals={'rows': False, 'cols': False},
+    )
+    result = pivot(df, spec)
+
+    # Lookup {(row_keys, col_keys, field, agg): valor_crudo}
+    val_lookup: dict = {}
+    for prow in result.rows:
+        rk = tuple(prow.keys)
+        for pcol, cell in zip(result.columns, prow.cells):
+            val_lookup[(rk, tuple(pcol.keys), pcol.field, pcol.agg)] = cell.value
+
+    # Columnas: todas las combinaciones presentes en records (incluidas las
+    # sin datos numéricos), string-sort — igual que v1.
+    col_keys = set()
+    for rec in records:
+        ck = tuple(str(rec.get(f, '')) for f in col_fields) if col_fields else ('',)
+        col_keys.add(ck)
+    col_keys_sorted = sorted(col_keys)
+
+    # Filas: solo las que tienen ≥1 valor numérico (igual que v1), string-sort.
+    row_keys = sorted(
+        tuple(prow.keys) for prow in result.rows
+        if any(c.value is not None for c in prow.cells)
+    )
+
+    header_row = ['/'.join(row_fields)]
+    for ck in col_keys_sorted:
+        ck_label = ' / '.join(ck) if any(ck) else ''
+        for vc in values_cfg:
+            lbl = vc.get('label', vc['field'])
+            header_row.append(f'{ck_label} {lbl}'.strip())
+
+    rows_out = []
+    for rk in row_keys:
+        row = [' / '.join(rk)]
+        for ck in col_keys_sorted:
+            engine_ck = () if not col_fields else ck
+            for vc in values_cfg:
+                agg = _map_agg(vc.get('aggregation'))
+                val = val_lookup.get((rk, engine_ck, vc['field'], agg))
+                if val is None:
+                    row.append('—')
+                elif agg == 'count':
+                    row.append(str(int(round(val))))
+                else:
+                    row.append(f'{val:.2f}')
+        rows_out.append(row)
+
+    return {'columns': header_row, 'rows': rows_out}
+
+
 def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
     """Convierte un componente tabla en columnas + filas para el template HTML."""
     comp = item.get('component', '')
@@ -803,54 +908,9 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         if not row_fields or not values_cfg:
             return {'columns': [], 'rows': []}
 
-        # Agrupación simple: filas × columnas
-        import collections
-        buckets = collections.defaultdict(list)
-        col_keys = set()
-        for rec in records:
-            rk = tuple(str(rec.get(f, '')) for f in row_fields)
-            ck = tuple(str(rec.get(f, '')) for f in col_fields) if col_fields else ('',)
-            col_keys.add(ck)
-            for vc in values_cfg:
-                vv = rec.get(vc['field'])
-                try:
-                    buckets[(rk, ck, vc['field'])].append(float(vv))
-                except (TypeError, ValueError):
-                    pass
-
-        row_keys = sorted({k[0] for k in buckets.keys()})
-        col_keys_sorted = sorted(col_keys)
-
-        # Headers
-        header_row = ['/'.join(row_fields)]
-        for ck in col_keys_sorted:
-            ck_label = ' / '.join(ck) if any(ck) else ''
-            for vc in values_cfg:
-                lbl = vc.get('label', vc['field'])
-                header_row.append(f'{ck_label} {lbl}'.strip())
-
-        rows_out = []
-        for rk in row_keys:
-            row = [' / '.join(rk)]
-            for ck in col_keys_sorted:
-                for vc in values_cfg:
-                    vals = buckets.get((rk, ck, vc['field']), [])
-                    agg = vc.get('aggregation', 'avg')
-                    if not vals:
-                        row.append('—')
-                    elif agg == 'sum':
-                        row.append(f'{sum(vals):.2f}')
-                    elif agg == 'count':
-                        row.append(str(len(vals)))
-                    elif agg == 'min':
-                        row.append(f'{min(vals):.2f}')
-                    elif agg == 'max':
-                        row.append(f'{max(vals):.2f}')
-                    else:
-                        row.append(f'{sum(vals)/len(vals):.2f}')
-            rows_out.append(row)
-
-        return {'columns': header_row, 'rows': rows_out}
+        # W2: la agregación se delega al motor de pivotes (única fuente de
+        # verdad). El formato de salida histórico se conserva en el adapter.
+        return _pivot_table_via_engine(records, row_fields, col_fields, values_cfg)
 
     else:
         # Tabla plana

@@ -31,6 +31,7 @@ from backend.auth import get_current_user
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Indicator, Metric, MetricData, MetricDimension, Dimension, Spec, User
+from backend.rgenerator.core.pivot_engine import pivot
 from backend.schemas_table import TableConfig, TableCreate, TableSummary, TableUpdate
 
 logger = get_logger(__name__)
@@ -446,16 +447,18 @@ def duplicate_table(
 # ─────────────────────────────────────────────────────────────────────────
 
 
-def _render_table_data(
+def _prepare_table_df(
     db: Session, org_id: int, cfg: TableConfig,
-    limit: int, offset: int, include_styles: bool,
     extra_filters: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Aplica el pipeline completo (filtros → grouping → sort → format → color)
-    sobre una TableConfig y devuelve la respuesta estandar `{columns, rows, total_rows, limit, offset}`.
+) -> pd.DataFrame:
+    """Carga + prepara el DataFrame de una TableConfig SIN grouping/sort/format.
 
-    Compartido por GET /{id}/data (config persistida) y POST /preview
-    (config draft sin persistir, pensado para el editor live).
+    Aplica: merge de filtros, herencia de derived_columns del indicador,
+    carga de la métrica con pre-filtros no-temporales, cálculo de
+    derived_fields y filtros temporales post-cálculo. Es la base común del
+    render tabular clásico (`_render_table_data`) y del modo pivote
+    (dashboard `/data` + export Excel), garantizando que ambos vean el
+    mismo df de partida (una sola fuente de verdad).
     """
     base_filters = dict(cfg.data_source.filters)
     if extra_filters:
@@ -533,6 +536,22 @@ def _render_table_data(
                 df = df[df[col].astype(str).isin(allowed)]
             else:
                 df = df[df[col].astype(str) == str(val)]
+
+    return df
+
+
+def _render_table_data(
+    db: Session, org_id: int, cfg: TableConfig,
+    limit: int, offset: int, include_styles: bool,
+    extra_filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Aplica el pipeline completo (filtros → grouping → sort → format → color)
+    sobre una TableConfig y devuelve la respuesta estandar `{columns, rows, total_rows, limit, offset}`.
+
+    Compartido por GET /{id}/data (config persistida) y POST /preview
+    (config draft sin persistir, pensado para el editor live).
+    """
+    df = _prepare_table_df(db, org_id, cfg, extra_filters)
 
     # Grouping con multi-agg sobre la misma columna fuente.
     # Cada TableColumn con `agg` se vuelve un NamedAgg(column=source_key,
@@ -624,6 +643,121 @@ def _render_table_data(
     }
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# Modo pivote (W2) — dashboard PivotResult JSON + export Excel
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _render_pivot_data(
+    db: Session, org_id: int, cfg: TableConfig,
+    extra_filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Corre el motor de pivotes sobre el df de la tabla y devuelve el
+    `PivotResult` serializado a JSON para el dashboard (PARTE B2 frontend).
+
+    Forma de la respuesta::
+
+        {"mode": "pivot",
+         "pivot": <PivotResult.model_dump(mode="json")>,
+         "n_rows": <filas del df de origen>}
+    """
+    df = _prepare_table_df(db, org_id, cfg, extra_filters)
+    result = pivot(df, cfg.pivot)
+    return {
+        "mode": "pivot",
+        "pivot": result.model_dump(mode="json"),
+        "n_rows": int(len(df)),
+    }
+
+
+def _excel_number_format(fmt: Optional[str], agg: str) -> str:
+    """Traduce el `format` de una métrica (Python format-spec) al
+    `number_format` de openpyxl. Los valores crudos van sin formatear en la
+    celda; el number_format controla su presentación en Excel."""
+    if fmt:
+        f = fmt.strip()
+        if f.endswith("%"):
+            # ".1%" → 1 decimal; ".0%"/"%" → entero
+            decimals = 0
+            dot = f.rfind(".")
+            if dot != -1 and dot + 1 < len(f) - 1:
+                try:
+                    decimals = int(f[dot + 1:-1])
+                except ValueError:
+                    decimals = 0
+            return "0." + ("0" * decimals) + "%" if decimals else "0%"
+        if f.endswith("f"):
+            decimals = 0
+            dot = f.rfind(".")
+            if dot != -1:
+                try:
+                    decimals = int(f[dot + 1:-1])
+                except ValueError:
+                    decimals = 0
+            return "0." + ("0" * decimals) if decimals else "0"
+        if f.endswith(("d",)):
+            return "0"
+    # Defaults por agregación cuando no hay format explícito.
+    from backend.schemas_pivot import PCT_AGGS
+    if agg in PCT_AGGS:
+        return "0.0%"
+    if agg in ("count", "nunique"):
+        return "0"
+    return "General"
+
+
+def _pivot_to_xlsx_bytes(cfg: TableConfig, result) -> bytes:
+    """Serializa un `PivotResult` a un .xlsx (openpyxl) con valores crudos y
+    `number_format` derivado del `format` de cada métrica del spec."""
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Pivote"
+
+    total_label = result.meta.total_label
+    # Formato por (field, agg) desde meta.aggs (una métrica del spec).
+    fmt_by_metric: Dict[tuple, str] = {}
+    for a in result.meta.aggs:
+        fmt_by_metric[(a["field"], a["agg"])] = _excel_number_format(a.get("format"), a["agg"])
+
+    # Encabezados: campos de fila + una columna por PivotColumn.
+    headers: List[str] = list(result.row_fields)
+    col_number_formats: List[Optional[str]] = [None] * len(result.row_fields)
+    for col in result.columns:
+        level = " · ".join(col.keys) if col.keys else ""
+        headers.append(f"{level} · {col.label}" if level else col.label)
+        col_number_formats.append(fmt_by_metric.get((col.field, col.agg), "General"))
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    n_row_fields = len(result.row_fields)
+    for prow in result.rows:
+        values: List[Any] = []
+        for i in range(n_row_fields):
+            if prow.is_total:
+                values.append(total_label if i == 0 else "")
+            else:
+                values.append(prow.keys[i] if i < len(prow.keys) else "")
+        for pcell in prow.cells:
+            values.append(pcell.value)  # número crudo o None
+        ws.append(values)
+
+    # Aplicar number_format a las columnas de datos (post-header).
+    for col_idx, nf in enumerate(col_number_formats, start=1):
+        if not nf or nf == "General":
+            continue
+        for r in range(2, ws.max_row + 1):
+            ws.cell(row=r, column=col_idx).number_format = nf
+
+    buf = BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
 @router.get("/{table_id}/data")
 def get_table_data(
     table_id: int,
@@ -650,6 +784,12 @@ def get_table_data(
             extra = json.loads(extra_filters)
         except Exception:
             extra = None
+    # Modo pivote (W2): devuelve el PivotResult calculado por el motor.
+    if cfg.pivot is not None:
+        try:
+            return _render_pivot_data(db, user.org_id, cfg, extra)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     return _render_table_data(db, user.org_id, cfg, limit, offset, include_styles, extra)
 
 
@@ -669,10 +809,63 @@ def preview_table_config(
 ):
     """Igual que /{id}/data pero recibe la config en body (no requiere
     que la tabla esté persistida). Pensado para el editor live."""
+    if payload.config.pivot is not None:
+        try:
+            return _render_pivot_data(db, user.org_id, payload.config, payload.extra_filters)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
     return _render_table_data(
         db, user.org_id, payload.config,
         payload.limit, payload.offset, payload.include_styles,
         payload.extra_filters,
+    )
+
+
+@router.get("/{table_id}/export-pivot")
+def export_pivot_xlsx(
+    table_id: int,
+    extra_filters: Optional[str] = Query(None, description="JSON dict con filtros adicionales (encoded)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Exporta una tabla en modo pivote a un archivo .xlsx descargable.
+
+    Corre el motor de pivotes sobre el df de la tabla y escribe los valores
+    crudos con `number_format` derivado del `format` del spec. Auth JWT +
+    multi-tenant por org_id (404 si la tabla es de otra org).
+    """
+    from fastapi.responses import Response
+
+    spec = _get_spec_or_404(db, table_id, user.org_id)
+    tables = _parse_tables_list(spec)
+    if not tables:
+        raise HTTPException(status_code=400, detail="Tabla sin configuración")
+    try:
+        cfg = TableConfig(**tables[0])
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Config inválida: {e}")
+    if cfg.pivot is None:
+        raise HTTPException(status_code=400, detail="La tabla no está en modo pivote")
+
+    extra: Optional[Dict[str, Any]] = None
+    if extra_filters:
+        try:
+            extra = json.loads(extra_filters)
+        except Exception:
+            extra = None
+
+    df = _prepare_table_df(db, user.org_id, cfg, extra)
+    try:
+        result = pivot(df, cfg.pivot)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    xlsx_bytes = _pivot_to_xlsx_bytes(cfg, result)
+
+    filename = f"pivote_{table_id}.xlsx"
+    return Response(
+        content=xlsx_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

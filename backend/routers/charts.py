@@ -404,6 +404,14 @@ def _build_dataset(df: pd.DataFrame, cfg: ChartConfig) -> Dict[str, Any]:
         return {"value": float(fn())}
 
     if ct == "pivot_matrix":
+        # W2 TODO (ver docs/planes/w2_motor_pivotes.md § Migración): este
+        # pivote NO se migró al motor W2 a propósito. `pivot_matrix` no es un
+        # pivote numérico sino un "roster matrix": cada celda es un valor
+        # CATEGÓRICO ("primer" Nivel de Riesgo por combinación) que luego se
+        # colorea. El motor W2 produce agregaciones numéricas
+        # (PivotCell.value: Optional[float]) y no puede representar celdas
+        # string sin cambiar su firma/tests. Migrarlo requeriría extender el
+        # contrato del motor con un modo categórico/`first` — workstream aparte.
         # Tabla pivote: rows × cols con valores categóricos en celdas.
         # Mapping:
         #   axis_field  → row_field (ej Nombre)

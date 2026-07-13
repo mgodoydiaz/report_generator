@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field
 
+from backend.schemas_pivot import PivotSpec
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Color scales
@@ -163,11 +165,23 @@ class TableBehavior(BaseModel):
 
 
 class TableConfig(BaseModel):
-    """Configuración completa de una tabla."""
+    """Configuración completa de una tabla.
+
+    Modo pivote (W2): si `pivot` está definido, la tabla es un pivote. El
+    endpoint `/api/tables/{id}/data` devuelve el `PivotResult` calculado por
+    el motor (`{"mode": "pivot", "pivot": {...}}`) en vez de la respuesta
+    tabular clásica, y `/api/tables/{id}/export-pivot` genera el .xlsx. El
+    `data_source` (metric_id + filters + derived_fields_override) se usa
+    igual para cargar el df; el `pivot` opera sobre ese df ya cargado. Las
+    `columns`/`behavior` clásicas se ignoran en modo pivote.
+    """
     version: int = 1
     data_source: TableDataSource
     columns: List[TableColumn] = Field(default_factory=list)
     behavior: TableBehavior = Field(default_factory=TableBehavior)
+    # Modo pivote: PivotSpec declarativo. Si es None, la tabla es tabular
+    # clásica (columns/behavior). Ver docs/planes/w2_motor_pivotes.md.
+    pivot: Optional[PivotSpec] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────

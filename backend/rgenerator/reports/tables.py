@@ -13,6 +13,8 @@ import itertools
 
 import pandas as pd
 
+from ..core.pivot_engine import pivot, pivot_to_dataframe
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Resumen estadístico (Alumnos / Promedio / Mín / Máx)
@@ -305,10 +307,70 @@ def crear_df_comparacion(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Tabla pivote (motor W2) — envuelve pivot_engine para el PDF v2
+# ─────────────────────────────────────────────────────────────────────────
+
+_PIVOT_SPEC_KEYS = ("rows", "cols", "values", "totals", "order", "fill_value", "total_label")
+
+
+def tabla_pivote(
+    df: pd.DataFrame,
+    spec: dict | None = None,
+    filtro: dict | None = None,
+    **params,
+):
+    """Tabla pivote declarativa para informes, respaldada por el motor W2.
+
+    Display name: Tabla pivote
+    Envuelve `pivot_engine.pivot` + `pivot_to_dataframe`: recibe un
+    `PivotSpec` (dict) y devuelve un DataFrame plano con el `display` ya
+    formateado, listo para `helpers.df_a_html_table`. Fuente única de verdad
+    para pivotes (dashboard / PDF / Excel comparten el mismo motor).
+
+    Multi-pivote: se declaran varias secciones `pivot` (o `table` con
+    `fn: tabla_pivote`) en el esquema. Un pivote iterado por curso sale de
+    las secciones dinámicas del runtime (`iterar_por`) combinadas con
+    `filtro={"Curso": "{curso}"}` — que pre-filtra el df antes de pivotar.
+
+    Args:
+        df: DataFrame de origen.
+        spec: `PivotSpec` como dict (rows, cols, values, totals, order,
+            fill_value, total_label). Si es None, se arma con los `params`
+            sueltos que matcheen las keys del spec.
+        filtro: dict opcional {campo: valor} para filtrar el df por igualdad
+            (str) antes de pivotar. Útil para pivotes por curso/categoría en
+            secciones dinámicas.
+        **params: alternativa a `spec` — se aceptan rows/cols/values/... como
+            kwargs sueltos.
+
+    Returns:
+        DataFrame plano (display formateado) listo para df_a_html_table.
+    """
+    if filtro:
+        for k, v in filtro.items():
+            if k in df.columns:
+                df = df[df[k].astype(str) == str(v)]
+
+    if spec is None:
+        spec = {k: params[k] for k in _PIVOT_SPEC_KEYS if k in params}
+
+    result = pivot(df, spec)
+    return pivot_to_dataframe(result)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Registry para introspección desde el frontend
 # ─────────────────────────────────────────────────────────────────────────
 
 TABLE_REGISTRY = {
+    "tabla_pivote": {
+        "fn": tabla_pivote,
+        "display_name": "Tabla pivote",
+        "description": "Pivote declarativo (rows × cols × values con agregaciones y totales) respaldado por el motor de pivotes W2. Acepta un PivotSpec y un filtro opcional por campo.",
+        "required_params": ["spec"],
+        "optional_params": ["filtro"],
+        "input_dataframes": ["df"],
+    },
     "resumen_estadistico_basico": {
         "fn": resumen_estadistico_basico,
         "display_name": "Resumen estadístico básico",
