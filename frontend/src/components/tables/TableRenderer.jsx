@@ -27,9 +27,11 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
-import { ChevronUp, ChevronDown, ChevronsUpDown, Download, Loader2 } from 'lucide-react';
+import { ChevronUp, ChevronDown, ChevronsUpDown, Download, Loader2, FileSpreadsheet } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../../constants';
+import { PivotResultTable } from '../../tooling/plotly-charts/pivotTable';
+import { useAuth } from '../../context/AuthContext';
 
 const PAGE_SIZE_DEFAULT = 50;
 
@@ -49,6 +51,13 @@ export default function TableRenderer({
   const [sorting, setSorting] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  // Modo pivote (W2): cuando la respuesta trae {mode:"pivot", pivot:<PivotResult>}
+  // se renderiza con PivotResultTable en vez de la tabla TanStack clásica.
+  const [pivotResult, setPivotResult] = useState(null);
+  const [pivotNRows, setPivotNRows] = useState(0);
+  const isPivotMode = !!pivotResult;
+  const { fetchAuth } = useAuth();
+  const [exportingXlsx, setExportingXlsx] = useState(false);
 
   // ── Fetch ───────────────────────────────────────────────────────────
   // Usa AbortController para cancelar requests en vuelo cuando el componente
@@ -97,9 +106,19 @@ export default function TableRenderer({
         throw new Error(`HTTP ${res.status}: ${msg.slice(0, 200)}`);
       }
       const data = await res.json();
-      setColumns(data.columns || []);
-      setRows(data.rows || []);
-      setTotalRows(data.total_rows || 0);
+      if (data.mode === 'pivot') {
+        setPivotResult(data.pivot || null);
+        setPivotNRows(data.n_rows || 0);
+        setColumns([]);
+        setRows([]);
+        setTotalRows(0);
+      } else {
+        setPivotResult(null);
+        setPivotNRows(0);
+        setColumns(data.columns || []);
+        setRows(data.rows || []);
+        setTotalRows(data.total_rows || 0);
+      }
     } catch (e) {
       if (e.name === 'AbortError') return;  // unmount o cambio de deps — silencioso
       setError(e.message || String(e));
@@ -175,11 +194,82 @@ export default function TableRenderer({
     URL.revokeObjectURL(url);
   };
 
+  // ── Export Excel (modo pivote, server-side) ─────────────────────────
+  // GET /api/tables/{id}/export-pivot — requiere tabla persistida (no
+  // disponible en modo preview/draft, que no tiene id).
+  const handleExportPivotXlsx = async () => {
+    if (!tableId) {
+      toast.error('Guarda la tabla antes de exportar a Excel');
+      return;
+    }
+    setExportingXlsx(true);
+    const tid = toast.loading('Generando Excel…');
+    try {
+      const params = new URLSearchParams();
+      if (extraFilters && Object.keys(extraFilters).length) {
+        params.set('extra_filters', JSON.stringify(extraFilters));
+      }
+      const qs = params.toString();
+      const res = await fetchAuth(`${API_BASE_URL}/tables/${tableId}/export-pivot${qs ? `?${qs}` : ''}`);
+      if (!res.ok) {
+        const msg = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${msg.slice(0, 200)}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `pivote_${tableId}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success('Excel descargado', { id: tid });
+    } catch (e) {
+      toast.error(`Error exportando: ${e.message}`, { id: tid });
+    } finally {
+      setExportingXlsx(false);
+    }
+  };
+
   // ── Render ──────────────────────────────────────────────────────────
   if (error) {
     return (
       <div className={`bg-rose-50 border border-rose-200 text-rose-700 p-4 rounded ${className}`}>
         <strong>Error cargando tabla:</strong> {error}
+      </div>
+    );
+  }
+
+  if (isPivotMode) {
+    return (
+      <div className={`bg-white border border-slate-200 rounded shadow-sm flex flex-col ${className}`}>
+        {/* Toolbar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50">
+          <span className="text-xs text-slate-500">
+            {loading ? (
+              <span className="inline-flex items-center gap-1.5"><Loader2 size={12} className="animate-spin" /> Cargando…</span>
+            ) : (
+              `Pivote · ${pivotNRows.toLocaleString('es-CL')} filas fuente`
+            )}
+          </span>
+          {enableExport && (
+            <button
+              onClick={handleExportPivotXlsx}
+              disabled={loading || exportingXlsx || !tableId}
+              className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded bg-white border border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+              title={tableId ? 'Exportar pivote a Excel (.xlsx)' : 'Guarda la tabla para exportar a Excel'}
+            >
+              {exportingXlsx ? <Loader2 size={12} className="animate-spin" /> : <FileSpreadsheet size={12} />}
+              Exportar Excel
+            </button>
+          )}
+        </div>
+
+        {/* Matriz pivote */}
+        <div className="flex-1 overflow-auto">
+          <PivotResultTable pivotResult={pivotResult} />
+        </div>
       </div>
     );
   }

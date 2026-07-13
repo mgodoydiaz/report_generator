@@ -2,19 +2,27 @@
  * Tables — editor de tablas configurables (B7).
  *
  * Layout 3 paneles:
- *   [Sidebar lista]  [Editor 3 tabs (Origen|Columnas|Comportamiento)]  [Preview live]
+ *   [Sidebar lista]  [Editor 4 tabs (Origen|Columnas|Comportamiento|Pivote)]  [Preview live]
  *
  * Cada tabla = Spec con type='Tablas'. CRUD vía /api/tables.
  * Preview live: POST /api/tables/preview con la config draft (sin persistir).
+ *
+ * Modo pivote (W2): si `config.pivot` (PivotSpec) está definido, la tabla es
+ * un pivote — el backend devuelve `{mode:"pivot", pivot:<PivotResult>}` en
+ * vez de la respuesta tabular clásica, y `columns`/`behavior` se ignoran
+ * (ver docs/planes/w2_motor_pivotes.md). El tab "Pivote" arma ese spec con
+ * `PivotTableConfig`.
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
   Plus, Save, Trash2, Copy, Database, Columns, Sliders, X, Loader2,
   Search, GripVertical, Eye, EyeOff, ChevronDown, ChevronRight, AlertCircle,
+  Grid3x3,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { TableRenderer } from '../components/tables';
+import PivotTableConfig from '../components/add-component/PivotTableConfig';
 
 const EMPTY_CONFIG = {
   version: 1,
@@ -27,6 +35,7 @@ const EMPTY_CONFIG = {
     export: { csv: true, xlsx: true },
     search: true,
   },
+  pivot: null,
 };
 
 export default function Tables() {
@@ -98,6 +107,15 @@ export default function Tables() {
     } catch (e) {}
     return cols;
   }, [draftConfig?.data_source?.metric_id, metrics, dimensions]);
+
+  // Mismas columnas, adaptadas a la forma que espera PivotTableConfig
+  // ({field, label, kind: 'valor'|'dimensión'}) — reusa el catálogo de
+  // metricColumns ya resuelto para la métrica seleccionada.
+  const pivotFields = useMemo(() => metricColumns.map((c) => ({
+    field: c.key,
+    label: c.key,
+    kind: c.kind === 'dimension' ? 'dimensión' : 'valor',
+  })), [metricColumns]);
 
   // ── Helpers de mutación ─────────────────────────────────────────────
   const updateConfig = (updater) => {
@@ -301,8 +319,10 @@ export default function Tables() {
             { id: 'source', label: 'Origen', icon: Database },
             { id: 'columns', label: 'Columnas', icon: Columns },
             { id: 'behavior', label: 'Comportamiento', icon: Sliders },
+            { id: 'pivot', label: 'Pivote', icon: Grid3x3 },
           ].map((t) => {
             const Icon = t.icon;
+            const isPivotTab = t.id === 'pivot';
             return (
               <button
                 key={t.id}
@@ -312,7 +332,12 @@ export default function Tables() {
                     ? 'border-indigo-600 text-indigo-600 font-medium'
                     : 'border-transparent text-slate-500 hover:text-slate-700'
                 }`}
-              ><Icon size={14} /> {t.label}</button>
+              >
+                <Icon size={14} /> {t.label}
+                {isPivotTab && draftConfig?.pivot && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" title="Pivote activo" />
+                )}
+              </button>
             );
           })}
         </div>
@@ -342,6 +367,13 @@ export default function Tables() {
               onChange={(b) => updateConfig((p) => ({ ...p, behavior: b }))}
             />
           )}
+          {activeTab === 'pivot' && (
+            <PivotTab
+              cfg={draftConfig}
+              fields={pivotFields}
+              onChange={(pivot) => updateConfig((p) => ({ ...p, pivot }))}
+            />
+          )}
         </div>
       </main>
 
@@ -353,12 +385,23 @@ export default function Tables() {
         </div>
         <div className="flex-1 overflow-hidden">
           {draftConfig?.data_source?.metric_id ? (
-            <TableRenderer
-              draftConfig={draftConfig}
-              pageSize={20}
-              className="h-full"
-              key={JSON.stringify(draftConfig)}
-            />
+            !unsaved && selectedId ? (
+              // Sin cambios sin guardar: preview con la tabla persistida —
+              // habilita el botón "Exportar Excel" (requiere tableId real).
+              <TableRenderer
+                tableId={selectedId}
+                pageSize={20}
+                className="h-full"
+                key={`saved-${selectedId}`}
+              />
+            ) : (
+              <TableRenderer
+                draftConfig={draftConfig}
+                pageSize={20}
+                className="h-full"
+                key={JSON.stringify(draftConfig)}
+              />
+            )
           ) : (
             <div className="h-full flex items-center justify-center text-slate-400 text-sm bg-white border border-dashed border-slate-300 rounded">
               <div className="text-center">
@@ -506,6 +549,11 @@ function ColumnsTab({ cfg, metricColumns, indicators, onChange }) {
 
   return (
     <div className="space-y-4">
+      {cfg.pivot && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 dark:bg-indigo-900/10 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-400">
+          Modo Pivote activo (tab Pivote) — estas columnas se ignoran mientras el pivote esté configurado.
+        </div>
+      )}
       {available.length > 0 && (
         <div>
           <label className="block text-xs font-semibold text-slate-700 mb-1">Agregar columna</label>
@@ -742,6 +790,11 @@ function BehaviorTab({ cfg, metricColumns, onChange }) {
 
   return (
     <div className="space-y-5 text-sm">
+      {cfg.pivot && (
+        <div className="rounded-lg border border-indigo-200 bg-indigo-50 dark:bg-indigo-900/10 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-400">
+          Modo Pivote activo (tab Pivote) — paginación, orden y agrupación clásicos se ignoran mientras el pivote esté configurado.
+        </div>
+      )}
       <div>
         <label className="block text-xs font-semibold text-slate-700 mb-1">Agrupar por</label>
         <select
@@ -849,6 +902,69 @@ function BehaviorTab({ cfg, metricColumns, onChange }) {
           /> Búsqueda global
         </label>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Tab: Pivote (W2 — PivotSpec)
+// ─────────────────────────────────────────────────────────────────────
+
+function PivotTab({ cfg, fields, onChange }) {
+  const isPivot = !!cfg.pivot;
+  // "Editor visible" es un estado LOCAL, separado de `cfg.pivot`: al hacer
+  // clic en "Activar" mostramos el editor sin escribir nada todavía en la
+  // config (un PivotSpec con rows/values vacíos no pasa la validación del
+  // backend — dispararía un preview en error mientras el usuario arma el
+  // pivote). Solo se escribe `config.pivot` cuando `PivotTableConfig` emite
+  // un spec válido (rows.length>0 && values.length>0).
+  const [showEditor, setShowEditor] = useState(isPivot);
+
+  if (!fields.length) {
+    return (
+      <div className="rounded-xl border border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-900/10 px-4 py-3">
+        <p className="text-xs text-amber-700 dark:text-amber-400">
+          Selecciona una métrica en el tab Origen para configurar un pivote.
+        </p>
+      </div>
+    );
+  }
+
+  if (!isPivot && !showEditor) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+        <p className="text-sm text-slate-500 max-w-sm">
+          Convierte esta tabla en un pivote: filas × columnas con métricas agregadas
+          (promedio, suma, conteo, percentiles, %…), calculado por el motor de pivotes del backend.
+        </p>
+        <button
+          onClick={() => setShowEditor(true)}
+          className="px-4 py-2 text-sm font-semibold bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+          Activar modo Pivote
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          Configura filas, columnas y valores. Al hacer clic en "Aplicar configuración" se guarda en <code>config.pivot</code>.
+        </p>
+        <button
+          onClick={() => { onChange(null); setShowEditor(false); }}
+          className="text-[11px] text-rose-600 hover:text-rose-700 shrink-0 whitespace-nowrap"
+        >
+          Quitar pivote — volver a tabla clásica
+        </button>
+      </div>
+      <PivotTableConfig
+        fields={fields}
+        initial={cfg.pivot}
+        onConfirm={(spec) => onChange(spec)}
+      />
     </div>
   );
 }

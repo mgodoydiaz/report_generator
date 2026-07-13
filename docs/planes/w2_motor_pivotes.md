@@ -243,3 +243,113 @@ Hecho sobre el motor ya probado (PARTE A). Todo lo de W2-B1 usa el mismo
   (snapshot pre-migración).
 - Suite completa: **703 passed, 3 skipped** (`pytest -q -m "not slow"`),
   cero regresiones sobre la base de 685.
+
+---
+
+## Estado de implementación — PARTE B2 (frontend)
+
+Hecho sobre el contrato de la PARTE B1 (arriba). `npm run build` pasa limpio.
+
+### Render — `frontend/src/tooling/plotly-charts/pivotTable.jsx`
+
+El archivo ahora exporta **dos** componentes:
+
+- **`PivotResultTable({ pivotResult })`** — NUEVO. Render puro de un
+  `PivotResult` calculado por el backend, sin agregación en JS. Encabezado
+  en 1 o 2 filas: una fila de "nivel" (agrupa columnas que comparten el
+  mismo `keys.join(' · ')`, con `colSpan`, solo si `col_fields.length>0`) y
+  una fila de "métrica" (`col.label`, siempre presente — desambigua cuando
+  hay 2+ `values` bajo el mismo nivel). Columnas/filas con `is_total` se
+  estilan en negrita + fondo `slate-100`. Celdas con `value:null` y
+  `display:""` se muestran como "—" en gris tenue. Es lo que usa
+  `TableRenderer` cuando la respuesta trae `mode:"pivot"`.
+- **`PivotTable(...)`** — se mantiene el componente LEGACY intacto en su
+  modo "raw"/categórico (`pivotConfig.value` + `semaphoreField`, usado por
+  el Roster IDEL armado por `scripts/apply_pdl_layout_v2.py` vía el item de
+  dashboard `type:"PivotTable"`). **No se migró** por la misma razón que
+  `pivot_matrix`: el motor W2 solo produce `PivotCell.value: float|null`,
+  no puede representar el valor categórico más frecuente por celda + su
+  color de `achievement_levels`. El modo agregado clásico anterior
+  (`pivotConfig.values` con `aggregation` calculado en JS) SÍ se retiró —
+  era la implementación fragmentada que este workstream unifica — y ahora
+  muestra un aviso ("este modo se migró... crea una Tabla Pivote nueva
+  desde Tablas") en vez de calcular nada en el cliente.
+
+### Fetch — `frontend/src/components/tables/TableRenderer.jsx`
+
+Detecta `data.mode === "pivot"` en la respuesta de `GET /tables/{id}/data`
+y `POST /tables/preview`; en ese caso guarda el `PivotResult` en estado y
+renderiza `PivotResultTable` en vez de la tabla TanStack clásica (que sigue
+intacta para `mode` tabular). Modo pivote y modo clásico son mutuamente
+excluyentes en el mismo componente según lo que responda el backend — cero
+cambios de contrato para los consumidores tabulares existentes.
+
+### Editor — `frontend/src/components/add-component/PivotTableConfig.jsx`
+
+Reescrito para construir un `PivotSpec` (no el `pivotConfig` viejo):
+zonas de drag&drop Filas/Columnas (multinivel, sin límite) y Valores
+(`field` + `agg` — select con las 11 agregaciones del backend, `mean` por
+default — + `label` y `format` editables por valor), más dos checkboxes
+para `totals.rows`/`totals.cols` (default `true`, igual que el backend).
+`onConfirm` emite `{rows, cols, values:[{field,agg,label,format}], totals}`
+listo para `TableConfig.pivot`. Props cambiaron de
+`{allMetrics,allDimensions,derivedColumns}` a `{fields}` (catálogo plano
+`{field,label,kind}`) para poder reusarse tanto desde el editor viejo
+(`StepConfig.jsx`, que sigue armando `fields` con
+`buildAvailableFields()`) como desde la página **Tablas** (`fields` desde
+`metricColumns` de la métrica seleccionada).
+
+Nueva pestaña **"Pivote"** en `frontend/src/pages/Tables.jsx` (junto a
+Origen/Columnas/Comportamiento): botón "Activar modo Pivote" (no escribe
+`config.pivot` hasta que el usuario arma un spec válido — evita disparar un
+preview con `rows`/`values` vacíos, que el backend rechaza con 422) →
+`PivotTableConfig` → al aplicar, guarda en `config.pivot`. Botón "Quitar
+pivote" vuelve a tabla clásica. Tabs Columnas/Comportamiento muestran un
+aviso cuando `config.pivot` está activo (esos campos se ignoran en modo
+pivote, según el contrato de B1).
+
+### Descarga Excel
+
+Botón "Exportar Excel" en la toolbar de `TableRenderer` (solo visible en
+modo pivote): pega a `GET /api/tables/{id}/export-pivot` con `fetchAuth`
+del `AuthContext` (mismo patrón de descarga de blob que
+`GenerateReportV2Modal.jsx`) y dispara la descarga del `.xlsx`. Deshabilitado
+si no hay `tableId` (modo preview con `draftConfig` sin persistir — el
+endpoint de export requiere una tabla guardada). En la página Tablas, el
+panel de preview usa la tabla persistida (`tableId={selectedId}`) en vez
+del draft cuando no hay cambios sin guardar, precisamente para habilitar el
+botón de export durante el preview.
+
+### Desvíos del contrato / cosas a revisar manualmente en la UI
+
+1. **Sin test runner de frontend** — verificado solo con `npm run build`
+   (pasa limpio) y lectura de código; no hubo smoke test en navegador con
+   sesión autenticada (bloqueado por el clasificador de auto-mode al
+   intentar generar credenciales locales de prueba). **Recomendado**:
+   antes de dar por cerrado B2, abrir `/tables`, crear una tabla con
+   `pivot` (rows multinivel + cols + 2 values + totales) y verificar
+   visualmente el render (headers agrupados, fila/columna Total en negrita,
+   celdas vacías) y la descarga de Excel.
+2. **Header multinivel simplificado**: cuando `col_fields.length > 1`, en
+   vez de una fila de encabezado POR nivel (ej. una fila "Mes", otra fila
+   "Curso"), se muestra una única fila de "nivel" con los valores unidos
+   por `" · "` (ej. "Marzo · IIA"). Se eligió así porque las columnas Total
+   del motor llevan `keys:[total_label]` (un solo elemento) sin importar
+   cuántos `col_fields` haya — un header verdaderamente por-nivel necesita
+   `rowSpan` especial para la columna Total que se decidió no implementar
+   por complejidad/riesgo. El resultado es correcto y legible, solo no es
+   "N filas, una por nivel".
+3. **Item legacy de dashboard `PivotTable` con `pivotConfig.values`**
+   (modo agregado viejo, si existiera guardado en algún indicador) ahora
+   renderiza un aviso en vez de una tabla — no se encontró ningún indicador
+   con ese modo en `db_seed.json` (0 matches), pero no se pudo verificar
+   contra la base Postgres de producción/staging real. Si aparece en algún
+   dashboard tras el deploy, hay que recrearlo como Tabla Pivote nueva
+   (página Tablas) y agregarla al layout como item `configured_table`.
+4. **`componentDefs.js` no se tocó**: se dejó la entrada `PivotTable` en
+   `TABLE_COMPONENTS` intacta para no romper la edición de items ya
+   guardados (`AddComponentModal` busca el componente por id — si se
+   borra, la edición de items existentes deja de encontrar el def). Solo
+   se actualizó el call site en `StepConfig.jsx` para pasarle `fields` en
+   vez de `allMetrics/allDimensions/derivedColumns` al nuevo
+   `PivotTableConfig`.
