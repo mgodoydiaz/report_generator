@@ -4,7 +4,10 @@ import json
 from typing import Optional, Dict, Any
 from rgenerator.core.step import Step
 from backend.auditing import make_metric_data
+from backend.logging_config import get_logger
 from backend.models import Metric, MetricDimension, MetricData, Dimension
+
+logger = get_logger(__name__)
 
 
 def _parse_meta_json(raw):
@@ -64,8 +67,8 @@ class SaveToMetric(Step):
         self.clear_existing = clear_existing
 
     def run(self, ctx):
-        print(f"[{self.name}] Iniciando guardado para métrica ID {self.metric_id} desde artifact '{self.input_key}'")
-        print(f"[{self.name}] Artifacts disponibles: {list(ctx.artifacts.keys())}")
+        logger.info(f"[{self.name}] Iniciando guardado para métrica ID {self.metric_id} desde artifact '{self.input_key}'")
+        logger.info(f"[{self.name}] Artifacts disponibles: {list(ctx.artifacts.keys())}")
 
         if not ctx.db:
             raise RuntimeError("No hay sesión de base de datos disponible en el contexto (ctx.db)")
@@ -78,11 +81,11 @@ class SaveToMetric(Step):
         if not isinstance(df_input, pd.DataFrame):
             raise TypeError(f"El artifact '{self.input_key}' no es un DataFrame.")
 
-        print(f"[{self.name}] DataFrame shape: {df_input.shape}")
-        print(f"[{self.name}] DataFrame columnas: {df_input.columns.tolist()}")
+        logger.info(f"[{self.name}] DataFrame shape: {df_input.shape}")
+        logger.info(f"[{self.name}] DataFrame columnas: {df_input.columns.tolist()}")
 
         if df_input.empty:
-            print(f"[{self.name}] El DataFrame de entrada está vacío. No se guardarán datos.")
+            logger.warning(f"[{self.name}] El DataFrame de entrada está vacío. No se guardarán datos.")
             return
 
         # 2. Cargar definición de la métrica desde PostgreSQL
@@ -97,15 +100,15 @@ class SaveToMetric(Step):
 
         # 3. Construir mapa de dimensiones: nombre → id_dimension
         dim_name_to_id = _build_dim_name_to_id(ctx.db, self.metric_id)
-        print(f"[{self.name}] Dimensiones inferidas: {list(dim_name_to_id.keys())}")
-        print(f"[{self.name}] Tipo de dato: {metric.data_type}, Nombre métrica: {metric.name}")
+        logger.info(f"[{self.name}] Dimensiones inferidas: {list(dim_name_to_id.keys())}")
+        logger.info(f"[{self.name}] Tipo de dato: {metric.data_type}, Nombre métrica: {metric.name}")
 
         # 4. Limpiar datos existentes si se solicita
         if self.clear_existing:
             deleted = ctx.db.query(MetricData).filter(
                 MetricData.id_metric == self.metric_id
             ).delete(synchronize_session=False)
-            print(f"[{self.name}] Se eliminaron {deleted} registros previos de la métrica {self.metric_id}")
+            logger.info(f"[{self.name}] Se eliminaron {deleted} registros previos de la métrica {self.metric_id}")
 
         # 5. Iterar filas del DataFrame y construir registros
         new_data_points = []
@@ -164,9 +167,19 @@ class SaveToMetric(Step):
         if new_data_points:
             ctx.db.add_all(new_data_points)
             ctx.db.commit()
-            print(f"[{self.name}] Se guardaron {len(new_data_points)} registros en PostgreSQL")
+            logger.info(f"[{self.name}] Se guardaron {len(new_data_points)} registros en PostgreSQL")
         else:
-            print(f"[{self.name}] No se generaron registros nuevos.")
+            logger.info(f"[{self.name}] No se generaron registros nuevos.")
+
+        # Invalidar el cache de DataFrames del router de tablas: sin esto los
+        # dashboards siguen sirviendo datos pre-ETL hasta que expire el TTL.
+        # Import lazy para no acoplar rgenerator → backend.routers en import time.
+        if self.clear_existing or new_data_points:
+            try:
+                from backend.routers.tables import invalidate_metric_df_cache
+                invalidate_metric_df_cache(self.metric_id)
+            except ImportError:
+                pass  # rgenerator usado standalone (CLI sin backend completo)
 
 
 class LoadMetricToDF(Step):
@@ -191,7 +204,7 @@ class LoadMetricToDF(Step):
         self.filters = filters or {}
 
     def run(self, ctx):
-        print(f"[{self.name}] Cargando métrica ID {self.metric_id} → artifact '{self.output_key}'")
+        logger.info(f"[{self.name}] Cargando métrica ID {self.metric_id} → artifact '{self.output_key}'")
 
         if not ctx.db:
             raise RuntimeError("No hay sesión de base de datos disponible en el contexto (ctx.db)")
@@ -208,13 +221,13 @@ class LoadMetricToDF(Step):
 
         # 2. Construir mapa ID dimensión → nombre
         dims_map = _build_dim_id_to_name(ctx.db, self.metric_id)
-        print(f"[{self.name}] Dimensiones: {list(dims_map.values())}")
+        logger.info(f"[{self.name}] Dimensiones: {list(dims_map.values())}")
 
         # 3. Cargar datos de la métrica desde PostgreSQL
         data_rows = ctx.db.query(MetricData).filter(
             MetricData.id_metric == self.metric_id
         ).all()
-        print(f"[{self.name}] Registros encontrados: {len(data_rows)}")
+        logger.info(f"[{self.name}] Registros encontrados: {len(data_rows)}")
 
         # 4. Aplanar a DataFrame legible
         flat_data = []
@@ -256,9 +269,9 @@ class LoadMetricToDF(Step):
                 if col in df_result.columns:
                     df_result = df_result[df_result[col].astype(str) == str(val)]
                 else:
-                    print(f"[{self.name}] Advertencia: columna de filtro '{col}' no existe en el DataFrame.")
-            print(f"[{self.name}] Registros tras filtros: {len(df_result)}")
+                    logger.warning(f"[{self.name}] Advertencia: columna de filtro '{col}' no existe en el DataFrame.")
+            logger.info(f"[{self.name}] Registros tras filtros: {len(df_result)}")
 
         ctx.artifacts[self.output_key] = df_result
         ctx.last_artifact_key = self.output_key
-        print(f"[{self.name}] DataFrame guardado en artifact '{self.output_key}' — shape: {df_result.shape}")
+        logger.info(f"[{self.name}] DataFrame guardado en artifact '{self.output_key}' — shape: {df_result.shape}")

@@ -172,15 +172,7 @@ def modificar_valores_columna(df, config_transformaciones):
 
         elif operacion == "math":
             usa_fila = regla.get("usa_fila", False)
-            import re as _re_mod
-            _math_ns = {
-                "__builtins__": {},
-                "abs": abs, "round": round, "min": min, "max": max,
-                "sum": sum, "len": len, "str": str, "float": float, "int": int,
-                # Acceso al módulo `re` para parseo de strings (ej. extraer
-                # info de nombres de archivo en `__source_file__`).
-                "re": _re_mod,
-            }
+            from .safe_eval import evaluar_expresion
 
             if usa_fila:
                 def aplicar_math_fila(row, reglas):
@@ -189,10 +181,10 @@ def modificar_valores_columna(df, config_transformaciones):
                         expresion = regla.get("expresion")
                         if expresion is None:
                             continue
-                        env = {**_math_ns, "row": row}
-                        cumple = condicion == "*" or bool(eval(condicion, env))
+                        variables = {"row": row}
+                        cumple = condicion == "*" or bool(evaluar_expresion(condicion, variables))
                         if cumple:
-                            return eval(expresion, env)
+                            return evaluar_expresion(expresion, variables)
                     return row.get(col, None)
 
                 df[col] = df.apply(lambda row: aplicar_math_fila(row, valores), axis=1)
@@ -203,9 +195,9 @@ def modificar_valores_columna(df, config_transformaciones):
                         expresion = regla.get("expresion")
                         if expresion is None:
                             continue
-                        cumple = condicion == "*" or bool(eval(condicion, {**_math_ns, "x": x}))
+                        cumple = condicion == "*" or bool(evaluar_expresion(condicion, {"x": x}))
                         if cumple:
-                            return eval(expresion, {**_math_ns, "x": x})
+                            return evaluar_expresion(expresion, {"x": x})
                     return x
                 df[col] = df[col].apply(lambda x: aplicar_math(x, valores))
 

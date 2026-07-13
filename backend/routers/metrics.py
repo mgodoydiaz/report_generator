@@ -12,7 +12,11 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.auth import get_current_user
 from backend.auditing import client_ip, make_metric_data
+from backend.logging_config import get_logger
 from backend.models import User, Metric, MetricDimension, MetricData, Dimension
+from backend.routers.tables import invalidate_metric_df_cache
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/metrics", tags=["metrics"])
 
@@ -110,7 +114,8 @@ def get_metrics(
         metrics = db.query(Metric).filter(Metric.org_id == user.org_id).all()
         return [_metric_to_dict(m) for m in metrics]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/")
@@ -142,7 +147,8 @@ def create_metric(
         return {"status": "success", "data": _metric_to_dict(new_m)}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.put("/{metric_id}")
@@ -182,7 +188,8 @@ def update_metric(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.delete("/{metric_id}")
@@ -199,10 +206,12 @@ def delete_metric(
         if record:
             db.delete(record)  # cascade deletes MetricDimension, MetricData
             db.commit()
+            invalidate_metric_df_cache(metric_id)
         return {"status": "success"}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 # --- Endpoints: Metric Data values ---
@@ -268,7 +277,8 @@ def get_metric_data(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/{metric_id}/data")
@@ -305,6 +315,7 @@ def add_metric_data_point(
         db.add(new_dp)
         db.commit()
         db.refresh(new_dp)
+        invalidate_metric_df_cache(metric_id)
 
         return {
             "status": "success",
@@ -320,7 +331,8 @@ def add_metric_data_point(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/{metric_id}/clear")
@@ -343,12 +355,14 @@ def clear_metric_data(
             .delete(synchronize_session=False)
         )
         db.commit()
+        invalidate_metric_df_cache(metric_id)
         return {"status": "success", "cleared_count": deleted}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.delete("/data/{data_id}")
@@ -369,12 +383,14 @@ def delete_data_point(
                 raise HTTPException(status_code=403, detail="Acceso denegado")
             db.delete(record)
             db.commit()
+            invalidate_metric_df_cache(metric.id_metric)
         return {"status": "success"}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.put("/data/{data_id}")
@@ -406,12 +422,14 @@ def update_metric_data(
         record.value = final_val
         record.dimensions_json = json.dumps(point.dimensions_json) if isinstance(point.dimensions_json, dict) else point.dimensions_json
         db.commit()
+        invalidate_metric_df_cache(metric.id_metric)
         return {"status": "success", "id_data": data_id}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/data/batch-delete")
@@ -426,6 +444,17 @@ def delete_metric_data_batch(
             m.id_metric
             for m in db.query(Metric.id_metric).filter(Metric.org_id == user.org_id).all()
         ]
+        # Métricas afectadas ANTES del delete, para invalidar su cache
+        afectadas = {
+            r[0]
+            for r in db.query(MetricData.id_metric)
+            .filter(
+                MetricData.id_data.in_(req.ids),
+                MetricData.id_metric.in_(org_metric_ids),
+            )
+            .distinct()
+            .all()
+        }
         deleted = (
             db.query(MetricData)
             .filter(
@@ -435,10 +464,13 @@ def delete_metric_data_batch(
             .delete(synchronize_session=False)
         )
         db.commit()
+        for mid in afectadas:
+            invalidate_metric_df_cache(mid)
         return {"status": "success", "deleted_count": deleted}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.get("/{metric_id}/export")
@@ -530,8 +562,8 @@ def export_metric_data(
     except HTTPException:
         raise
     except Exception as e:
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.get("/{metric_id}/distinct/{column}")
@@ -579,8 +611,8 @@ def get_metric_distinct_values(
 
         return {"values": sorted(list(distinct_vals))}
     except Exception as e:
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.get("/{metric_id}/template")
@@ -626,7 +658,8 @@ def get_metric_template(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/{metric_id}/import")
@@ -726,11 +759,12 @@ async def import_metric_data(
         if new_data_points:
             db.add_all(new_data_points)
             db.commit()
+            invalidate_metric_df_cache(metric_id)
 
         return {"status": "success", "imported": len(new_data_points)}
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        print(e)
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")

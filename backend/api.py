@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
@@ -12,13 +13,31 @@ from backend.routers import charts
 from backend.routers import mappings
 from backend.routers import data_ops
 from backend.database import init_db
+from backend.logging_config import get_logger, setup_logging
+
+# Configurar logging al importar el módulo de la app, antes de cualquier
+# arranque, para que routers y steps escriban con formato estándar.
+setup_logging()
+logger = get_logger(__name__)
 
 app = FastAPI()
 
-# Configurar CORS
+# Configurar CORS. Orígenes explícitos: "*" + allow_credentials es una
+# combinación inválida para los navegadores y abre la API a cualquier
+# sitio. Sobreescribir con CORS_ORIGINS (coma-separado) en cada entorno.
+_DEFAULT_CORS_ORIGINS = (
+    "http://localhost:5173,http://127.0.0.1:5173,"
+    "https://rgenerator.mgodoy.dev"
+)
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", _DEFAULT_CORS_ORIGINS).split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -80,6 +99,7 @@ def root():
 
 @app.on_event("startup")
 def on_startup():
+    logger.info("Iniciando Report Generator API — inicializando base de datos")
     init_db()
 
 if __name__ == "__main__":

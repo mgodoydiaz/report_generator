@@ -8,6 +8,10 @@ import rgenerator.core.pipeline_steps as ps
 import rgenerator.core.metric_steps as ms
 import os
 
+from backend.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 # Diccionario que mapea el nombre del paso en JSON a la clase correspondiente en Python.
 # Steps removidos en B6b post-v0.2.0 (legacy CLI/LaTeX/DOCX): DiscoverInputs,
 # DeleteTempFiles, ExportConsolidatedExcel, GenerateGraphics, GenerateTables,
@@ -97,6 +101,16 @@ class PipelineRunner:
         self.total_steps = len(self.pipeline)
         self.status = "IDLE" # IDLE, RUNNING, COMPLETED, FAILED
 
+    def refresh_db(self, db) -> None:
+        """Reemplaza la sesión DB del contexto.
+
+        Los runners viven cacheados entre requests (ACTIVE_RUNNERS), pero la
+        sesión que recibieron al construirse la cierra get_db() al terminar
+        ese primer request. Cada endpoint debe llamar esto con su sesión
+        fresca ANTES de run_all()/step().
+        """
+        self.ctx.db = db
+
     def step(self):
         """Ejecuta el siguiente paso."""
         if self.current_step_index >= self.total_steps:
@@ -107,7 +121,7 @@ class PipelineRunner:
         self.status = "RUNNING"
         
         try:
-            print(f"-- Running step {self.current_step_index + 1}/{self.total_steps}: {step.__class__.__name__}")
+            logger.info(f"-- Running step {self.current_step_index + 1}/{self.total_steps}: {step.__class__.__name__}")
             step.run(self.ctx)
             
             self.current_step_index += 1
@@ -124,7 +138,7 @@ class PipelineRunner:
             }
         except WaitingForInputException as e:
             self.status = "WAITING_INPUT"
-            print(f"-- Step {self.current_step_index + 1} WAITING: {e}")
+            logger.info(f"-- Step {self.current_step_index + 1} WAITING: {e}")
             return {
                 "status": "waiting_input", 
                 "step_index": self.current_step_index,

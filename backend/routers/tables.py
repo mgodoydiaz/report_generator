@@ -29,8 +29,11 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import get_db
+from backend.logging_config import get_logger
 from backend.models import Indicator, Metric, MetricData, MetricDimension, Dimension, Spec, User
 from backend.schemas_table import TableConfig, TableCreate, TableSummary, TableUpdate
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/tables", tags=["tables"])
 
@@ -515,8 +518,7 @@ def _render_table_data(
                 if configs:
                     df = apply_derived_fields(df, configs)
         except Exception:
-            import traceback
-            traceback.print_exc()
+            logger.error("Error aplicando derived_columns en preview de tabla", exc_info=True)
 
     # Aplicar filtros temporales POST cálculo
     post_temporal = {k: v for k, v in base_filters.items() if k in temporal_dim_names}

@@ -4,6 +4,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from backend.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 @dataclass
 class RunContext:
@@ -44,16 +48,17 @@ class RunContext:
 
     def show_attrs(self, indent: int = 2):
         space = " " * indent
-        print(f"{self.__class__.__name__}")
+        lines = [f"{self.__class__.__name__}"]
 
         for attr, value in vars(self).items():
             if isinstance(value, dict):
-                print(f"{space}{attr}:")
+                lines.append(f"{space}{attr}:")
                 for k, v in value.items():
-                    print(f"{space*2}{k}: {v}")
+                    lines.append(f"{space*2}{k}: {v}")
             elif isinstance(value, list):
-                print(f"{space}{attr}:")
+                lines.append(f"{space}{attr}:")
                 for i, v in enumerate(value):
-                    print(f"{space*2}[{i}] {v}")
+                    lines.append(f"{space*2}[{i}] {v}")
             else:
-                print(f"{space}{attr}: {value}")
+                lines.append(f"{space}{attr}: {value}")
+        logger.debug("\n".join(lines))

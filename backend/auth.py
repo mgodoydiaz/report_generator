@@ -20,7 +20,16 @@ from backend.database import get_db
 from backend.models import User
 
 # ─── Config ──────────────────────────────────────────────────
-JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
+# Sin default: arrancar con un secreto público conocido significaría que
+# cualquiera puede forjar tokens. Mismo patrón hard-fail que DATABASE_URL
+# en database.py (load_dotenv ya corrió al importar backend.database).
+JWT_SECRET = os.getenv("JWT_SECRET")
+if not JWT_SECRET:
+    raise RuntimeError(
+        "JWT_SECRET no configurada. Definirla en .env (local) o en las "
+        "variables del servicio (Railway → Variables). La app no arranca "
+        "con un secreto por defecto."
+    )
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = int(os.getenv("JWT_EXPIRE_HOURS", "8"))
 

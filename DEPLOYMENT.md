@@ -30,12 +30,15 @@ Configuradas en Railway → Service `rgenerator-backend` → Variables. La copia
 | Variable | Descripción |
 |---|---|
 | `DATABASE_URL` | Supabase Session pooler (`aws-1-us-east-1.pooler.supabase.com:5432`). Password URL-encoded |
-| `JWT_SECRET` | 32 bytes hex (`secrets.token_hex(32)`). Distinto del local |
+| `JWT_SECRET` | 32 bytes hex (`secrets.token_hex(32)`). Distinto del local. **OBLIGATORIA desde W0: la app no arranca sin ella** |
 | `JWT_EXPIRE_HOURS` | `8` |
 | `ENVIRONMENT` | `production` |
 | `DEBUG` | `false` |
 | `SQL_ECHO` | `false` |
-| `CORS_ORIGINS` | Coma-separadas. Ej: `https://mgodoy.dev,https://apps.mgodoy.dev` |
+| `CORS_ORIGINS` | Coma-separadas. Ej: `https://rgenerator.mgodoy.dev`. Default en código: localhost:5173 + rgenerator.mgodoy.dev |
+| `MAX_UPLOAD_MB` | Límite por archivo en uploads de pipelines. Default `50` |
+| `LOGIN_MAX_ATTEMPTS` | Intentos fallidos de login por (ip, email) antes del 429. Default `5` |
+| `LOGIN_WINDOW_MINUTES` | Ventana del rate limit de login. Default `15` |
 | `PORT` | (auto-inyectada por Railway, no setear) |
 
 ---

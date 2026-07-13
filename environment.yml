@@ -27,6 +27,7 @@ dependencies:
   - ipykernel
   - pip:
       - openpyxl
+      - simpleeval
       - pymupdf
       - docxtpl
       - docx2pdf

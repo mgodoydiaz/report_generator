@@ -5,7 +5,10 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.logging_config import get_logger
 from backend.models import User, Spec
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/specs", tags=["specs"])
 
@@ -36,7 +39,8 @@ async def get_specs(
         specs = db.query(Spec).filter(Spec.org_id == user.org_id).all()
         return [_spec_to_dict(s) for s in specs]
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de specs", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.get("/{spec_id}/config")
@@ -65,7 +69,8 @@ async def get_spec_config(
             **config,
         }
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de specs", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/config")
@@ -120,10 +125,10 @@ async def _save_spec_config_logic(spec_id: int, config: dict, db: Session, user:
             "message": f"Especificación {spec.id_spec} guardada",
             "new_id": spec.id_spec,
         }
-    except Exception as e:
+    except Exception:
         db.rollback()
-        import traceback; traceback.print_exc()
-        return {"error": str(e)}
+        logger.error("Error guardando especificación", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{spec_id}/config")
@@ -160,7 +165,8 @@ async def duplicate_spec(
 
         return await _save_spec_config_logic(0, config, db, user)
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de specs", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.delete("/{spec_id}")
@@ -182,4 +188,5 @@ async def delete_spec(
         return {"status": "success", "message": f"Especificación {spec_id} eliminada"}
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de specs", exc_info=True)
+        return {"error": "Error interno del servidor"}
