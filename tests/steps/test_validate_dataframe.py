@@ -109,7 +109,9 @@ def test_allowed_values_no_match_lanza():
         step.run(ctx)
 
 
-def test_modo_warn_no_lanza(df_valido, capsys):
+def test_modo_warn_no_lanza(df_valido, caplog):
+    import logging
+
     df = df_valido.copy()
     df.loc[0, "Logro"] = 99
     ctx = _make_ctx({"df": df})
@@ -118,9 +120,10 @@ def test_modo_warn_no_lanza(df_valido, capsys):
         schema={"columns": {"Logro": {"max": 1}}},
         mode="warn",
     )
-    step.run(ctx)  # no lanza, solo loguea
-    out = capsys.readouterr().out
-    assert "Validación falló" in out
+    with caplog.at_level(logging.INFO):
+        step.run(ctx)  # no lanza, solo loguea
+    # El mensaje ahora se emite vía logging (W0.6), no por stdout.
+    assert "Validación falló" in caplog.text
 
 
 def test_modo_invalido_lanza_en_init():

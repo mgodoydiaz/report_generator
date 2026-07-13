@@ -4,6 +4,10 @@ from docx2pdf import convert
 import os
 from pathlib import Path
 
+from backend.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 def render_docx_report(template_path, context, output_path, auto_convert_pdf=True):
     """
     Renderiza una plantilla .docx usando un contexto (diccionario) con docxtpl.
@@ -35,7 +39,7 @@ def render_docx_report(template_path, context, output_path, auto_convert_pdf=Tru
                 # Ancho por defecto 150mm, ajustable
                 processed_context[k] = InlineImage(doc, str(v), width=Mm(150))
             else:
-                print(f"Advertencia: Imagen no encontrada {v}")
+                logger.warning(f"Imagen no encontrada: {v}")
                 processed_context[k] = ""
         else:
             processed_context[k] = v
@@ -51,8 +55,8 @@ def render_docx_report(template_path, context, output_path, auto_convert_pdf=Tru
             pdf_path = output_path.with_suffix(".pdf")
             convert(str(output_path), str(pdf_path))
             final_output = pdf_path
-        except Exception as e:
-            print(f"Error convirtiendo a PDF: {e}. Se conserva el .docx.")
+        except Exception:
+            logger.error("Error convirtiendo a PDF. Se conserva el .docx.", exc_info=True)
             
     return final_output
 

@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.logging_config import get_logger
 from backend.models import User, Indicator, IndicatorMetric, Metric
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/indicators", tags=["indicators"])
 
@@ -149,7 +152,8 @@ def get_indicators(
         )
         return [_indicator_to_dict(i) for i in indicators]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/")
@@ -194,7 +198,8 @@ def create_indicator(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.put("/{indicator_id}")
@@ -254,7 +259,8 @@ def update_indicator(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 class LayoutUpsert(BaseModel):
@@ -293,7 +299,8 @@ def upsert_layout(
         return {"status": "success"}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/{indicator_id}/export-pdf")
@@ -411,7 +418,8 @@ def export_pdf(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.delete("/{indicator_id}")
@@ -435,4 +443,5 @@ def delete_indicator(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de indicators", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")

@@ -1,5 +1,4 @@
 import json
-import traceback
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -7,11 +6,14 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.logging_config import get_logger
 from backend.models import (
     User, Indicator, IndicatorMetric,
     Metric, MetricDimension, MetricData, Dimension,
 )
 from backend.rgenerator.tooling.curso_order import curso_sort_key
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/results", tags=["results"])
 
@@ -262,7 +264,7 @@ def get_indicator_data(
                     try:
                         df = apply_derived_fields(df, configs)
                     except Exception:
-                        traceback.print_exc()
+                        logger.error("Error aplicando derived_fields en results", exc_info=True)
                         continue
 
                     # Re-inyectar columnas nuevas en value de cada row pre_filtered.
@@ -292,7 +294,7 @@ def get_indicator_data(
                         r["value"] = val
             except Exception:
                 # Falla en derived_columns no debe romper el endpoint completo.
-                traceback.print_exc()
+                logger.error("Error procesando derived_columns en results", exc_info=True)
 
         # Snapshot de dimensions_json ANTES del filtrado — necesario para el
         # cascading del paso 7.5. Evita re-querying la BD (que era N queries
@@ -381,6 +383,6 @@ def get_indicator_data(
             "achievement_levels": achievement_levels,
         }
 
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+    except Exception:
+        logger.error("Error interno en endpoint de results", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")

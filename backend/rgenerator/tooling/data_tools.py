@@ -1,6 +1,10 @@
 import json
 from typing import Any, Dict, Union
 
+from backend.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 def safe_json_to_text(data: Any) -> str:
     """
     Transforma un objeto, lista o diccionario a texto JSON formateado.
@@ -63,6 +67,6 @@ def get_json_safe_df(df: Any) -> Any:
             df[col] = df[col].astype(object).apply(clean_val)
 
         return df
-    except Exception as e:
-        print(f"Error en get_json_safe_df: {e}")
+    except Exception:
+        logger.error("Error en get_json_safe_df", exc_info=True)
         return df

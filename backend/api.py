@@ -13,6 +13,12 @@ from backend.routers import charts
 from backend.routers import mappings
 from backend.routers import data_ops
 from backend.database import init_db
+from backend.logging_config import get_logger, setup_logging
+
+# Configurar logging al importar el módulo de la app, antes de cualquier
+# arranque, para que routers y steps escriban con formato estándar.
+setup_logging()
+logger = get_logger(__name__)
 
 app = FastAPI()
 
@@ -93,6 +99,7 @@ def root():
 
 @app.on_event("startup")
 def on_startup():
+    logger.info("Iniciando Report Generator API — inicializando base de datos")
     init_db()
 
 if __name__ == "__main__":

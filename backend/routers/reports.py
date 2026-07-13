@@ -10,7 +10,6 @@ Reporte v2" o equivalente, pasando el indicator_id + dict de filtros.
 """
 from __future__ import annotations
 
-import traceback
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -20,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import get_db
+from backend.logging_config import get_logger
 from backend.models import User
 from backend.rgenerator.reports import runtime
 from backend.rgenerator.reports.data import cargar_dataframes_indicator
@@ -27,6 +27,8 @@ from backend.rgenerator.reports.dia import crear_informe as dia_informe
 from backend.rgenerator.reports.simce import crear_informe as simce_informe
 from backend.rgenerator.reports.simce_panguipulli import crear_informe as simce_panguipulli_informe
 
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/reports", tags=["reports-v2"])
 
@@ -144,9 +146,9 @@ def generar_reporte(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, f"Error cargando datos: {type(e).__name__}: {e}")
+    except Exception:
+        logger.error("Error cargando datos para reporte", exc_info=True)
+        raise HTTPException(500, "Error interno del servidor")
 
     try:
         if tipo == "simce":
@@ -231,9 +233,9 @@ def generar_reporte(
             )
     except HTTPException:
         raise
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, f"Error generando PDF: {type(e).__name__}: {e}")
+    except Exception:
+        logger.error("Error generando PDF de reporte", exc_info=True)
+        raise HTTPException(500, "Error interno del servidor")
 
     return Response(
         content=pdf_bytes,

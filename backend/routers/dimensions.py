@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.logging_config import get_logger
 from backend.models import User, Dimension, DimensionValue
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/dimensions", tags=["dimensions"])
 
@@ -52,7 +55,8 @@ async def get_dimensions(
             for d in dims
         ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/")
@@ -87,7 +91,8 @@ async def create_dimension(
         }
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.put("/{dim_id}")
@@ -130,7 +135,8 @@ async def update_dimension(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.delete("/{dim_id}")
@@ -150,7 +156,8 @@ async def delete_dimension(
         return {"status": "success"}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 # --- Endpoints: Dimension Values ---
@@ -184,7 +191,8 @@ async def get_dimension_values(
             for v in values
         ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.post("/{dim_id}/values")
@@ -225,7 +233,8 @@ async def add_dimension_value(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 
 @router.delete("/values/{val_id}")
@@ -251,4 +260,5 @@ async def delete_dimension_value(
         raise
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Error interno no controlado en router de dimensions", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")

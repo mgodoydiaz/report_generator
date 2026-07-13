@@ -15,10 +15,13 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import get_db
+from backend.logging_config import get_logger
 from backend.models import Pipeline, User
 from backend.config import UPLOADS_DIR, PIPELINE_RUNS_DIR
 from rgenerator.tooling.pipeline_tools import PipelineRunner
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
@@ -108,9 +111,9 @@ def _update_last_run(pipeline_id: int, user: User, db: Session):
         if row:
             row.last_run = datetime.utcnow()
             db.commit()
-    except Exception as ex:
+    except Exception:
         db.rollback()
-        print(f"Error actualizando last_run: {ex}")
+        logger.error("Error actualizando last_run", exc_info=True)
 
 
 @router.get("/")
@@ -123,9 +126,9 @@ async def get_pipelines(
         pipelines = db.query(Pipeline).filter(Pipeline.org_id == user.org_id).all()
         records = [_pipeline_to_dict(p) for p in pipelines]
         return JSONResponse(content=json.loads(json.dumps(records, default=lambda o: None)))
-    except Exception as e:
-        import traceback; traceback.print_exc()
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception:
+        logger.error("Error listando pipelines", exc_info=True)
+        return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
 
 @router.post("/{pipeline_id}/upload")
@@ -191,7 +194,8 @@ async def upload_pipeline_files(
             "files": saved_files,
         }
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{pipeline_id}/run")
@@ -239,7 +243,8 @@ async def execute_pipeline(
         return result
     except Exception as e:
         _drop_runner(_key(user, pipeline_id))
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{pipeline_id}/input")
@@ -290,7 +295,8 @@ async def submit_pipeline_input(
         _update_last_run(pipeline_id, user, db)
         return result
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{pipeline_id}/step")
@@ -327,7 +333,8 @@ async def execute_pipeline_step(
         return result
     except Exception as e:
         _drop_runner(_key(user, pipeline_id))
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{pipeline_id}/reset")
@@ -363,8 +370,8 @@ async def download_artifact(
         try:
             with pd.ExcelWriter(output, engine="openpyxl") as writer:
                 artifact.to_excel(writer, index=False)
-        except Exception as e:
-            print(f"Error generando Excel: {e}")
+        except Exception:
+            logger.error("Error generando Excel", exc_info=True)
             output = BytesIO()
             # Separador ';' para que Excel en español (Chile) abra
             # directo como columnas. utf-8-sig agrega BOM para tildes.
@@ -462,7 +469,8 @@ async def get_pipeline_config(
 
         return config
     except Exception as e:
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/config")
@@ -526,7 +534,8 @@ async def _save_pipeline_config_logic(pipeline_id: int, config: dict, db: Sessio
         }
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.post("/{pipeline_id}/config")
@@ -559,7 +568,8 @@ async def toggle_pipeline_hidden(
         return {"status": "success", "hidden": row.hidden}
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
 
 
 @router.delete("/{pipeline_id}")
@@ -586,4 +596,5 @@ async def delete_pipeline(
         return {"status": "success", "message": f"Pipeline {pipeline_id} eliminado correctamente"}
     except Exception as e:
         db.rollback()
-        return {"error": str(e)}
+        logger.error("Error interno no controlado en router de pipelines", exc_info=True)
+        return {"error": "Error interno del servidor"}
