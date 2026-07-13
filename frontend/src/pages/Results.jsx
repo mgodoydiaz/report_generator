@@ -7,6 +7,7 @@ import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataPr
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
 import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
+import GenerateWordReportModal from '../components/GenerateWordReportModal';
 import MultiSelectFilters from '../components/MultiSelectFilters';
 
 export default function Results() {
@@ -33,6 +34,8 @@ export default function Results() {
     const [showReportModal, setShowReportModal] = useState(false);
     const [showReportV2Modal, setShowReportV2Modal] = useState(false);
     const [reportV2Context, setReportV2Context] = useState(null); // {tipoV2, indicatorId, filtros}
+    const [showWordModal, setShowWordModal] = useState(false);
+    const [wordContext, setWordContext] = useState(null); // {indicatorId, filtros}
 
     const debounceTimer = useRef(null);
     const currentIndicatorRef = useRef(null); // evita race conditions
@@ -375,6 +378,36 @@ export default function Results() {
                                     </button>
                                 );
                             })()}
+                            {/* Botón informes Word — disponible para cualquier
+                                indicador; los informes registrados se listan en
+                                el modal (registry por nombre en el backend). */}
+                            {(() => {
+                                // Mapear filtros UI → nombres DB (mismo criterio que v2)
+                                const filtrosWord = {};
+                                Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
+                                    const dimName = indicatorDims[dimId]?.name;
+                                    const arr = Array.isArray(vals) ? vals : (vals ? [vals] : []);
+                                    if (!dimName || arr.length === 0) return;
+                                    filtrosWord[dimName] = arr.length === 1 ? arr[0] : arr;
+                                });
+                                return (
+                                    <button
+                                        onClick={() => {
+                                            setWordContext({
+                                                indicatorId: parseInt(selectedIndicator, 10),
+                                                filtros: filtrosWord,
+                                            });
+                                            setShowWordModal(true);
+                                        }}
+                                        disabled={loadingDashboard}
+                                        title="Generar informe Word (.docx editable) desde plantilla con códigos {{valor}}"
+                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-emerald-700 bg-white border-2 border-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
+                                    >
+                                        <Download size={14} />
+                                        Word
+                                    </button>
+                                );
+                            })()}
                         </div>
                     )}
 
@@ -455,6 +488,14 @@ export default function Results() {
                     tipoV2={reportV2Context.tipoV2}
                     indicatorId={reportV2Context.indicatorId}
                     filtros={reportV2Context.filtros}
+                />
+            )}
+            {wordContext && (
+                <GenerateWordReportModal
+                    open={showWordModal}
+                    onClose={() => setShowWordModal(false)}
+                    indicatorId={wordContext.indicatorId}
+                    filtros={wordContext.filtros}
                 />
             )}
         </div>
