@@ -131,6 +131,21 @@ def _ejecutar_seccion(
             return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
         return {"tipo": "table", "titulo": titulo, "html": df_a_html_table(df_out)}
 
+    if tipo == "pivot":
+        # Azúcar sintáctico para tabla pivote (motor W2). La sección declara
+        # `spec` (un PivotSpec) y opcionalmente `filtro`, sin pasar por `fn`.
+        # Multi-pivote: varias secciones `pivot`. Pivote por curso: usar las
+        # secciones dinámicas (`iterar_por`) + filtro={"Curso": "{curso}"}.
+        pivot_spec = seccion.get("spec")
+        filtro = seccion.get("filtro")
+        if not pivot_spec:
+            return {"tipo": "error", "titulo": titulo, "msg": "Sección 'pivot' sin 'spec'"}
+        try:
+            df_out = tables.tabla_pivote(df, spec=pivot_spec, filtro=filtro)
+        except Exception as e:  # pragma: no cover
+            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        return {"tipo": "table", "titulo": titulo, "html": df_a_html_table(df_out)}
+
     return {"tipo": "error", "titulo": titulo, "msg": f"Tipo desconocido: {tipo}"}
 
 

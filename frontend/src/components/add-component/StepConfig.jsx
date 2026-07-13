@@ -3,6 +3,7 @@ import { ChevronRight, ExternalLink, X } from 'lucide-react';
 import { getFieldOptions } from './componentDefs';
 import PivotTableConfig from './PivotTableConfig';
 import FlatTableConfig from './FlatTableConfig';
+import { buildAvailableFields } from './fieldUtils';
 
 // ── Helper: convierte nombre de columna al fieldName normalizado ─────────────
 
@@ -539,13 +540,17 @@ export default function StepConfig({ comp, columnRoles, roleLabels, axisStepIdx,
     const currentStep = steps[axisStepIdx];
     if (!currentStep) return null;
 
-    // Tabla pivote: UI especial — reemplaza el flow estándar de ejes
+    // Tabla pivote: UI especial — reemplaza el flow estándar de ejes.
+    // NOTA (W2): este editor arma un PivotSpec (rows/cols/values/totals) para
+    // el motor de pivotes del backend. El item legacy 'PivotTable' del
+    // dashboard (sin fetch a backend) no puede calcular ese resultado — si
+    // se usa aquí, el render mostrará un aviso para migrar a una Tabla
+    // Pivote real (página Tablas). Se deja disponible solo para no romper la
+    // edición de items ya guardados.
     if (currentStep.optionType === 'pivot') {
         return (
             <PivotTableConfig
-                allMetrics={allMetrics || []}
-                allDimensions={allDimensions || []}
-                derivedColumns={derivedColumns || []}
+                fields={buildAvailableFields(allMetrics || [], allDimensions || [], derivedColumns || [])}
                 initial={selections[currentStep.key]}
                 onConfirm={(cfg) => onSelect(currentStep.key, cfg)}
             />

@@ -1,97 +1,38 @@
 /**
- * pivotTable.jsx — Tabla pivote configurable
+ * pivotTable.jsx — Tabla pivote
  *
- * Componente:
- *   PivotTable — Tabla de cross-tabulation con agregación JS pura
+ * Dos componentes:
  *
- * pivotConfig = {
- *   rows:   string[]                          campos de fila (ej. ["_curso"])
- *   cols:   string[]                          campos de columna (ej. ["_asignatura"])
- *   value:  string                            campo único (modo valor-crudo)
- *   values: [{ field, aggregation, label }]   valores agregados (modo clásico)
- * }
+ *   PivotResultTable — render puro de un `PivotResult` calculado por el
+ *     backend (motor W2, `backend/rgenerator/core/pivot_engine.py`). Es el
+ *     componente que usa `TableRenderer` cuando `GET /api/tables/{id}/data`
+ *     responde `{mode: "pivot", pivot: <PivotResult>}`. Sin agregación en
+ *     JS — solo pinta `columns`/`rows` tal como llegan.
  *
- * Si se recibe `value` (string), cada celda muestra el valor crudo del único
- * record que coincida con (row, col). Si hay múltiples se toma el modo (más
- * frecuente) y se respeta la prioridad dada por `semaphoreField` si aplica.
+ *     PivotResult = {
+ *       row_fields: string[], col_fields: string[],
+ *       columns: [{ keys, field, agg, label, is_total }],
+ *       rows:    [{ keys, cells: [{ value, display }], is_total }],
+ *       meta: {...},
+ *     }
+ *     `cells[i]` está alineada posicionalmente con `columns[i]`.
  *
- * Semáforo:
- *   semaphoreField — cuando el valor de la celda coincide con un nivel en
- *                    achievement_levels, se colorea con su `color`.
- *   semaphoreMode  — 'cell' (default) o 'row' (peor nivel de la fila).
+ *   PivotTable — componente LEGACY que se mantiene sin cambios para el modo
+ *     "raw"/categórico (un único campo `pivotConfig.value` + `semaphoreField`,
+ *     ej. el Roster IDEL armado por `scripts/apply_pdl_layout_v2.py`). Este
+ *     modo pinta el valor categórico más frecuente por celda y lo colorea
+ *     según `achievement_levels` — el motor W2 no lo puede representar
+ *     (solo produce agregaciones numéricas, `PivotCell.value: float | null`),
+ *     igual que el `pivot_matrix` chart_type del backend (ver
+ *     docs/planes/w2_motor_pivotes.md, sección "Migración del pivote
+ *     existente"). El modo agregado clásico (`pivotConfig.values` con
+ *     aggregation por campo, calculado en JS) SE RETIRÓ de este componente:
+ *     era la implementación fragmentada que el motor W2 unifica. Si un item
+ *     de dashboard legacy todavía declara ese modo, se muestra un aviso
+ *     dirigiendo a crear una Tabla Pivote nueva (página Tablas).
  */
 
 import React, { useMemo } from 'react';
-import { formatValue as fmtVal } from './constants';
-
-const AGG = {
-    avg:   (arr) => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null,
-    sum:   (arr) => arr.length ? arr.reduce((a, b) => a + b, 0)              : null,
-    count: (arr) => arr.length,
-    min:   (arr) => arr.length ? Math.min(...arr)                            : null,
-    max:   (arr) => arr.length ? Math.max(...arr)                            : null,
-};
-
-function rowKey(record, fields) {
-    return fields.map(f => record[f] ?? '—').join('\x00');
-}
-
-function mode(arr) {
-    if (!arr.length) return null;
-    const counts = new Map();
-    for (const v of arr) counts.set(v, (counts.get(v) || 0) + 1);
-    let best = null, bestN = -1;
-    for (const [k, n] of counts) { if (n > bestN) { best = k; bestN = n; } }
-    return best;
-}
-
-function buildPivot(records, rows, cols, values, singleValueField) {
-    const rowKeySet   = new Map();
-    const colKeySet   = new Map();
-    const cellBuckets = new Map();      // clásico: arrays numéricos
-    const cellRaw     = new Map();      // modo valor-crudo: arrays de strings/values
-
-    for (const r of records) {
-        const rk = rowKey(r, rows);
-        if (!rowKeySet.has(rk)) rowKeySet.set(rk, rows.map(f => r[f] ?? '—'));
-
-        const ck = cols.length ? rowKey(r, cols) : '__total__';
-        if (!colKeySet.has(ck)) {
-            colKeySet.set(ck, cols.length ? cols.map(f => r[f] ?? '—').join(' / ') : 'Total');
-        }
-
-        // Modo valor-crudo: recolecta todo, después toma el modo.
-        if (singleValueField) {
-            const bk = `${rk}\x01${ck}`;
-            const val = r[singleValueField];
-            if (val != null && val !== '') {
-                if (!cellRaw.has(bk)) cellRaw.set(bk, []);
-                cellRaw.get(bk).push(val);
-            }
-        }
-
-        // Modo agregado clásico
-        values.forEach((v, vi) => {
-            const bk = `${rk}\x01${ck}\x01${vi}`;
-            const val = r[v.field];
-            if (val != null && !isNaN(Number(val))) {
-                if (!cellBuckets.has(bk)) cellBuckets.set(bk, []);
-                cellBuckets.get(bk).push(Number(val));
-            }
-        });
-    }
-
-    const rowEntries = [...rowKeySet.entries()];
-    const colEntries = [...colKeySet.entries()];
-
-    return { rowEntries, colEntries, cellBuckets, cellRaw };
-}
-
-function formatCell(val, aggregation, formatStr) {
-    if (val == null) return '—';
-    if (aggregation === 'count') return String(Math.round(val));
-    return fmtVal(val, formatStr || '#.1');
-}
 
 // ── Th / Td helpers ───────────────────────────────────────────────────────────
 
@@ -109,6 +50,191 @@ function Td({ children, className = '' }) {
             {children}
         </td>
     );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PivotResultTable — render puro del PivotResult del backend (motor W2)
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fila de agrupación (nivel de columna) — una celda por combinación
+ * consecutiva de `col.keys` (join con " · " para col_fields multinivel),
+ * con `colSpan` = cantidad de columnas de métrica que comparten ese nivel.
+ * Solo tiene sentido cuando `col_fields.length >= 1`. Las columnas Total
+ * (`is_total`, `keys=[total_label]`) forman su propio grupo — no participan
+ * del multinivel de `col_fields` (el motor las emite con un único key).
+ */
+function buildLevelGroups(columns) {
+    const groups = [];
+    let i = 0;
+    while (i < columns.length) {
+        const col = columns[i];
+        const levelKey = col.keys.join('\x00');
+        let span = 1;
+        while (
+            i + span < columns.length &&
+            columns[i + span].keys.join('\x00') === levelKey &&
+            columns[i + span].is_total === col.is_total
+        ) {
+            span++;
+        }
+        groups.push({
+            key: `${i}`,
+            label: col.keys.length ? col.keys.join(' · ') : col.label,
+            span,
+            isTotal: col.is_total,
+        });
+        i += span;
+    }
+    return groups;
+}
+
+export function PivotResultTable({ pivotResult, className = '' }) {
+    const result = pivotResult || {};
+    const rowFields = result.row_fields || [];
+    const colFields = result.col_fields || [];
+    const columns = result.columns || [];
+    const rows = result.rows || [];
+
+    const hasColFields = colFields.length > 0;
+
+    const levelGroups = useMemo(
+        () => (hasColFields ? buildLevelGroups(columns) : []),
+        [columns, hasColFields]
+    );
+
+    if (!rowFields.length && !columns.length) {
+        return (
+            <div className="flex items-center justify-center py-10 text-slate-400 text-sm">
+                Configura al menos una fila y un valor en el pivote.
+            </div>
+        );
+    }
+
+    if (!rows.length) {
+        return <p className="text-slate-400 dark:text-slate-500 text-sm p-4">Sin datos</p>;
+    }
+
+    // Fila de nivel (Marzo / Abril / … · Total) — solo si hay col_fields;
+    // agrupa columnas que comparten el mismo valor de columna con colSpan.
+    // Fila de métrica (Logro prom. / Asistencia …) — siempre presente: es la
+    // única fila de encabezado cuando no hay col_fields, y desambigua la
+    // métrica de cada columna cuando sí los hay (multi-value o no).
+    const showLevelRow = hasColFields;
+
+    return (
+        <div className={`overflow-x-auto ${className}`}>
+            <table className="w-full min-w-max text-left">
+                <thead>
+                    {showLevelRow && (
+                        <tr>
+                            {rowFields.map((_, ri) => <th key={ri} />)}
+                            {!rowFields.length && <th />}
+                            {levelGroups.map((g) => (
+                                <Th
+                                    key={g.key}
+                                    className={`text-center ${g.isTotal ? 'bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300' : 'bg-slate-50 dark:bg-slate-800/50'}`}
+                                    colSpan={g.span}
+                                >
+                                    {g.label}
+                                </Th>
+                            ))}
+                        </tr>
+                    )}
+                    <tr className="bg-white dark:bg-slate-900">
+                        {rowFields.map((f, ri) => (
+                            <Th key={ri}>{f.replace(/^_/, '').replace(/_/g, ' ')}</Th>
+                        ))}
+                        {!rowFields.length && <Th></Th>}
+                        {columns.map((col, ci) => (
+                            <Th
+                                key={ci}
+                                className={`text-right ${col.is_total ? 'bg-slate-100 dark:bg-slate-800/70 text-slate-600 dark:text-slate-300' : ''}`}
+                            >
+                                {col.label}
+                            </Th>
+                        ))}
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((row, ri) => {
+                        const rowCls = row.is_total
+                            ? 'bg-slate-50 dark:bg-slate-800/40 font-bold'
+                            : (ri % 2 === 0 ? '' : 'bg-slate-50/50 dark:bg-slate-800/20');
+                        return (
+                            <tr key={ri} className={rowCls}>
+                                {row.keys.map((label, li) => (
+                                    <Td
+                                        key={li}
+                                        className={row.is_total ? 'font-bold text-slate-800 dark:text-slate-100' : 'font-medium text-slate-800 dark:text-slate-200'}
+                                    >
+                                        {label}
+                                    </Td>
+                                ))}
+                                {!row.keys.length && <Td>—</Td>}
+                                {row.cells.map((cell, ci) => {
+                                    const col = columns[ci];
+                                    const isTotalCol = col?.is_total;
+                                    const empty = cell.display === '' && cell.value == null;
+                                    return (
+                                        <Td
+                                            key={ci}
+                                            className={`text-right tabular-nums ${row.is_total || isTotalCol ? 'font-bold' : ''} ${empty ? 'text-slate-300 dark:text-slate-600' : ''}`}
+                                        >
+                                            {empty ? '—' : cell.display}
+                                        </Td>
+                                    );
+                                })}
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PivotTable — LEGACY, modo raw/categórico (Roster IDEL). No migrado: el
+// motor W2 solo produce agregaciones numéricas (ver docstring del archivo).
+// ─────────────────────────────────────────────────────────────────────────
+
+function rowKey(record, fields) {
+    return fields.map(f => record[f] ?? '—').join('\x00');
+}
+
+function mode(arr) {
+    if (!arr.length) return null;
+    const counts = new Map();
+    for (const v of arr) counts.set(v, (counts.get(v) || 0) + 1);
+    let best = null, bestN = -1;
+    for (const [k, n] of counts) { if (n > bestN) { best = k; bestN = n; } }
+    return best;
+}
+
+function buildRawPivot(records, rows, cols, singleValueField) {
+    const rowKeySet = new Map();
+    const colKeySet = new Map();
+    const cellRaw = new Map();
+
+    for (const r of records) {
+        const rk = rowKey(r, rows);
+        if (!rowKeySet.has(rk)) rowKeySet.set(rk, rows.map(f => r[f] ?? '—'));
+
+        const ck = cols.length ? rowKey(r, cols) : '__total__';
+        if (!colKeySet.has(ck)) {
+            colKeySet.set(ck, cols.length ? cols.map(f => r[f] ?? '—').join(' / ') : 'Total');
+        }
+
+        const bk = `${rk}\x01${ck}`;
+        const val = r[singleValueField];
+        if (val != null && val !== '') {
+            if (!cellRaw.has(bk)) cellRaw.set(bk, []);
+            cellRaw.get(bk).push(val);
+        }
+    }
+
+    return { rowEntries: [...rowKeySet.entries()], colEntries: [...colKeySet.entries()], cellRaw };
 }
 
 // Construye un mapa nombre→{color, order} desde achievement_levels.
@@ -135,8 +261,6 @@ function textOn(bg) {
     return lum < 0.6 ? '#ffffff' : '#0f172a';
 }
 
-// ── PivotTable ────────────────────────────────────────────────────────────────
-
 export function PivotTable({
     records = [],
     pivotConfig,
@@ -146,21 +270,32 @@ export function PivotTable({
     achievement_levels = [],
 }) {
     const config = pivotConfig || {};
-    const rows   = config.rows   || [];
-    const cols   = config.cols   || [];
+    const rows = config.rows || [];
+    const cols = config.cols || [];
     const singleValueField = typeof config.value === 'string' ? config.value : null;
-    const values = Array.isArray(config.values) ? config.values : [];
+    const legacyAggregatedValues = Array.isArray(config.values) ? config.values : [];
 
-    const { rowEntries, colEntries, cellBuckets, cellRaw } = useMemo(
-        () => buildPivot(records, rows, cols, values, singleValueField),
-        [records, rows, cols, values, singleValueField]
+    const { rowEntries, colEntries, cellRaw } = useMemo(
+        () => (singleValueField ? buildRawPivot(records, rows, cols, singleValueField) : { rowEntries: [], colEntries: [], cellRaw: new Map() }),
+        [records, rows, cols, singleValueField]
     );
 
     const levelMap = useMemo(() => buildLevelMap(achievement_levels), [achievement_levels]);
 
-    const isRawMode = !!singleValueField;
+    // Modo agregado clásico (values[] + aggregation en JS) — RETIRADO. Este
+    // componente ya no calcula agregaciones en el cliente; use una Tabla
+    // Pivote (página Tablas → PivotSpec) que el backend calcula con el
+    // motor W2 y renderiza `PivotResultTable`.
+    if (!singleValueField && legacyAggregatedValues.length > 0) {
+        return (
+            <div className="flex flex-col items-center justify-center gap-1 py-10 text-slate-400 text-sm text-center px-4">
+                <span>Este modo de Tabla Pivote (agregación por campo) se migró al nuevo motor de pivotes.</span>
+                <span>Crea una <strong>Tabla Pivote</strong> nueva desde la página <strong>Tablas</strong> con el mismo resultado (y export a Excel).</span>
+            </div>
+        );
+    }
 
-    if (!rows.length || (!isRawMode && !values.length)) {
+    if (!rows.length || !singleValueField) {
         return (
             <div className="flex items-center justify-center py-10 text-slate-400 text-sm">
                 Configura al menos una fila y un valor.
@@ -172,12 +307,9 @@ export function PivotTable({
         return <p className="text-slate-400 text-sm p-4">Sin datos</p>;
     }
 
-    const hasMultipleCols = colEntries.length > 1;
-    const hasMultipleValues = values.length > 1;
-
     // Pre-cálculo del peor nivel por fila (modo 'row')
     const worstByRow = new Map();
-    if (isRawMode && semaphoreField && semaphoreMode === 'row') {
+    if (semaphoreField && semaphoreMode === 'row') {
         for (const [rk] of rowEntries) {
             let worst = null;
             for (const [ck] of colEntries) {
@@ -197,38 +329,19 @@ export function PivotTable({
         <div className="overflow-x-auto">
             <table className="w-full min-w-max text-left">
                 <thead>
-                    {hasMultipleCols && hasMultipleValues && (
-                        <tr>
-                            {rows.map((_, ri) => <th key={ri} />)}
-                            {colEntries.map(([ck, cLabel]) => (
-                                <Th key={ck} className="text-center bg-slate-50 dark:bg-slate-800/50" colSpan={values.length}>
-                                    {cLabel}
-                                </Th>
-                            ))}
-                        </tr>
-                    )}
                     <tr className="bg-white dark:bg-slate-900">
                         {rows.map((f, ri) => (
                             <Th key={ri}>{f.replace(/^_/, '').replace(/_/g, ' ')}</Th>
                         ))}
-                        {isRawMode
-                            ? colEntries.map(([ck, cLabel]) => (
-                                <Th key={ck} className="text-center">{cLabel}</Th>
-                            ))
-                            : colEntries.map(([ck, cLabel]) =>
-                                values.map((v, vi) => (
-                                    <Th key={`${ck}-${vi}`} className="text-right">
-                                        {hasMultipleCols && !hasMultipleValues ? cLabel : (hasMultipleValues ? v.label : cLabel + (values.length > 1 ? ` · ${v.label}` : ''))}
-                                    </Th>
-                                ))
-                            )
-                        }
+                        {colEntries.map(([ck, cLabel]) => (
+                            <Th key={ck} className="text-center">{cLabel}</Th>
+                        ))}
                     </tr>
                 </thead>
                 <tbody>
                     {rowEntries.map(([rk, rowLabels], ri) => {
                         const worst = worstByRow.get(rk);
-                        const rowStyle = (isRawMode && semaphoreMode === 'row' && worst?.color)
+                        const rowStyle = (semaphoreMode === 'row' && worst?.color)
                             ? { background: worst.color, color: textOn(worst.color) }
                             : null;
                         return (
@@ -236,41 +349,26 @@ export function PivotTable({
                                 {rowLabels.map((label, li) => (
                                     <Td key={li} className="font-medium text-slate-800 dark:text-slate-200">{label}</Td>
                                 ))}
-                                {isRawMode
-                                    ? colEntries.map(([ck]) => {
-                                        const bucket = cellRaw.get(`${rk}\x01${ck}`) || [];
-                                        const cellVal = bucket.length ? mode(bucket) : null;
-                                        const info = semaphoreField && semaphoreMode === 'cell' && cellVal != null
-                                            ? levelMap.get(cellVal)
-                                            : null;
-                                        const cellStyle = info?.color
-                                            ? { background: info.color, color: textOn(info.color), fontWeight: 600 }
-                                            : null;
-                                        return (
-                                            <Td
-                                                key={ck}
-                                                className="text-center"
-                                                style={cellStyle || undefined}
-                                                title={info ? `Nivel: ${cellVal} (orden ${info.order})` : undefined}
-                                            >
-                                                {cellVal ?? '—'}
-                                            </Td>
-                                        );
-                                    })
-                                    : colEntries.map(([ck]) =>
-                                        values.map((v, vi) => {
-                                            const bk = `${rk}\x01${ck}\x01${vi}`;
-                                            const bucket = cellBuckets.get(bk) || [];
-                                            const aggFn = AGG[v.aggregation] || AGG.avg;
-                                            const result = bucket.length ? aggFn(bucket) : null;
-                                            return (
-                                                <Td key={`${ck}-${vi}`} className="text-right tabular-nums">
-                                                    {formatCell(result, v.aggregation, v.formatStr || formatStr)}
-                                                </Td>
-                                            );
-                                        })
-                                    )
-                                }
+                                {colEntries.map(([ck]) => {
+                                    const bucket = cellRaw.get(`${rk}\x01${ck}`) || [];
+                                    const cellVal = bucket.length ? mode(bucket) : null;
+                                    const info = semaphoreField && semaphoreMode === 'cell' && cellVal != null
+                                        ? levelMap.get(cellVal)
+                                        : null;
+                                    const cellStyle = info?.color
+                                        ? { background: info.color, color: textOn(info.color), fontWeight: 600 }
+                                        : null;
+                                    return (
+                                        <Td
+                                            key={ck}
+                                            className="text-center"
+                                            style={cellStyle || undefined}
+                                            title={info ? `Nivel: ${cellVal} (orden ${info.order})` : undefined}
+                                        >
+                                            {cellVal ?? '—'}
+                                        </Td>
+                                    );
+                                })}
                             </tr>
                         );
                     })}
