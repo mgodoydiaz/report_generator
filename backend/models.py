@@ -237,3 +237,61 @@ class IndicatorMetric(Base):
 
     indicator = relationship("Indicator", back_populates="metric_links")
     metric    = relationship("Metric", back_populates="indicator_links")
+
+
+# =============================================================================
+# INGESTA POR API EXTERNA (W1)
+# =============================================================================
+
+class ApiKey(Base):
+    """Credencial de API por organización para ingesta programática.
+
+    El secreto en claro NUNCA se persiste: solo se guarda su hash bcrypt
+    (`key_hash`) y un `prefix` visible (`rg_live_a1b2`) para identificar la
+    key en la UI sin revelar el secreto. La crypto vive en
+    `backend/api_keys.py`; la dependency de auth en `backend/auth.py`
+    (`get_org_from_api_key` + `require_scope`).
+    """
+    __tablename__ = "api_keys"
+
+    id                 = Column(Integer, primary_key=True, index=True)
+    org_id             = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    name               = Column(String(200), nullable=False)          # etiqueta legible
+    prefix             = Column(String(12), nullable=False, index=True)  # primeros chars visibles (rg_live_a1b2)
+    key_hash           = Column(String(200), nullable=False)          # bcrypt del secreto completo
+    scopes             = Column(Text, default="[]")                   # JSON array de scopes
+    created_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at         = Column(DateTime, default=datetime.utcnow)
+    expires_at         = Column(DateTime, nullable=True)              # null = sin expiración
+    last_used_at       = Column(DateTime, nullable=True)             # se actualiza throttled (1/min)
+    revoked            = Column(Boolean, default=False, nullable=False)
+
+    organization = relationship("Organization")
+    created_by   = relationship("User", foreign_keys=[created_by_user_id])
+
+
+class IngestLog(Base):
+    """Registro de cada operación de ingesta por API externa.
+
+    Sirve para auditoría y para idempotencia: un `(org_id, idempotency_key)`
+    ya visto devuelve el resultado previo sin re-insertar. El endpoint de
+    ingesta (PARTE B) escribe estas filas.
+    """
+    __tablename__ = "ingest_log"
+    __table_args__ = (
+        UniqueConstraint("org_id", "idempotency_key", name="uq_ingest_log_org_idempotency"),
+    )
+
+    id              = Column(Integer, primary_key=True, index=True)
+    org_id          = Column(Integer, ForeignKey("organizations.id"), nullable=False, index=True)
+    api_key_id      = Column(Integer, ForeignKey("api_keys.id", ondelete="SET NULL"), nullable=True)
+    idempotency_key = Column(String(80), nullable=True, index=True)   # header Idempotency-Key del cliente
+    endpoint        = Column(String(80), nullable=False)              # ej "metrics/12/data"
+    status          = Column(String(20), nullable=False)             # success | error | dry_run
+    rows_ok         = Column(Integer, default=0)
+    rows_failed     = Column(Integer, default=0)
+    response_hash   = Column(String(64), nullable=True)              # hash de la respuesta cacheada
+    created_at      = Column(DateTime, default=datetime.utcnow)
+
+    organization = relationship("Organization")
+    api_key      = relationship("ApiKey")
