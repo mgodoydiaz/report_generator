@@ -91,11 +91,16 @@ def _pipeline_to_dict(p: Pipeline) -> dict:
     }
 
 
-def _get_pipeline_config_from_db(pipeline_id: int, user: User, db: Session) -> Optional[dict]:
-    """Read the pipeline config JSON from the database."""
+def _get_pipeline_config_from_db(pipeline_id: int, org_id: int, db: Session) -> Optional[dict]:
+    """Read the pipeline config JSON from the database.
+
+    Recibe `org_id` directamente (no el `User`) para poder reusarse desde
+    contextos sin usuario JWT — ej. `backend/routers/ingest.py` (auth por
+    API key, W1 PARTE B).
+    """
     row = db.query(Pipeline).filter(
         Pipeline.pipeline_id == pipeline_id,
-        Pipeline.org_id == user.org_id,
+        Pipeline.org_id == org_id,
     ).first()
     if row and row.config_json and str(row.config_json).strip():
         return safe_text_to_json(row.config_json)
@@ -217,7 +222,7 @@ async def execute_pipeline(
             _drop_runner(key)
 
         if key not in ACTIVE_RUNNERS:
-            config = _get_pipeline_config_from_db(pipeline_id, user, db)
+            config = _get_pipeline_config_from_db(pipeline_id, user.org_id, db)
             if not config:
                 return {"error": f"No se encontró la configuración del pipeline para el ID {pipeline_id}"}
             ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
@@ -315,7 +320,7 @@ async def execute_pipeline_step(
             _drop_runner(key)
 
         if key not in ACTIVE_RUNNERS:
-            config = _get_pipeline_config_from_db(pipeline_id, user, db)
+            config = _get_pipeline_config_from_db(pipeline_id, user.org_id, db)
             if not config:
                 return {"error": "No se encontró la configuración del pipeline"}
             ACTIVE_RUNNERS[key] = PipelineRunner(config, pipeline_id=pipeline_id, db=db, org_id=user.org_id, user_id=user.id)
