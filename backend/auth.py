@@ -8,16 +8,22 @@ Uso en routers:
 """
 
 import os
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import List
 
 import bcrypt as _bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
+from jose import JWTError, jwt
 
+from backend.api_keys import deserializar_scopes, extraer_prefix, verificar_api_key
 from backend.database import get_db
-from backend.models import User
+from backend.logging_config import get_logger
+from backend.models import ApiKey, User
+
+logger = get_logger(__name__)
 
 # ─── Config ──────────────────────────────────────────────────
 # Sin default: arrancar con un secreto público conocido significaría que
@@ -109,3 +115,124 @@ def require_superadmin(user: User = Depends(get_current_user)) -> User:
             detail="Se requiere acceso de superadministrador",
         )
     return user
+
+
+# ─── Auth por API key (ingesta externa W1) ───────────────────
+# El header que porta el secreto de la key.
+API_KEY_HEADER = "X-API-Key"
+
+# Throttle de escritura de last_used_at: si el último uso fue hace menos de
+# esto, no re-escribimos para no pegarle a la DB en cada request.
+_LAST_USED_THROTTLE_SECONDS = 60
+
+
+@dataclass
+class ApiKeyContext:
+    """Contexto de autenticación derivado de una API key válida.
+
+    Es lo que devuelve `get_org_from_api_key` y lo que consumen los endpoints
+    de ingesta (PARTE B). El `org_id` sale SIEMPRE de la key, nunca de un
+    parámetro del request — garantía de tenancy dura.
+    """
+    org_id: int
+    api_key_id: int
+    scopes: List[str] = field(default_factory=list)
+
+    def has_scope(self, scope: str) -> bool:
+        return scope in self.scopes
+
+
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": API_KEY_HEADER},
+    )
+
+
+def _touch_last_used(db: Session, api_key: ApiKey) -> None:
+    """Actualiza `last_used_at` de forma throttled (máx 1 escritura/min).
+
+    Best-effort: un fallo al registrar el uso no debe tumbar la request.
+    """
+    now = datetime.utcnow()
+    last = api_key.last_used_at
+    if last is not None and (now - last).total_seconds() < _LAST_USED_THROTTLE_SECONDS:
+        return
+    try:
+        api_key.last_used_at = now
+        db.commit()
+    except Exception:  # noqa: BLE001 — best-effort, no romper auth por esto
+        db.rollback()
+        logger.warning("No se pudo actualizar last_used_at de api_key id=%s", api_key.id)
+
+
+def get_org_from_api_key(
+    request: Request,
+    db: Session = Depends(get_db),
+) -> ApiKeyContext:
+    """Dependency FastAPI: autentica por header `X-API-Key`.
+
+    Localiza la fila candidata por `prefix` (indexado), verifica el hash
+    bcrypt del secreto completo, y valida que la key no esté revocada ni
+    expirada. Devuelve un `ApiKeyContext` con `org_id`, `api_key_id` y
+    `scopes`.
+
+    Falla con 401 si la key está ausente, es inválida, está revocada o
+    expirada. NUNCA loguea el secreto en claro.
+    """
+    secreto = request.headers.get(API_KEY_HEADER)
+    if not secreto:
+        raise _unauthorized("Falta el header X-API-Key")
+
+    prefix = extraer_prefix(secreto)
+    # Puede haber más de una key con el mismo prefix (colisión improbable pero
+    # posible); verificamos el hash de cada candidata.
+    candidatas = db.query(ApiKey).filter(ApiKey.prefix == prefix).all()
+
+    api_key = None
+    for candidata in candidatas:
+        if verificar_api_key(secreto, candidata.key_hash):
+            api_key = candidata
+            break
+
+    if api_key is None:
+        raise _unauthorized("API key inválida")
+
+    if api_key.revoked:
+        raise _unauthorized("API key revocada")
+
+    if api_key.expires_at is not None and api_key.expires_at < datetime.utcnow():
+        raise _unauthorized("API key expirada")
+
+    _touch_last_used(db, api_key)
+
+    return ApiKeyContext(
+        org_id=api_key.org_id,
+        api_key_id=api_key.id,
+        scopes=deserializar_scopes(api_key.scopes),
+    )
+
+
+def require_scope(scope: str):
+    """Factory: devuelve una dependency que exige `scope` en la API key.
+
+    Uso en la PARTE B (ingesta):
+        @router.post(...)
+        def endpoint(ctx: ApiKeyContext = Depends(require_scope("ingest:write"))):
+            ...
+
+    Responde 403 si la key es válida pero no tiene el scope; el 401 (key
+    ausente/inválida) ya lo maneja `get_org_from_api_key`.
+    """
+    def _dependency(
+        ctx: ApiKeyContext = Depends(get_org_from_api_key),
+    ) -> ApiKeyContext:
+        if not ctx.has_scope(scope):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"La API key no tiene el scope requerido: {scope}",
+            )
+        return ctx
+
+    return _dependency
