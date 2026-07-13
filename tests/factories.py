@@ -70,6 +70,18 @@ def make_user(
     return u
 
 
+def auth_header_for(user) -> dict:
+    """Devuelve `{"Authorization": "Bearer <jwt>"}` válido para `user`.
+
+    Útil en tests multi-tenant/autorización donde se necesitan credenciales
+    de varios usuarios distintos en el mismo test (el fixture `auth_headers`
+    solo cubre el `user` por defecto de conftest).
+    """
+    from backend.auth import create_access_token
+    token = create_access_token(user_id=user.id, org_id=user.org_id, role=user.role)
+    return {"Authorization": f"Bearer {token}"}
+
+
 def make_dimension(
     db: Session,
     org,
