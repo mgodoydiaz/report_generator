@@ -1,10 +1,11 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ClipboardCheck, BookOpen, AlertTriangle, LayoutGrid } from 'lucide-react';
+import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ClipboardCheck, BookOpen, AlertTriangle, LayoutGrid, Sparkles } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import NewIndicatorDrawer from '../components/NewIndicatorDrawer';
 import LayoutEditorModal from '../components/LayoutEditorModal';
+import AssistantChat from '../components/AssistantChat';
 
 export default function Indicators() {
     const { fetchAuth } = useAuth();
@@ -17,6 +18,8 @@ export default function Indicators() {
     const [editingIndicator, setEditingIndicator] = useState(null);
     const [drawerTitle, setDrawerTitle] = useState("Nuevo Indicador");
     const [layoutIndicator, setLayoutIndicator] = useState(null);
+    const [assistantOpen, setAssistantOpen] = useState(false);
+    const [assistantIndicator, setAssistantIndicator] = useState(null);
 
     useEffect(() => {
         fetchData();
@@ -242,6 +245,9 @@ export default function Indicators() {
                                             </div>
                                         </td>
                                         <td className="p-5 text-right flex justify-end gap-1">
+                                            <button onClick={() => { setAssistantIndicator(indicator); setAssistantOpen(true); }} className="p-2 text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-slate-800 rounded-xl transition-all" title="Asistente de configuración">
+                                                <Sparkles size={18} />
+                                            </button>
                                             <button onClick={() => handleOpenLayoutEditor(indicator)} className="p-2 text-slate-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-slate-800 rounded-xl transition-all" title="Configurar Layout">
                                                 <LayoutGrid size={18} />
                                             </button>
@@ -275,6 +281,12 @@ export default function Indicators() {
                 onClose={() => setLayoutIndicator(null)}
                 indicator={layoutIndicator}
                 onSave={handleSaveCallback}
+            />
+
+            <AssistantChat
+                isOpen={assistantOpen}
+                onClose={() => setAssistantOpen(false)}
+                indicator={assistantIndicator}
             />
         </div>
     );
