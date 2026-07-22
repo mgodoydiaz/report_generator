@@ -18,6 +18,7 @@ from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Pipeline, User
 from backend.config import UPLOADS_DIR, PIPELINE_RUNS_DIR
+from rgenerator.core.step import StepExecutionError
 from rgenerator.tooling.pipeline_tools import PipelineRunner
 from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
 
@@ -246,6 +247,10 @@ async def execute_pipeline(
         }
         _update_last_run(pipeline_id, user, db)
         return result
+    except StepExecutionError as e:
+        _drop_runner(_key(user, pipeline_id))
+        logger.warning(f"Pipeline {pipeline_id} falló en un paso: {e}")
+        return {"error": str(e), "status": "failed", "step_name": e.step_name, "step_index": e.step_index}
     except Exception as e:
         _drop_runner(_key(user, pipeline_id))
         logger.error("Error interno no controlado en router de pipelines", exc_info=True)
@@ -299,6 +304,9 @@ async def submit_pipeline_input(
         }
         _update_last_run(pipeline_id, user, db)
         return result
+    except StepExecutionError as e:
+        logger.warning(f"Pipeline {pipeline_id} falló en un paso: {e}")
+        return {"error": str(e), "status": "failed", "step_name": e.step_name, "step_index": e.step_index}
     except Exception as e:
         logger.error("Error interno no controlado en router de pipelines", exc_info=True)
         return {"error": "Error interno del servidor"}
@@ -336,6 +344,10 @@ async def execute_pipeline_step(
             _update_last_run(pipeline_id, user, db)
 
         return result
+    except StepExecutionError as e:
+        _drop_runner(_key(user, pipeline_id))
+        logger.warning(f"Pipeline {pipeline_id} falló en un paso: {e}")
+        return {"error": str(e), "status": "failed", "step_name": e.step_name, "step_index": e.step_index}
     except Exception as e:
         _drop_runner(_key(user, pipeline_id))
         logger.error("Error interno no controlado en router de pipelines", exc_info=True)

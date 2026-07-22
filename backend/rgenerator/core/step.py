@@ -17,6 +17,21 @@ class WaitingForInputException(Exception):
         self.input_details = input_details
         super().__init__(f"Paso '{step_name}' necesita una entrada del usuario.")
 
+
+class StepExecutionError(Exception):
+    """Fallo de un paso durante la ejecución del pipeline.
+
+    Envuelve la excepción original para que el router pueda mostrar al
+    usuario el mensaje del paso (que suele ser accionable, ej. "Columna
+    llave 'RUT' no existe en 'estudiantes'") sin exponer errores internos
+    no controlados.
+    """
+    def __init__(self, step_name: str, step_index: int, original: Exception):
+        self.step_name = step_name
+        self.step_index = step_index
+        self.original = original
+        super().__init__(f"Error en el paso {step_index + 1} ({step_name}): {original}")
+
 @dataclass
 class Step:
     """Paso base de la ETL.

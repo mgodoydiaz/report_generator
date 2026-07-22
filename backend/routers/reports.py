@@ -145,17 +145,17 @@ def generar_informe_word(
         )
     except ValueError as e:
         raise HTTPException(400, str(e))
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, f"Error cargando datos: {type(e).__name__}: {e}")
+    except Exception:
+        logger.error("Error cargando datos para informe Word", exc_info=True)
+        raise HTTPException(500, "Error cargando datos del informe")
 
     try:
         docx_bytes = word_reports.render_informe(modulo, dataframes, body.params)
     except FileNotFoundError as e:
         raise HTTPException(404, str(e))
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(500, f"Error generando Word: {type(e).__name__}: {e}")
+    except Exception:
+        logger.error("Error generando informe Word", exc_info=True)
+        raise HTTPException(500, "Error generando el informe Word")
 
     return Response(
         content=docx_bytes,

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Dict, Type, List, Optional
 import re
 from rgenerator.core.context import RunContext
-from rgenerator.core.step import Step, WaitingForInputException
+from rgenerator.core.step import Step, StepExecutionError, WaitingForInputException
 import rgenerator.core.pipeline_steps as ps
 import rgenerator.core.metric_steps as ms
 import os
@@ -148,7 +148,7 @@ class PipelineRunner:
             }
         except Exception as e:
             self.status = "FAILED"
-            raise e
+            raise StepExecutionError(step.__class__.__name__, self.current_step_index, e) from e
 
     def run_all(self):
         """Ejecuta todos los pasos restantes. Se detiene si un paso necesita input del usuario."""
