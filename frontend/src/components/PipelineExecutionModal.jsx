@@ -98,8 +98,26 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         onClose();
     };
 
-    const downloadArtifact = (artifactName) => {
-        window.open(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}`, '_blank');
+    const downloadArtifact = async (artifactName) => {
+        // window.open no manda el header Authorization → 401 silencioso.
+        try {
+            const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/artifact/${artifactName}`);
+            if (!response.ok) throw new Error(`Error descargando el archivo (HTTP ${response.status})`);
+            const blob = await response.blob();
+            const disposition = response.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/);
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = match ? match[1] : artifactName;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error(error);
+            toast.error("No se pudo descargar el archivo.");
+        }
     };
 
     const copyArtifact = async (artifactName) => {
