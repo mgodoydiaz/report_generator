@@ -60,9 +60,9 @@ Informes de detalle en [`docs/qa/hallazgos/`](./hallazgos/): [backend](./hallazg
 ## Estado de ejecución
 
 - [x] Recorrido QA (5 informes en `hallazgos/`)
-- [ ] Batería de pruebas P0/P1 + guiones manuales
-- [ ] Quick wins P0 (5 fixes S)
-- [ ] Consolidación motor único (iniciativa L — diseño aprobado, pendiente ejecución)
-- [ ] Agente de chat de indicadores
+- [x] Batería de pruebas: regresiones P0 en `tests/regresion/test_qa_p0.py` + 6 guiones manuales en `docs/qa/manual/`
+- [x] Quick wins P0 (los 5 fixes: filtros multi-valor v1, Año DIA v2, descarga con auth, errores de step legibles, saneo Word) + H6 org_id — tag `dev3-p0-fixes`
+- [ ] Consolidación motor único (iniciativa L — diseño aprobado en informes.md §4; primer paso dado: `reports/filtering.py` como fuente única de filtrado)
+- [x] Agente de chat de indicadores (backend `LLM_PROVIDER=mock|anthropic` + drawer en /indicators) — tag `dev3-assistant`
 
 **Regla vigente**: NO merge a `main` sin confirmación explícita de Miguel.
