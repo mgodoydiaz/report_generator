@@ -11,6 +11,7 @@ from backend.models import (
     User, Indicator, IndicatorMetric,
     Metric, MetricDimension, MetricData, Dimension,
 )
+from backend.rgenerator.reports.filtering import matches
 from backend.rgenerator.tooling.curso_order import curso_sort_key
 
 logger = get_logger(__name__)
@@ -175,14 +176,10 @@ def get_indicator_data(
         # se respetan POST-cálculo para que slope/delta vean todo el histórico
         # del estudiante. Mismo patrón que motor v2 PDF (reports.py).
         derived_columns = _parse_json_field(indicator.derived_columns, [])
-        # `_matches` también lo necesitamos arriba para filtrar pre-cálculo
-        def _matches(actual, expected):
-            if isinstance(expected, (list, tuple, set)):
-                allowed = {str(v) for v in expected}
-                if not allowed:
-                    return True  # filtro vacío = sin restricción
-                return str(actual) in allowed
-            return str(actual) == str(expected)
+        # `_matches` también lo necesitamos arriba para filtrar pre-cálculo.
+        # Semántica única compartida con los motores de informes
+        # (rgenerator/reports/filtering.py) — el PDF debe reflejar lo filtrado.
+        _matches = matches
 
         if derived_columns:
             try:

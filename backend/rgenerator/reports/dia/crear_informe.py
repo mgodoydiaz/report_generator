@@ -22,10 +22,29 @@ from .. import runtime
 from ...core.derived_fields_engine import apply_derived_fields
 
 
+def _filtrar_temporal(df: pd.DataFrame, columna: str, valor) -> pd.DataFrame:
+    """Filtra `df` a un valor (o lista de valores) de una columna temporal.
+
+    Los filtros del dashboard llegan como lista multi-valor; los llamados
+    programáticos pueden pasar un escalar. None, lista vacía o columna
+    inexistente → sin filtro.
+    """
+    if valor is None or columna not in df.columns:
+        return df
+    if isinstance(valor, (list, tuple, set)):
+        valores = [str(v) for v in valor]
+        if not valores:
+            return df
+    else:
+        valores = [str(valor)]
+    return df[df[columna].astype(str).isin(valores)].copy()
+
+
 def construir(
     df_estudiantes: pd.DataFrame,
     df_preguntas: pd.DataFrame,
     hito: str | None = None,
+    anio: str | None = None,
     overrides: dict | None = None,
 ) -> bytes:
     """Construye el PDF DIA para 1 hito.
@@ -37,6 +56,8 @@ def construir(
         df_preguntas: DataFrame de preguntas (1 fila por respuesta).
         hito: hito a filtrar para mostrar el informe. Si None, no filtra.
             Las derived_fields se calculan ANTES del filtro.
+        anio: año a filtrar (columna "Año"). Si None, no filtra. Acepta
+            escalar o lista, igual que hito.
         overrides: opcional, dict para sobreescribir esquema (ej branding).
 
     Returns:
@@ -59,11 +80,11 @@ def construir(
             elif target == "preguntas":
                 df_preguntas = apply_derived_fields(df_preguntas, configs)
 
-    # Filtrar a un solo hito si viene especificado.
-    if hito and "Hito" in df_estudiantes.columns:
-        df_estudiantes = df_estudiantes[df_estudiantes["Hito"].astype(str) == str(hito)].copy()
-    if hito and "Hito" in df_preguntas.columns:
-        df_preguntas = df_preguntas[df_preguntas["Hito"].astype(str) == str(hito)].copy()
+    # Filtrar a un solo punto temporal si viene especificado (hito y/o año).
+    df_estudiantes = _filtrar_temporal(df_estudiantes, "Hito", hito)
+    df_preguntas = _filtrar_temporal(df_preguntas, "Hito", hito)
+    df_estudiantes = _filtrar_temporal(df_estudiantes, "Año", anio)
+    df_preguntas = _filtrar_temporal(df_preguntas, "Año", anio)
 
     dataframes = {
         "estudiantes": df_estudiantes,

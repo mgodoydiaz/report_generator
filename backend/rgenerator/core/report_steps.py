@@ -24,6 +24,7 @@ from typing import Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step
+from ..reports.filtering import matches
 from backend.config import REPORTS_TEMPLATES_DIR
 
 
@@ -179,7 +180,11 @@ def _build_records(
     if not metric_ids:
         return []
 
-    metrics = db.query(Metric).filter(Metric.id_metric.in_(metric_ids)).all()
+    # org_id como defensa en profundidad: aunque los ids vengan validados
+    # aguas arriba, un id cross-org jamás debe proyectar datos (QA H-02/H6).
+    metrics = db.query(Metric).filter(
+        Metric.id_metric.in_(metric_ids), Metric.org_id == org_id
+    ).all()
     metrics_by_id = {m.id_metric: m for m in metrics}
 
     all_dim_ids = set()
@@ -216,7 +221,7 @@ def _build_records(
                 dims_json = {}
 
             if filters and not all(
-                str(dims_json.get(fk, "")) == str(fv)
+                matches(dims_json.get(fk, ""), fv)
                 for fk, fv in filters.items()
             ):
                 continue

@@ -307,10 +307,12 @@ def generar_reporte(
                     "El indicator DIA debe tener metrics 'estudiantes' y 'preguntas' asociadas",
                 )
             hito = filtros_temporales_dict.get("Hito")
+            anio = filtros_temporales_dict.get("Año")
             pdf_bytes = dia_informe.construir(
                 df_estudiantes,
                 df_preguntas,
                 hito=hito,
+                anio=anio,
                 overrides=body.overrides,
             )
     except HTTPException:

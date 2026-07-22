@@ -106,6 +106,130 @@ class TestRunPropagaErrorDeStep:
         assert "Error interno del servidor" not in body["error"]
 
 
+@pytest.mark.unit
+class TestFiltroTemporalDIA:
+    """P0-2: el filtro 'Año' del informe DIA se capturaba pero nunca se aplicaba."""
+
+    def _df(self):
+        import pandas as pd
+
+        return pd.DataFrame(
+            {
+                "Hito": ["DIAGNOSTICO", "INTERMEDIO", "DIAGNOSTICO", "INTERMEDIO"],
+                "Año": ["2024", "2024", "2025", "2025"],
+                "Rend": [1, 2, 3, 4],
+            }
+        )
+
+    def test_filtra_por_anio_escalar(self):
+        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+
+        out = _filtrar_temporal(self._df(), "Año", "2025")
+        assert out["Rend"].tolist() == [3, 4]
+
+    def test_filtra_por_anio_lista_multivalor(self):
+        """Los filtros del dashboard llegan como lista."""
+        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+
+        out = _filtrar_temporal(self._df(), "Año", ["2024"])
+        assert out["Rend"].tolist() == [1, 2]
+
+    def test_none_lista_vacia_o_columna_inexistente_no_filtran(self):
+        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+
+        df = self._df()
+        assert len(_filtrar_temporal(df, "Año", None)) == 4
+        assert len(_filtrar_temporal(df, "Año", [])) == 4
+        assert len(_filtrar_temporal(df, "NoExiste", "x")) == 4
+
+    def test_hito_y_anio_combinados(self):
+        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+
+        out = _filtrar_temporal(
+            _filtrar_temporal(self._df(), "Hito", "INTERMEDIO"), "Año", "2025"
+        )
+        assert out["Rend"].tolist() == [4]
+
+
+@pytest.mark.unit
+class TestMatchesCompartido:
+    """Semántica única de filtros (reports/filtering.py) — P0-1 / H1."""
+
+    def test_escalar(self):
+        from rgenerator.reports.filtering import matches
+
+        assert matches("5A", "5A")
+        assert not matches("5A", "5B")
+
+    def test_lista_multivalor_es_pertenencia(self):
+        from rgenerator.reports.filtering import matches
+
+        assert matches("5A", ["5A", "5B"])
+        assert not matches("6A", ["5A", "5B"])
+
+    def test_lista_vacia_no_restringe(self):
+        from rgenerator.reports.filtering import matches
+
+        assert matches("cualquiera", [])
+
+
+@pytest.mark.integration
+class TestBuildRecordsFiltros:
+    """P0-1: el motor v1 devolvía 0 registros con filtros multi-valor del
+    dashboard. H6: metric cross-org vinculada jamás debe proyectar datos."""
+
+    @pytest.fixture
+    def escenario(self, db_session, org):
+        from tests.factories import make_dimension, make_indicator, make_metric, make_metric_data
+
+        dim = make_dimension(db_session, org, name="Curso")
+        metric = make_metric(db_session, org, name="Rendimiento", dimensions=[dim])
+        for curso, val in [("5A", 60), ("5B", 70), ("6A", 80)]:
+            make_metric_data(
+                db_session, metric, value=val,
+                dimensions_json={str(dim.id_dimension): curso},
+            )
+        indicator = make_indicator(db_session, org, metrics=[metric])
+        return dim, metric, indicator
+
+    def test_filtro_multivalor_devuelve_los_cursos_seleccionados(self, db_session, org, escenario):
+        from rgenerator.core.report_steps import _build_records
+
+        dim, _, indicator = escenario
+        recs = _build_records(
+            db_session, indicator, org.id,
+            filters={str(dim.id_dimension): ["5A", "5B"]},
+        )
+        assert len(recs) == 2
+
+    def test_filtro_escalar_sigue_funcionando(self, db_session, org, escenario):
+        from rgenerator.core.report_steps import _build_records
+
+        dim, _, indicator = escenario
+        recs = _build_records(
+            db_session, indicator, org.id,
+            filters={str(dim.id_dimension): "6A"},
+        )
+        assert len(recs) == 1
+
+    def test_metric_cross_org_no_proyecta_datos(self, db_session, org, escenario):
+        from tests.factories import make_metric, make_metric_data, make_org
+        from backend.models import IndicatorMetric
+        from rgenerator.core.report_steps import _build_records
+
+        _, _, indicator = escenario
+        otra_org = make_org(db_session, name="Org Ajena QA")
+        metric_ajena = make_metric(db_session, otra_org, name="Secreta")
+        make_metric_data(db_session, metric_ajena, value=99)
+        db_session.add(IndicatorMetric(
+            id_indicator=indicator.id_indicator, id_metric=metric_ajena.id_metric
+        ))
+        db_session.commit()
+
+        recs = _build_records(db_session, indicator, org.id)
+        assert len(recs) == 3  # solo los datos de la org propia
+
+
 @pytest.mark.integration
 class TestWordReportErrorSaneado:
     """P0-5: fallo interno cargando datos → 500 con mensaje genérico, sin NameError."""
