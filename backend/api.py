@@ -14,6 +14,7 @@ from backend.routers import mappings
 from backend.routers import data_ops
 from backend.routers import api_keys
 from backend.routers import ingest
+from backend.routers import assistant
 from backend.database import init_db
 from backend.logging_config import get_logger, setup_logging
 
@@ -63,6 +64,7 @@ app.include_router(mappings.router)
 app.include_router(data_ops.router)
 app.include_router(api_keys.router)
 app.include_router(ingest.router)
+app.include_router(assistant.router)
 
 @app.get("/", response_class=HTMLResponse, include_in_schema=False)
 def root():
