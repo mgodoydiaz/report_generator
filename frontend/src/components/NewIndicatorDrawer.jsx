@@ -90,7 +90,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
         role_formats: {},
         filter_dimensions: [],
         temporal_config: { levels: [] },
-        achievement_levels: []
+        achievement_levels: [],
+        report_engine_type: ''
     });
 
     const [availableMetrics, setAvailableMetrics] = useState([]);
@@ -119,6 +120,7 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 filter_dimensions: initialData.filter_dimensions || [],
                 temporal_config: initialData.temporal_config || { levels: [] },
                 achievement_levels: normLevels,
+                report_engine_type: initialData.report_engine_type || '',
             });
         } else {
             setFormData({
@@ -131,7 +133,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                 role_formats: {},
                 filter_dimensions: [],
                 temporal_config: { levels: [] },
-                achievement_levels: []
+                achievement_levels: [],
+                report_engine_type: ''
             });
         }
     }, [initialData, isOpen]);
@@ -612,6 +615,25 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
                                     )
                                 })}
                             </div>
+                        </div>
+
+                        {/* Motor de informe especializado (Fase 1 selector de informes) */}
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Formato de informe oficial</label>
+                            <select
+                                value={formData.report_engine_type || ''}
+                                onChange={(e) => setFormData({ ...formData, report_engine_type: e.target.value })}
+                                className="w-full px-4 py-3 bg-slate-50 dark:bg-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-200 outline-none focus:ring-2 focus:ring-indigo-200"
+                            >
+                                <option value="">Ninguno (solo informes del Editor de Layout)</option>
+                                <option value="simce">SIMCE</option>
+                                <option value="simce_panguipulli">SIMCE Panguipulli</option>
+                                <option value="dia">DIA</option>
+                                <option value="pdl_idel">PDL IDEL-Woodcock</option>
+                            </select>
+                            <p className="text-xs text-slate-400 mt-2">
+                                Define qué informe con formato oficial aparece en "Generar informe" de Resultados, además de los configurados en el Editor de Layout.
+                            </p>
                         </div>
 
                         {/* Metrics Selector */}

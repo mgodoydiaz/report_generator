@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataProcessing';
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
+import ReportSelectorModal from '../components/ReportSelectorModal';
 import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
 import GenerateWordReportModal from '../components/GenerateWordReportModal';
 import MultiSelectFilters from '../components/MultiSelectFilters';
@@ -31,7 +32,9 @@ export default function Results() {
     const [subpruebaActiva, setSubpruebaActiva] = useState(null);
 
     // ── Estado: modal de generación de PDF ──
+    const [showReportSelector, setShowReportSelector] = useState(false); // selector unificado (Fase 1)
     const [showReportModal, setShowReportModal] = useState(false);
+    const [reportV1Context, setReportV1Context] = useState(null); // {tipo, engine} preselección del selector
     const [showReportV2Modal, setShowReportV2Modal] = useState(false);
     const [reportV2Context, setReportV2Context] = useState(null); // {tipoV2, indicatorId, filtros}
     const [showWordModal, setShowWordModal] = useState(false);
@@ -229,6 +232,61 @@ export default function Results() {
         (pdfEngine !== 'weasyprint' || (Array.isArray(pdfLayout.sections) && pdfLayout.sections.length > 0))
     );
 
+    // ── Despacho del selector unificado de informes (Fase 1) ──
+    // Mapea filtros UI {dimId: [vals]} → {nombre_humano: val|[vals]} (contrato v2/Word)
+    const mapFiltersToNames = () => {
+        const params = {};
+        Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
+            const dimName = indicatorDims[dimId]?.name;
+            const arr = Array.isArray(vals) ? vals : (vals ? [vals] : []);
+            if (!dimName || arr.length === 0) return;
+            params[dimName] = arr.length === 1 ? arr[0] : arr;
+        });
+        return params;
+    };
+
+    const handleReportOptionSelect = (op) => {
+        if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
+            setReportV1Context({
+                tipo: op.invocacion?.params?.tipo || 'evaluacion',
+                engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+            });
+            setShowReportSelector(false);
+            setShowReportModal(true);
+            return;
+        }
+        if (op.motor === 'v2') {
+            const params = mapFiltersToNames();
+            const temporales = op.requiere_filtro_temporal || [];
+            const tiene = temporales.some(k => k in params);
+            const multi = temporales.some(k => Array.isArray(params[k]) && params[k].length > 1);
+            if (!tiene) {
+                toast.error(`Aplica un filtro de ${temporales.slice(0, 2).join(' o ')} en el dashboard antes de generar este informe (un punto en el tiempo).`);
+                return;
+            }
+            if (multi) {
+                toast.error(`Este informe requiere UN solo punto temporal. Selecciona un único valor en ${temporales.slice(0, 2).join(' o ')}.`);
+                return;
+            }
+            setReportV2Context({
+                tipoV2: op.tipo_v2,
+                indicatorId: parseInt(selectedIndicator, 10),
+                filtros: params,
+            });
+            setShowReportSelector(false);
+            setShowReportV2Modal(true);
+            return;
+        }
+        if (op.motor === 'docxtpl') {
+            setWordContext({
+                indicatorId: parseInt(selectedIndicator, 10),
+                filtros: mapFiltersToNames(),
+            });
+            setShowReportSelector(false);
+            setShowWordModal(true);
+        }
+    };
+
     // ── Datos computados del dashboard ──
     const dashboardComputed = useMemo(() => computeDashboardKPIs(dashboardData), [dashboardData]);
 
@@ -303,111 +361,21 @@ export default function Results() {
                         </select>
                     </div>
 
-                    {/* Botón generar informe PDF */}
+                    {/* Botón único "Generar informe" — selector unificado (Fase 1).
+                        El catálogo de informes disponibles viene de
+                        GET /api/indicators/{id}/report-options; el selector
+                        despacha al modal específico según la opción elegida. */}
                     {selectedIndicator && (
                         <div className="flex items-end gap-2">
                             <button
-                                onClick={() => setShowReportModal(true)}
-                                disabled={!pdfConfigured || loadingDashboard}
-                                title={
-                                    !pdfConfigured
-                                        ? 'Configura el informe PDF en el Editor de Layout → pestaña Informe PDF'
-                                        : 'Abrir el modal de generación de informe (motor v1)'
-                                }
+                                onClick={() => setShowReportSelector(true)}
+                                disabled={loadingDashboard}
+                                title="Elegir y generar un informe de este indicador"
                                 className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
                             >
                                 <Download size={14} />
-                                Generar Reporte
+                                Generar informe
                             </button>
-                            {/* Botón motor v2 (paridad LaTeX). Detecta tipo por el nombre del indicador.
-                                Solo se muestra para indicators DIA / SIMCE — el motor v2 todavía no
-                                soporta IDEL/CV/FL. */}
-                            {(() => {
-                                const ind = indicatorsRef.current.find(i => String(i.id_indicator) === String(selectedIndicator));
-                                const nombre = (ind?.name || '').toLowerCase();
-                                // 'simce panguipulli' debe matchear ANTES que 'simce' suelto.
-                                const tipoV2 = nombre.includes('panguipulli') ? 'simce_panguipulli'
-                                    : nombre.includes('simce') ? 'simce'
-                                    : nombre.includes('dia') ? 'dia'
-                                    : null;
-                                if (!tipoV2) return null;
-                                // Mapear filtros UI (multi-valor) → nombres DB.
-                                // Para motor v2: si una dimensión tiene 1 solo valor lo
-                                // pasa como string (compatible con el código viejo);
-                                // si tiene >1 valor lo pasa como array (backend lo maneja).
-                                // Pero para los temporales el motor REQUIERE 1 solo punto.
-                                const params = {};
-                                Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
-                                    const dimName = indicatorDims[dimId]?.name;
-                                    const arr = Array.isArray(vals) ? vals : (vals ? [vals] : []);
-                                    if (!dimName || arr.length === 0) return;
-                                    params[dimName] = arr.length === 1 ? arr[0] : arr;
-                                });
-                                // El motor v2 requiere al menos UN filtro temporal por tipo.
-                                const filtrosTemporales = (tipoV2 === 'simce' || tipoV2 === 'simce_panguipulli')
-                                    ? ['Mes', 'N Prueba', 'Numero_Prueba']
-                                    : ['Hito', 'Año'];
-                                const tieneFiltroTemporal = filtrosTemporales.some(k => k in params);
-                                // Si el filtro temporal tiene >1 valor, motor v2 no puede
-                                // (sería un comparativo, no soportado todavía).
-                                const temporalMulti = filtrosTemporales.some(k => Array.isArray(params[k]) && params[k].length > 1);
-                                const disabled = loadingDashboard || !tieneFiltroTemporal || temporalMulti;
-                                const titleMsg = temporalMulti
-                                    ? `El motor v2 requiere UN solo punto temporal. Selecciona un único valor en ${filtrosTemporales.slice(0, 2).join(' o ')}.`
-                                    : !tieneFiltroTemporal
-                                        ? `Aplica un filtro de ${filtrosTemporales.slice(0, 2).join(' o ')} antes de generar el informe v2 (un punto en el tiempo)`
-                                        : `Generar informe ${tipoV2.toUpperCase()} con motor v2 (paridad LaTeX)`;
-                                return (
-                                    <button
-                                        onClick={() => {
-                                            // Abrir modal v2 con contexto actual.
-                                            // El modal arma overrides de branding y llama el endpoint.
-                                            setReportV2Context({
-                                                tipoV2,
-                                                indicatorId: parseInt(selectedIndicator, 10),
-                                                filtros: params,
-                                            });
-                                            setShowReportV2Modal(true);
-                                        }}
-                                        disabled={disabled}
-                                        title={titleMsg}
-                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-white border-2 border-indigo-600 hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
-                                    >
-                                        <Download size={14} />
-                                        Generar v2 ({tipoV2.toUpperCase()})
-                                    </button>
-                                );
-                            })()}
-                            {/* Botón informes Word — disponible para cualquier
-                                indicador; los informes registrados se listan en
-                                el modal (registry por nombre en el backend). */}
-                            {(() => {
-                                // Mapear filtros UI → nombres DB (mismo criterio que v2)
-                                const filtrosWord = {};
-                                Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
-                                    const dimName = indicatorDims[dimId]?.name;
-                                    const arr = Array.isArray(vals) ? vals : (vals ? [vals] : []);
-                                    if (!dimName || arr.length === 0) return;
-                                    filtrosWord[dimName] = arr.length === 1 ? arr[0] : arr;
-                                });
-                                return (
-                                    <button
-                                        onClick={() => {
-                                            setWordContext({
-                                                indicatorId: parseInt(selectedIndicator, 10),
-                                                filtros: filtrosWord,
-                                            });
-                                            setShowWordModal(true);
-                                        }}
-                                        disabled={loadingDashboard}
-                                        title="Generar informe Word (.docx editable) desde plantilla con códigos {{valor}}"
-                                        className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-semibold text-emerald-700 bg-white border-2 border-emerald-600 hover:bg-emerald-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white shadow-sm transition-all"
-                                    >
-                                        <Download size={14} />
-                                        Word
-                                    </button>
-                                );
-                            })()}
                         </div>
                     )}
 
@@ -471,6 +439,14 @@ export default function Results() {
                 </div>
             )}
 
+            {/* Selector unificado de tipo de informe (Fase 1) */}
+            <ReportSelectorModal
+                open={showReportSelector}
+                onClose={() => setShowReportSelector(false)}
+                indicatorId={selectedIndicator ? parseInt(selectedIndicator, 10) : null}
+                onSelect={handleReportOptionSelect}
+            />
+
             {/* Modal de generación de informe PDF */}
             <GenerateReportModal
                 open={showReportModal}
@@ -480,6 +456,8 @@ export default function Results() {
                 initialFilters={selectedFilters}
                 sortedDimKeys={sortedDimKeys}
                 onSaved={fetchInitialData}
+                initialTipo={reportV1Context?.tipo}
+                initialEngine={reportV1Context?.engine}
             />
             {reportV2Context && (
                 <GenerateReportV2Modal

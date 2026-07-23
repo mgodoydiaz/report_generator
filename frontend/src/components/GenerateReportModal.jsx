@@ -40,6 +40,8 @@ export default function GenerateReportModal({
     initialFilters,      // {id_dimension_str: valor}
     sortedDimKeys,       // orden preferido de dimensiones
     onSaved,             // callback opcional, invocado si se persiste pdf_layout
+    initialTipo,         // opcional: 'evaluacion' | 'historico' (preselección del selector unificado)
+    initialEngine,       // opcional: 'weasyprint' | 'pdl_idel' (preselección del selector unificado)
 }) {
     const { fetchAuth, user } = useAuth();
     const orgId = user?.org_id;
@@ -73,16 +75,16 @@ export default function GenerateReportModal({
         if (!open || !indicator) return;
         setFilters({ ...(initialFilters || {}) });
         setSaveAsDefault(false);
-        setTipo('evaluacion');
-    }, [open, indicator, initialFilters]);
+        setTipo(initialTipo === 'historico' ? 'historico' : 'evaluacion');
+    }, [open, indicator, initialFilters, initialTipo]);
 
     // Refresh branding y engine cuando cambia el tipo (cada layout puede tener
     // su propio branding configurado)
     useEffect(() => {
         if (!open || !indicator) return;
         setBranding({ ...(activeLayout.branding || {}) });
-        setSelectedEngine((activeLayout.engine || 'weasyprint').toLowerCase());
-    }, [open, indicator, tipo, activeLayout]);
+        setSelectedEngine((initialEngine || activeLayout.engine || 'weasyprint').toLowerCase());
+    }, [open, indicator, tipo, activeLayout, initialEngine]);
 
     // Limpiar filtros temporales al cambiar a histórico (no aplican)
     useEffect(() => {
