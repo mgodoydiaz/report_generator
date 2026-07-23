@@ -51,6 +51,7 @@ class IndicatorBase(BaseModel):
     derived_columns: Optional[List[Dict[str, Any]]] = None
     pdf_layout: Optional[Dict[str, Any]] = None
     pdf_layout_historico: Optional[Dict[str, Any]] = None
+    report_engine_type: Optional[str] = None  # simce | simce_panguipulli | dia | pdl_idel | None
 
 
 class IndicatorCreate(IndicatorBase):
@@ -120,8 +121,162 @@ def _indicator_to_dict(ind: Indicator) -> dict:
         "derived_columns": _parse_json_field(ind.derived_columns, []),
         "pdf_layout": _parse_json_field(ind.pdf_layout, {}),
         "pdf_layout_historico": _parse_json_field(ind.pdf_layout_historico, {}),
+        "report_engine_type": ind.report_engine_type,
         "updated_at": ind.updated_at.strftime("%Y-%m-%d %H:%M:%S") if ind.updated_at else "",
         "metric_ids": metric_ids,
+    }
+
+
+# Tipos que sirve el motor v2 (paridad LaTeX) — espejo de routers/reports.py
+_V2_TIPOS = ("simce", "simce_panguipulli", "dia")
+_V2_FILTROS_TEMPORALES = {
+    "simce": ["Mes", "N Prueba", "Numero_Prueba"],
+    "simce_panguipulli": ["Mes", "N Prueba", "Numero_Prueba"],
+    "dia": ["Hito", "Año"],
+}
+
+
+def _inferir_engine_type(nombre: str) -> Optional[str]:
+    """Fallback por nombre mientras el indicador no tenga report_engine_type.
+
+    Misma heurística que usaba el frontend (Results.jsx) — se mantiene solo
+    para retrocompatibilidad; la fuente de verdad es el campo explícito.
+    """
+    n = (nombre or "").lower()
+    if "panguipulli" in n:
+        return "simce_panguipulli"
+    if "simce" in n:
+        return "simce"
+    if "dia" in n:
+        return "dia"
+    if "idel" in n or "pdl" in n:
+        return "pdl_idel"
+    return None
+
+
+@router.get("/{indicator_id}/report-options")
+def report_options(
+    indicator_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Catálogo de informes disponibles para el indicador.
+
+    Fuente única para el selector de "Generar informe" del frontend: cada
+    opción dice formato, motor, si está disponible (y por qué no), y cómo
+    invocarla. Los tipos especializados salen de `report_engine_type`
+    (con fallback a heurística por nombre si el campo está vacío).
+    """
+    record = db.query(Indicator).filter(
+        Indicator.id_indicator == indicator_id,
+        Indicator.org_id == user.org_id,
+    ).first()
+    if not record:
+        raise HTTPException(status_code=404, detail="Indicador no encontrado")
+
+    engine_type = record.report_engine_type or None
+    origen = "campo" if engine_type else None
+    if not engine_type:
+        engine_type = _inferir_engine_type(record.name)
+        origen = "inferido" if engine_type else None
+
+    layout_eval = _parse_json_field(record.pdf_layout, {})
+    layout_hist = _parse_json_field(record.pdf_layout_historico, {})
+    opciones = []
+
+    tiene_eval = bool(layout_eval.get("sections"))
+    opciones.append({
+        "id": "pdf_evaluacion",
+        "label": "Informe PDF — por evaluación",
+        "descripcion": "PDF con el diseño configurado en el Editor de Layout, para un punto en el tiempo.",
+        "formato": "pdf",
+        "motor": "weasyprint",
+        "disponible": tiene_eval,
+        "motivo_no_disponible": None if tiene_eval else (
+            "Este informe aún no está configurado — pide a tu administrador que "
+            "agregue secciones en Editor de Layout → Informe PDF → por evaluación."
+        ),
+        "invocacion": {
+            "endpoint": f"/api/indicators/{indicator_id}/export-pdf",
+            "params": {"tipo": "evaluacion", "engine": "weasyprint"},
+        },
+    })
+
+    tiene_hist = bool(layout_hist.get("sections"))
+    opciones.append({
+        "id": "pdf_historico",
+        "label": "Informe PDF — histórico",
+        "descripcion": "PDF con la evolución entre evaluaciones (diseño del Editor de Layout).",
+        "formato": "pdf",
+        "motor": "weasyprint",
+        "disponible": tiene_hist,
+        "motivo_no_disponible": None if tiene_hist else (
+            "Este informe aún no está configurado — pide a tu administrador que "
+            "agregue secciones en Editor de Layout → Informe PDF → histórico."
+        ),
+        "invocacion": {
+            "endpoint": f"/api/indicators/{indicator_id}/export-pdf",
+            "params": {"tipo": "historico", "engine": "weasyprint"},
+        },
+    })
+
+    if engine_type == "pdl_idel":
+        opciones.append({
+            "id": "pdl_idel",
+            "label": "Informe PDL IDEL-Woodcock",
+            "descripcion": "Informe especializado multi-curso con matrices de transición.",
+            "formato": "pdf",
+            "motor": "pdl_idel",
+            "disponible": True,
+            "motivo_no_disponible": None,
+            "invocacion": {
+                "endpoint": f"/api/indicators/{indicator_id}/export-pdf",
+                "params": {"engine": "pdl_idel"},
+            },
+        })
+
+    if engine_type in _V2_TIPOS:
+        opciones.append({
+            "id": f"v2_{engine_type}",
+            "label": f"Informe de evaluación {engine_type.replace('_', ' ').upper()} (formato oficial)",
+            "descripcion": "PDF con el formato oficial de la evaluación. Requiere filtrar a un solo punto temporal.",
+            "formato": "pdf",
+            "motor": "v2",
+            "tipo_v2": engine_type,
+            "requiere_filtro_temporal": _V2_FILTROS_TEMPORALES[engine_type],
+            "disponible": True,
+            "motivo_no_disponible": None,
+            "invocacion": {
+                "endpoint": f"/api/reports/{engine_type}",
+                "params": {"indicator_id": indicator_id},
+            },
+        })
+
+    try:
+        from backend.rgenerator.reports import word as word_reports
+        for inf in word_reports.listar_informes():
+            disponible = bool(inf.get("plantilla_existe"))
+            opciones.append({
+                "id": f"word_{inf['nombre']}",
+                "label": f"Word — {inf.get('label') or inf['nombre']}",
+                "descripcion": inf.get("descripcion") or "Documento Word editable generado desde plantilla.",
+                "formato": "word",
+                "motor": "docxtpl",
+                "disponible": disponible,
+                "motivo_no_disponible": None if disponible else "Falta la plantilla .docx en el servidor.",
+                "invocacion": {
+                    "endpoint": f"/api/reports/word/{inf['nombre']}",
+                    "params": {"indicator_id": indicator_id},
+                },
+            })
+    except Exception:
+        logger.error("No se pudieron listar informes Word para report-options", exc_info=True)
+
+    return {
+        "indicator_id": indicator_id,
+        "engine_type": engine_type,
+        "engine_type_origen": origen,
+        "opciones": opciones,
     }
 
 
@@ -177,6 +332,7 @@ def create_indicator(
             derived_columns=json.dumps(indicator.derived_columns or [], ensure_ascii=False),
             pdf_layout=json.dumps(indicator.pdf_layout or {}, ensure_ascii=False),
             pdf_layout_historico=json.dumps(indicator.pdf_layout_historico or {}, ensure_ascii=False),
+            report_engine_type=indicator.report_engine_type,
             updated_at=datetime.utcnow(),
             org_id=user.org_id,
         )
@@ -241,6 +397,9 @@ def update_indicator(
             record.pdf_layout = json.dumps(indicator.pdf_layout, ensure_ascii=False)
         if indicator.pdf_layout_historico is not None:
             record.pdf_layout_historico = json.dumps(indicator.pdf_layout_historico, ensure_ascii=False)
+        if indicator.report_engine_type is not None:
+            # "" explícito limpia el campo (vuelve a genérico)
+            record.report_engine_type = indicator.report_engine_type or None
         record.updated_at = datetime.utcnow()
 
         if indicator.metric_ids is not None:
