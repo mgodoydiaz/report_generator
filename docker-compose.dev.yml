@@ -52,7 +52,10 @@ services:
       # TODO: eliminar cuando se complete la migración a PostgreSQL
       - ./data:/app/data
     ports:
-      - "8000:8000"
+      # BACKEND_PORT es opcional (default 8000) — útil si el puerto 8000
+      # del host ya está ocupado por otra app. Setear en .env local:
+      # BACKEND_PORT=8001
+      - "${BACKEND_PORT:-8000}:8000"
     environment:
       # NOTA: el host de la BD es 'db' (nombre del servicio), no localhost
       DATABASE_URL:    postgresql://${POSTGRES_USER:-rgenerator}:${POSTGRES_PASSWORD:-devpassword}@db:5432/${POSTGRES_DB:-rgenerator_dev}
@@ -82,7 +85,9 @@ services:
     ports:
       - "5173:5173"
     environment:
-      VITE_API_URL: http://localhost:8000
+      # Debe coincidir con el nombre que lee frontend/src/constants.js
+      # (VITE_API_BASE_URL, no VITE_API_URL — era un typo sin efecto).
+      VITE_API_BASE_URL: http://localhost:${BACKEND_PORT:-8000}/api
     depends_on:
       - backend
 
