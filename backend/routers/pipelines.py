@@ -18,9 +18,9 @@ from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Pipeline, User
 from backend.config import UPLOADS_DIR, PIPELINE_RUNS_DIR
-from rgenerator.core.step import StepExecutionError
-from rgenerator.tooling.pipeline_tools import PipelineRunner
-from rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
+from backend.rgenerator.core.step import StepExecutionError
+from backend.rgenerator.tooling.pipeline_tools import PipelineRunner
+from backend.rgenerator.tooling.data_tools import safe_json_to_text, safe_text_to_json
 
 logger = get_logger(__name__)
 

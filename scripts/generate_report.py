@@ -1,5 +1,5 @@
 """Script para crear el informe en LaTeX"""
-from rgenerator import BASE_DIR,INPUT_DIR,TMP_DIR
+from backend.rgenerator import BASE_DIR,INPUT_DIR,TMP_DIR
 from funciones_informe import *
 import pandas as pd
 import json

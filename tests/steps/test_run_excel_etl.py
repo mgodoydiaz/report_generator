@@ -16,7 +16,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from rgenerator.core.etl_steps import (
+from backend.rgenerator.core.etl_steps import (
     RunExcelETL,
     _parse_a1,
     _read_metadata_cells,

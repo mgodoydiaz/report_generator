@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from rgenerator.tooling.report_html_tools import (
+from backend.rgenerator.tooling.report_html_tools import (
     _html_escape,
     _is_numeric_column,
     _options_to_css,

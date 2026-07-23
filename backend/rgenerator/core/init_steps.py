@@ -7,7 +7,7 @@ from datetime import datetime
 from .step import Step
 from backend.config import PIPELINE_RUNS_DIR
 from backend.models import Spec
-from rgenerator.tooling.data_tools import safe_text_to_json
+from ..tooling.data_tools import safe_text_to_json
 
 
 class InitRun(Step):

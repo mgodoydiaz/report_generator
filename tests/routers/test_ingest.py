@@ -412,7 +412,7 @@ class TestTrigger:
         from backend.routers import ingest as mod
         monkeypatch.setattr(mod, "UPLOADS_DIR", tmp_path / "uploads")
 
-        import rgenerator.core.init_steps as init_steps_mod
+        import backend.rgenerator.core.init_steps as init_steps_mod
         monkeypatch.setattr(init_steps_mod, "PIPELINE_RUNS_DIR", tmp_path / "runs_root")
 
     def test_happy_path_completa(self, client, db_session, org, write_key):

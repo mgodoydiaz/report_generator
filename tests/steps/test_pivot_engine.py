@@ -22,7 +22,7 @@ import pandas as pd
 import pytest
 
 from backend.schemas_pivot import PivotSpec, PivotValue
-from rgenerator.core.pivot_engine import (
+from backend.rgenerator.core.pivot_engine import (
     PivotCell,
     PivotResult,
     pivot,

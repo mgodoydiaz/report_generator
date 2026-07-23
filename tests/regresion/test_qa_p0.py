@@ -18,13 +18,13 @@ from dataclasses import dataclass
 
 import pytest
 
-# NOTA: importar desde `rgenerator.*` (no `backend.rgenerator.*`): el paquete
-# es importable por ambas rutas y Python crea DOS instancias de módulo — las
-# clases de excepción solo coinciden si usamos la misma ruta que usa el código
-# de producción (pipeline_tools y routers usan `rgenerator.*`).
-from rgenerator.core.step import Step, StepExecutionError, WaitingForInputException
-from rgenerator.tooling import pipeline_tools
-from rgenerator.tooling.pipeline_tools import PipelineRunner
+# NOTA: la ruta canónica del paquete es `backend.rgenerator.*` (ver
+# tests/regresion/test_import_canonico.py). La ruta corta `rgenerator.*`
+# creaba una SEGUNDA instancia de cada módulo y las clases de excepción no
+# coincidían entre rutas; hoy la ruta corta levanta ImportError.
+from backend.rgenerator.core.step import Step, StepExecutionError, WaitingForInputException
+from backend.rgenerator.tooling import pipeline_tools
+from backend.rgenerator.tooling.pipeline_tools import PipelineRunner
 
 
 @dataclass
@@ -122,20 +122,20 @@ class TestFiltroTemporalDIA:
         )
 
     def test_filtra_por_anio_escalar(self):
-        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+        from backend.rgenerator.reports.dia.crear_informe import _filtrar_temporal
 
         out = _filtrar_temporal(self._df(), "Año", "2025")
         assert out["Rend"].tolist() == [3, 4]
 
     def test_filtra_por_anio_lista_multivalor(self):
         """Los filtros del dashboard llegan como lista."""
-        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+        from backend.rgenerator.reports.dia.crear_informe import _filtrar_temporal
 
         out = _filtrar_temporal(self._df(), "Año", ["2024"])
         assert out["Rend"].tolist() == [1, 2]
 
     def test_none_lista_vacia_o_columna_inexistente_no_filtran(self):
-        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+        from backend.rgenerator.reports.dia.crear_informe import _filtrar_temporal
 
         df = self._df()
         assert len(_filtrar_temporal(df, "Año", None)) == 4
@@ -143,7 +143,7 @@ class TestFiltroTemporalDIA:
         assert len(_filtrar_temporal(df, "NoExiste", "x")) == 4
 
     def test_hito_y_anio_combinados(self):
-        from rgenerator.reports.dia.crear_informe import _filtrar_temporal
+        from backend.rgenerator.reports.dia.crear_informe import _filtrar_temporal
 
         out = _filtrar_temporal(
             _filtrar_temporal(self._df(), "Hito", "INTERMEDIO"), "Año", "2025"
@@ -156,19 +156,19 @@ class TestMatchesCompartido:
     """Semántica única de filtros (reports/filtering.py) — P0-1 / H1."""
 
     def test_escalar(self):
-        from rgenerator.reports.filtering import matches
+        from backend.rgenerator.reports.filtering import matches
 
         assert matches("5A", "5A")
         assert not matches("5A", "5B")
 
     def test_lista_multivalor_es_pertenencia(self):
-        from rgenerator.reports.filtering import matches
+        from backend.rgenerator.reports.filtering import matches
 
         assert matches("5A", ["5A", "5B"])
         assert not matches("6A", ["5A", "5B"])
 
     def test_lista_vacia_no_restringe(self):
-        from rgenerator.reports.filtering import matches
+        from backend.rgenerator.reports.filtering import matches
 
         assert matches("cualquiera", [])
 
@@ -193,7 +193,7 @@ class TestBuildRecordsFiltros:
         return dim, metric, indicator
 
     def test_filtro_multivalor_devuelve_los_cursos_seleccionados(self, db_session, org, escenario):
-        from rgenerator.core.report_steps import _build_records
+        from backend.rgenerator.core.report_steps import _build_records
 
         dim, _, indicator = escenario
         recs = _build_records(
@@ -203,7 +203,7 @@ class TestBuildRecordsFiltros:
         assert len(recs) == 2
 
     def test_filtro_escalar_sigue_funcionando(self, db_session, org, escenario):
-        from rgenerator.core.report_steps import _build_records
+        from backend.rgenerator.core.report_steps import _build_records
 
         dim, _, indicator = escenario
         recs = _build_records(
@@ -215,7 +215,7 @@ class TestBuildRecordsFiltros:
     def test_metric_cross_org_no_proyecta_datos(self, db_session, org, escenario):
         from tests.factories import make_metric, make_metric_data, make_org
         from backend.models import IndicatorMetric
-        from rgenerator.core.report_steps import _build_records
+        from backend.rgenerator.core.report_steps import _build_records
 
         _, _, indicator = escenario
         otra_org = make_org(db_session, name="Org Ajena QA")

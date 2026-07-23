@@ -2,10 +2,10 @@ import json
 from pathlib import Path
 from typing import Dict, Type, List, Optional
 import re
-from rgenerator.core.context import RunContext
-from rgenerator.core.step import Step, StepExecutionError, WaitingForInputException
-import rgenerator.core.pipeline_steps as ps
-import rgenerator.core.metric_steps as ms
+from ..core.context import RunContext
+from ..core.step import Step, StepExecutionError, WaitingForInputException
+from ..core import pipeline_steps as ps
+from ..core import metric_steps as ms
 import os
 
 from backend.logging_config import get_logger

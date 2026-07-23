@@ -2,7 +2,7 @@ from datetime import datetime
 import pandas as pd
 import json
 from typing import Optional, Dict, Any
-from rgenerator.core.step import Step
+from .step import Step
 from backend.auditing import make_metric_data
 from backend.logging_config import get_logger
 from backend.models import Metric, MetricDimension, MetricData, Dimension

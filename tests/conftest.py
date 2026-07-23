@@ -21,11 +21,13 @@ from pathlib import Path
 # 1) PYTHONPATH: backend/ y raíz del repo
 # ─────────────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
-BACKEND = ROOT / "backend"
 
-for p in (str(ROOT), str(BACKEND)):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+# Solo la RAÍZ del repo va al sys.path. backend/ NO se agrega: hacerlo
+# permitía importar el paquete como `rgenerator.*` (ruta corta), creando
+# una segunda instancia de cada módulo con clases incompatibles con las de
+# `backend.rgenerator.*` (ver tests/regresion/test_import_canonico.py).
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 # ─────────────────────────────────────────────────────────────────────────
 # 2) ENV VARS de test — DEBE ir antes de importar backend.database

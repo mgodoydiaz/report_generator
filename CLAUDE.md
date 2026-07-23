@@ -122,6 +122,10 @@ cd frontend && npm install
 
 ## Arquitectura
 
+### Ruta de import canónica del paquete ETL
+
+El paquete `backend/rgenerator/` se importa SIEMPRE como **`backend.rgenerator.*`** (imports relativos dentro del paquete). La ruta corta `rgenerator.*` está bloqueada con ImportError en el `__init__` — creaba una segunda instancia de cada módulo y `isinstance`/`except` entre clases de rutas distintas fallaba silenciosamente. Guardia: `tests/regresion/test_import_canonico.py`.
+
 ### Backend (`backend/`)
 
 ```

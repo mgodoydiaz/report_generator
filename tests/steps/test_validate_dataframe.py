@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rgenerator.core.validate_steps import ValidateDataframe
+from backend.rgenerator.core.validate_steps import ValidateDataframe
 
 
 def _make_ctx(artifacts: dict, params: dict | None = None, last_key: str | None = None):
@@ -158,5 +158,5 @@ def test_tipo_int_detecta_floats():
 
 
 def test_step_registrado_en_pipeline_mapping():
-    from rgenerator.tooling.pipeline_tools import STEP_MAPPING
+    from backend.rgenerator.tooling.pipeline_tools import STEP_MAPPING
     assert "ValidateDataframe" in STEP_MAPPING

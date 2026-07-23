@@ -24,7 +24,7 @@ sys.path.insert(0, str(ROOT / "backend"))
 # Evita que el import de modules tire por DATABASE_URL faltante
 os.environ.setdefault("DATABASE_URL", "postgresql://x:x@localhost:5432/x")
 
-from rgenerator.core.report_steps import _chart_to_png_b64  # noqa: E402
+from backend.rgenerator.core.report_steps import _chart_to_png_b64  # noqa: E402
 from jinja2 import Environment, FileSystemLoader  # noqa: E402
 from weasyprint import HTML as WeasyprintHTML  # noqa: E402
 

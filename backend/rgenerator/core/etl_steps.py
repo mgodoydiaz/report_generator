@@ -869,7 +869,7 @@ class ModifyColumnValues(Step):
             transforms = ctx.params.get("transformations", [])
 
         # 4. Aplicar transformaciones usando etl_tools
-        from rgenerator.tooling.etl_tools import modificar_valores_columna
+        from ..tooling.etl_tools import modificar_valores_columna
 
         # Trabajamos sobre copia
         df_mod = df.copy()

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from rgenerator.core.etl_steps import ApplyDerivedFields
+from backend.rgenerator.core.etl_steps import ApplyDerivedFields
 
 
 def _make_ctx(artifacts: dict | None = None, params: dict | None = None, last_key: str | None = None):

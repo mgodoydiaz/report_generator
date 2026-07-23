@@ -26,9 +26,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from rgenerator.core.context import RunContext  # noqa: E402
-from rgenerator.core.report_steps import RenderHtmlReport  # noqa: E402
-from rgenerator.tooling import plot_tools, report_tools  # noqa: E402
+from backend.rgenerator.core.context import RunContext  # noqa: E402
+from backend.rgenerator.core.report_steps import RenderHtmlReport  # noqa: E402
+from backend.rgenerator.tooling import plot_tools, report_tools  # noqa: E402
 
 AUX_DIR = ROOT / "data" / "tmp" / "smoke_aux_simce"
 OUTPUT_DIR = ROOT / "data" / "output"

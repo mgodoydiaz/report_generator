@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "backend"))
 
-from rgenerator.reports.simce import crear_informe as simce_informe
-from rgenerator.reports.dia import crear_informe as dia_informe
+from backend.rgenerator.reports.simce import crear_informe as simce_informe
+from backend.rgenerator.reports.dia import crear_informe as dia_informe
 
 
 CURSOS = ["I A", "I B", "II A", "II B", "III A", "III B", "IV A", "IV B"]

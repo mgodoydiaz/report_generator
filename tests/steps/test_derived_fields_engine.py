@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rgenerator.core.derived_fields_engine import (
+from backend.rgenerator.core.derived_fields_engine import (
     KIND_REGISTRY,
     apply_agg,
     apply_delta,

@@ -7,7 +7,7 @@ os.environ['DATABASE_URL'] = 'postgresql://mgodoy:holapocompadre977@localhost:54
 
 from backend.database import SessionLocal
 from backend.models import Indicator
-from rgenerator.core.report_steps import _chart_to_png_b64, _table_section, _build_records, _resolve_field
+from backend.rgenerator.core.report_steps import _chart_to_png_b64, _table_section, _build_records, _resolve_field
 
 db = SessionLocal()
 out_dir = '/tmp/chart_smoke'

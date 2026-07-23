@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rgenerator.tooling.analysis_tools import (
+from backend.rgenerator.tooling.analysis_tools import (
     DIA_MILESTONES_ORDINAL,
     establishment_gap,
     item_discrimination,

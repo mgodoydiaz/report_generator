@@ -35,7 +35,7 @@ from backend.logging_config import get_logger
 from backend.models import Dimension, IngestLog, Metric, MetricDimension, Pipeline
 from backend.routers.pipelines import _INPUT_KEY_RE, MAX_UPLOAD_BYTES, _get_pipeline_config_from_db
 from backend.routers.tables import invalidate_metric_df_cache
-from rgenerator.tooling.pipeline_tools import PipelineRunner
+from backend.rgenerator.tooling.pipeline_tools import PipelineRunner
 
 logger = get_logger(__name__)
 

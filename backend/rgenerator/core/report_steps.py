@@ -1261,7 +1261,7 @@ class RenderHtmlReport(Step):
     def run(self, ctx):
         from jinja2 import Environment, FileSystemLoader
         from weasyprint import HTML as WeasyprintHTML
-        from rgenerator.tooling.report_html_tools import render_section, encode_image_b64
+        from ..tooling.report_html_tools import render_section, encode_image_b64
 
         before = self._snapshot_artifacts(ctx)
         if not getattr(self, "name", None):
@@ -1360,7 +1360,7 @@ class RenderHtmlReport(Step):
             4. REPORTS_TEMPLATES_DIR / rel_path
             5. REPORTS_TEMPLATES_DIR / 'img' / basename(rel_path)
         """
-        from rgenerator.tooling.report_html_tools import encode_image_b64
+        from ..tooling.report_html_tools import encode_image_b64
 
         def _resolve(rel_path):
             if not rel_path:

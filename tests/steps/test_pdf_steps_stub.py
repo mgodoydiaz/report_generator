@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from rgenerator.core.pdf_steps import (
+from backend.rgenerator.core.pdf_steps import (
     RunDIAPDFExtraction,
     _detectar_paginas_tabla_preguntas,
     _extraer_establecimiento_y_curso,
@@ -95,7 +95,7 @@ class TestGetCorrectPercent:
 
 
 def test_step_registrado_en_pipeline_mapping():
-    from rgenerator.tooling.pipeline_tools import STEP_MAPPING
+    from backend.rgenerator.tooling.pipeline_tools import STEP_MAPPING
     assert "RunDIAPDFExtraction" in STEP_MAPPING
 
 

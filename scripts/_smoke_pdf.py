@@ -8,7 +8,7 @@ os.environ['DATABASE_URL'] = 'postgresql://mgodoy:holapocompadre977@localhost:54
 
 from backend.database import SessionLocal
 from backend.models import Indicator
-from rgenerator.core.report_steps import build_pdf_bytes
+from backend.rgenerator.core.report_steps import build_pdf_bytes
 
 db = SessionLocal()
 try:
