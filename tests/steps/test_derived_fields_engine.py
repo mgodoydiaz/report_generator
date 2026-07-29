@@ -9,6 +9,9 @@ Cobertura:
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -886,3 +889,274 @@ class TestRegistry:
             assert "description" in spec
             assert "required_args" in spec
             assert "name" in spec["required_args"]
+
+    def test_on_missing_entity_en_optional_args(self):
+        """El flag opt-in debe estar declarado en optional_args de agg/slope/delta
+        (y solo en esos kinds, que son los que resuelven entity_field)."""
+        for kind in ("agg", "slope", "delta"):
+            assert "on_missing_entity" in KIND_REGISTRY[kind]["optional_args"], kind
+        # Kinds que no agrupan por entity NO deben declararlo. Nota:
+        # temporal_value_at SÍ resuelve entity_field pero mantiene el
+        # comportamiento estricto histórico (no soporta el flag hoy); si se
+        # generaliza, moverlo a la lista positiva de arriba.
+        for kind in ("row_mean_dynamic", "row_threshold", "lookup_range", "temporal_value_at"):
+            assert "on_missing_entity" not in KIND_REGISTRY[kind]["optional_args"], kind
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Flag on_missing_entity (degradación opcional a NaN)
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestOnMissingEntity:
+    """Flag `on_missing_entity` en agg/slope/delta.
+
+    Cubre el fix DIA: cuando el entity_field referencia una columna que no
+    existe (caso `Nombre_Norm` en datos cargados por pipelines anteriores al
+    step normalize_name), `on_missing_entity: "null"` degrada la columna
+    resultado a NaN sin lanzar, mientras que el default histórico ("raise")
+    sigue lanzando KeyError para atrapar typos en configs.
+    """
+
+    @pytest.fixture
+    def df_sin_nombre_norm(self):
+        """Curso + Hito + Logro, SIN la columna Nombre_Norm que pide entity_field."""
+        return pd.DataFrame([
+            {"Curso": "1A", "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Curso": "1A", "Hito": "CIERRE", "Logro": 0.60},
+            {"Curso": "1B", "Hito": "DIAGNOSTICO", "Logro": 0.50},
+        ])
+
+    @pytest.fixture
+    def df_con_nombre_norm(self):
+        """2 estudiantes (ANA, BETO) con 2 hitos cada uno. Entity presente."""
+        return pd.DataFrame([
+            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "CIERRE", "Logro": 0.60},
+            {"Curso": "1A", "Nombre_Norm": "BETO", "Hito": "DIAGNOSTICO", "Logro": 0.50},
+            {"Curso": "1A", "Nombre_Norm": "BETO", "Hito": "CIERRE", "Logro": 0.55},
+        ])
+
+    # ── (a) agg con null + columna faltante → todo NaN, sin excepción ──────
+
+    def test_agg_null_columna_faltante_devuelve_nan(self, df_sin_nombre_norm):
+        out = apply_agg(df_sin_nombre_norm, {
+            "name": "Prom",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "agg": "mean",
+            "on_missing_entity": "null",
+        })
+        assert "Prom" in out.columns
+        assert out["Prom"].isna().all()
+        assert len(out) == len(df_sin_nombre_norm)
+
+    # ── (b) slope y delta con null + columna faltante → todo NaN ───────────
+
+    def test_slope_null_columna_faltante_devuelve_nan(self, df_sin_nombre_norm):
+        out = apply_slope(df_sin_nombre_norm, {
+            "name": "Avance",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            "on_missing_entity": "null",
+        })
+        assert "Avance" in out.columns
+        assert out["Avance"].isna().all()
+        assert len(out) == len(df_sin_nombre_norm)
+
+    def test_delta_null_columna_faltante_devuelve_nan(self, df_sin_nombre_norm):
+        out = apply_delta(df_sin_nombre_norm, {
+            "name": "Mejora",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            "on_missing_entity": "null",
+        })
+        assert "Mejora" in out.columns
+        assert out["Mejora"].isna().all()
+        assert len(out) == len(df_sin_nombre_norm)
+
+    # ── (c) default estricto (sin flag / "raise") → KeyError ──────────────
+
+    def test_agg_default_estricto_lanza_keyerror(self, df_sin_nombre_norm):
+        with pytest.raises(KeyError, match="Nombre_Norm"):
+            apply_agg(df_sin_nombre_norm, {
+                "name": "Prom",
+                "value_field": "Logro",
+                "entity_field": ["Curso", "Nombre_Norm"],
+                "agg": "mean",
+            })
+
+    def test_agg_raise_explicito_lanza_keyerror(self, df_sin_nombre_norm):
+        with pytest.raises(KeyError, match="Nombre_Norm"):
+            apply_agg(df_sin_nombre_norm, {
+                "name": "Prom",
+                "value_field": "Logro",
+                "entity_field": ["Curso", "Nombre_Norm"],
+                "agg": "mean",
+                "on_missing_entity": "raise",
+            })
+
+    def test_slope_default_estricto_lanza_keyerror(self, df_sin_nombre_norm):
+        with pytest.raises(KeyError, match="Nombre_Norm"):
+            apply_slope(df_sin_nombre_norm, {
+                "name": "Avance",
+                "value_field": "Logro",
+                "entity_field": ["Curso", "Nombre_Norm"],
+                "time_field": "Hito",
+                "time_type": "ordinal",
+                "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            })
+
+    def test_delta_default_estricto_lanza_keyerror(self, df_sin_nombre_norm):
+        with pytest.raises(KeyError, match="Nombre_Norm"):
+            apply_delta(df_sin_nombre_norm, {
+                "name": "Mejora",
+                "value_field": "Logro",
+                "entity_field": ["Curso", "Nombre_Norm"],
+                "time_field": "Hito",
+                "time_type": "ordinal",
+                "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            })
+
+    # ── (c-bis) valor inválido del flag → ValueError (no cae en silencio) ──
+
+    def test_valor_invalido_del_flag_lanza_valueerror(self, df_con_nombre_norm):
+        """Un typo como "warn" o "Null" no debe degradar en silencio al modo
+        estricto: se rechaza explícito para que el error sea diagnosticable."""
+        with pytest.raises(ValueError, match="on_missing_entity"):
+            apply_agg(df_con_nombre_norm, {
+                "name": "Prom",
+                "value_field": "Logro",
+                "entity_field": ["Curso", "Nombre_Norm"],
+                "agg": "mean",
+                "on_missing_entity": "warn",
+            })
+
+    # ── (d) flag "null" pero columnas presentes → happy path intacto ──────
+
+    def test_agg_null_con_columna_presente_calcula_normal(self, df_con_nombre_norm):
+        out = apply_agg(df_con_nombre_norm, {
+            "name": "Prom",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "agg": "mean",
+            "on_missing_entity": "null",
+        })
+        # ANA: (0.40 + 0.60)/2 = 0.50 ; BETO: (0.50 + 0.55)/2 = 0.525
+        ana = out[out["Nombre_Norm"] == "ANA"]["Prom"].iloc[0]
+        beto = out[out["Nombre_Norm"] == "BETO"]["Prom"].iloc[0]
+        assert ana == pytest.approx(0.50)
+        assert beto == pytest.approx(0.525)
+        assert out["Prom"].notna().all()
+
+    def test_slope_null_con_columna_presente_calcula_normal(self, df_con_nombre_norm):
+        out = apply_slope(df_con_nombre_norm, {
+            "name": "Avance",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            "on_missing_entity": "null",
+        })
+        # ANA: x=(1,3) y=(0.40,0.60) → slope = 0.20/2 = 0.10 en el hito CIERRE.
+        ana_cierre = out[
+            (out["Nombre_Norm"] == "ANA") & (out["Hito"] == "CIERRE")
+        ]["Avance"].iloc[0]
+        assert ana_cierre == pytest.approx(0.10, abs=1e-9)
+
+    def test_delta_null_con_columna_presente_calcula_normal(self, df_con_nombre_norm):
+        out = apply_delta(df_con_nombre_norm, {
+            "name": "Mejora",
+            "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre_Norm"],
+            "time_field": "Hito",
+            "time_type": "ordinal",
+            "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
+            "on_missing_entity": "null",
+        })
+        # ANA: 0.60 - 0.40 = 0.20 ; BETO: 0.55 - 0.50 = 0.05
+        ana = out[out["Nombre_Norm"] == "ANA"]["Mejora"].iloc[0]
+        beto = out[out["Nombre_Norm"] == "BETO"]["Mejora"].iloc[0]
+        assert ana == pytest.approx(0.20, abs=1e-9)
+        assert beto == pytest.approx(0.05, abs=1e-9)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Integración liviana: derived_fields del esquema DIA real
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestEsquemaDIADerivedFields:
+    """Aplica las derived_fields declaradas en el esquema DIA real
+    (`backend/rgenerator/reports/dia/esquema.json`) sobre DataFrames
+    sintéticos, verificando el flujo end-to-end del fix on_missing_entity.
+    """
+
+    def _configs_estudiantes(self):
+        import backend.rgenerator.reports.runtime as rt
+        esquema_path = Path(rt.__file__).parent / "dia" / "esquema.json"
+        esquema = json.loads(esquema_path.read_text(encoding="utf-8"))
+        bloques = esquema["derived_fields"]
+        est = [b for b in bloques if b.get("df_input") == "estudiantes"][0]
+        return est["configs"]
+
+    def test_configs_declaran_on_missing_entity_null(self):
+        """Sanity: las 3 derived_fields del esquema deben traer el flag null."""
+        configs = self._configs_estudiantes()
+        nombres = {c["name"] for c in configs}
+        assert nombres == {"Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"}
+        for c in configs:
+            assert c.get("on_missing_entity") == "null", c["name"]
+
+    def test_sin_nombre_norm_no_rompe_y_deriva_nan(self):
+        """DF sin Nombre_Norm (pipeline antiguo): las 3 columnas existen como NaN."""
+        configs = self._configs_estudiantes()
+        df = pd.DataFrame([
+            {"Curso": "1A", "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Curso": "1A", "Hito": "CIERRE", "Logro": 0.60},
+            {"Curso": "1B", "Hito": "DIAGNOSTICO", "Logro": 0.55},
+        ])
+        out = apply_derived_fields(df, configs)  # no debe lanzar
+        for col in ("Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"):
+            assert col in out.columns
+            assert out[col].isna().all(), col
+        assert len(out) == len(df)
+
+    def test_con_nombre_norm_y_dos_hitos_calcula(self):
+        """DF con Nombre_Norm y 2 hitos: Avance y Mejora con valores no-NaN
+        para el estudiante presente en ambos hitos; el de 1 solo hito queda NaN."""
+        configs = self._configs_estudiantes()
+        df = pd.DataFrame([
+            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "CIERRE", "Logro": 0.60},
+            # BETO solo tiene 1 hito → Avance / Mejora quedan NaN (min_points=2).
+            {"Curso": "1A", "Nombre_Norm": "BETO", "Hito": "DIAGNOSTICO", "Logro": 0.50},
+        ])
+        out = apply_derived_fields(df, configs)
+
+        ana = out[out["Nombre_Norm"] == "ANA"]
+        # Logro_Promedio_Estudiante y Mejora_vs_Inicio (delta) hacen broadcast
+        # a todas las filas del estudiante → no-NaN en ambos hitos.
+        assert ana["Logro_Promedio_Estudiante"].notna().all()
+        assert ana["Mejora_vs_Inicio"].notna().all()
+        # Logro_Promedio_Estudiante ANA = (0.40 + 0.60)/2 = 0.50
+        assert ana["Logro_Promedio_Estudiante"].iloc[0] == pytest.approx(0.50)
+        # Mejora ANA = 0.60 - 0.40 = 0.20
+        assert ana["Mejora_vs_Inicio"].iloc[0] == pytest.approx(0.20, abs=1e-9)
+        # Avance (slope expansivo): NaN en el primer hito (1 punto), 0.10 en
+        # CIERRE, donde x=(1,3) y=(0.40,0.60) → slope = 0.20/2 = 0.10.
+        avance_cierre = ana[ana["Hito"] == "CIERRE"]["Avance"].iloc[0]
+        assert avance_cierre == pytest.approx(0.10, abs=1e-9)
+
+        beto = out[out["Nombre_Norm"] == "BETO"]
+        assert pd.isna(beto["Avance"].iloc[0])
+        assert pd.isna(beto["Mejora_vs_Inicio"].iloc[0])
+        # El promedio con min_points=1 sí calcula para BETO (1 hito).
+        assert beto["Logro_Promedio_Estudiante"].iloc[0] == pytest.approx(0.50)

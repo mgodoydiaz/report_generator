@@ -1,5 +1,5 @@
 {
-  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje). Avance y Mejora_vs_Inicio activos desde B6b: usan Nombre_Norm (clave estable entre hitos) que el pipeline DIA produce con kind normalize_name y guarda como dimensión en metric_data. Requiere ≥2 hitos cargados para que ambas devuelvan valor; con 1 solo hito quedan NaN sin romper el render.",
+  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje). Avance y Mejora_vs_Inicio activos desde B6b: usan Nombre_Norm (clave estable entre hitos) que el pipeline DIA produce con kind normalize_name y guarda como dimensión en metric_data. Requiere ≥2 hitos cargados para que ambas devuelvan valor; con 1 solo hito quedan NaN sin romper el render. on_missing_entity=null: si los datos se cargaron con un pipeline anterior a normalize_name y no existe la columna Nombre_Norm, las tres derived_fields degradan a NaN en vez de romper el informe.",
   "derived_fields": [
     {
       "df_input": "estudiantes",
@@ -10,7 +10,8 @@
           "value_field": "Logro",
           "entity_field": ["Curso", "Nombre_Norm"],
           "agg": "mean",
-          "min_points": 1
+          "min_points": 1,
+          "on_missing_entity": "null"
         },
         {
           "kind": "slope",
@@ -20,7 +21,8 @@
           "time_field": "Hito",
           "time_type": "ordinal",
           "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
-          "min_points": 2
+          "min_points": 2,
+          "on_missing_entity": "null"
         },
         {
           "kind": "delta",
@@ -30,7 +32,8 @@
           "time_field": "Hito",
           "time_type": "ordinal",
           "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
-          "min_points": 2
+          "min_points": 2,
+          "on_missing_entity": "null"
         }
       ]
     }

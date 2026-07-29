@@ -50,6 +50,11 @@ class TestHumanizeColumn:
         ("_logro", "Logro"),
         ("_porclogro", "PorcLogro"),  # SIMCE Panguipulli override
         ("_n_pregunta", "N° Pregunta"),  # override
+        # Dimensión producida por normalize_name en el pipeline DIA: debe
+        # conservar el guion bajo (el esquema DIA la usa como entity_field
+        # "Nombre_Norm"). Sin override quedaría "Nombre Norm" (con espacio) y
+        # las derived_fields Avance/Mejora_vs_Inicio fallarían con KeyError.
+        ("_nombre_norm", "Nombre_Norm"),
     ])
     def test_humanize_con_y_sin_override(self, inp, expected):
         assert _humanize_column(inp) == expected

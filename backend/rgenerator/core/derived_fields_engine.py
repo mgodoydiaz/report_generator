@@ -48,12 +48,15 @@ formato numérico (no se revierte porque la salida típicamente es numérica).
 """
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from typing import Any, Callable
 
 import numpy as np
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -122,6 +125,43 @@ def _resolve_entity_keys(df: pd.DataFrame, entity_field, label: str) -> list[str
     return keys
 
 
+def _entity_keys_or_degrade(df: pd.DataFrame, config: dict, label: str):
+    """Resuelve entity_keys tolerando columnas faltantes de forma opcional.
+
+    Igual que `_resolve_entity_keys`, pero mira el flag `on_missing_entity`
+    del config:
+
+    - `"raise"` (default): comportamiento estricto histórico — KeyError si
+      falta alguna columna de entity_field. Protege contra typos en configs.
+    - `"null"`: degradación con gracia — si falta alguna columna, devuelve
+      `(None, missing)` para que el caller produzca la columna resultado como
+      NaN sin romper. Pensado para derived_fields opcionales cuya dimensión
+      puede no existir en datos cargados por pipelines antiguos (caso DIA
+      `Nombre_Norm`, producido por el step normalize_name).
+
+    Retorna `(entity_keys, missing)`: si `entity_keys` es None el caller debe
+    degradar a NaN; en caso normal `missing` es lista vacía.
+    """
+    mode = config.get("on_missing_entity", "raise")
+    if mode not in ("raise", "null"):
+        raise ValueError(
+            f"{label}: on_missing_entity debe ser 'raise' o 'null', recibido: {mode!r}"
+        )
+    entity_field = config["entity_field"]
+    keys = entity_field if isinstance(entity_field, (list, tuple)) else [entity_field]
+    keys = list(keys)
+    missing = [k for k in keys if k not in df.columns]
+    if missing:
+        if mode == "null":
+            logger.warning(
+                "%s: entity_field %s ausente(s) en el DataFrame — columna degradada a NaN",
+                label, missing,
+            )
+            return None, missing
+        raise KeyError(f"{label}: entity_field columnas inexistentes: {missing}")
+    return keys, []
+
+
 def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Agregación por entity broadcast a todas las filas del grupo.
 
@@ -140,7 +180,11 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"agg '{name}'")
+    entity_keys, _missing = _entity_keys_or_degrade(df, config, f"agg '{name}'")
+    if entity_keys is None:
+        df = df.copy()
+        df[name] = np.nan
+        return df
     agg_fn = config.get("agg", "mean")
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
@@ -209,7 +253,11 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"slope '{name}'")
+    entity_keys, _missing = _entity_keys_or_degrade(df, config, f"slope '{name}'")
+    if entity_keys is None:
+        df = df.copy()
+        df[name] = np.nan
+        return df
     time_field = config["time_field"]
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
@@ -304,7 +352,11 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """
     name = config["name"]
     value_field = config["value_field"]
-    entity_keys = _resolve_entity_keys(df, config["entity_field"], f"delta '{name}'")
+    entity_keys, _missing = _entity_keys_or_degrade(df, config, f"delta '{name}'")
+    if entity_keys is None:
+        df = df.copy()
+        df[name] = np.nan
+        return df
     time_field = config["time_field"]
     value_type = config.get("value_type", "numeric")
     ordinal_levels = config.get("ordinal_levels")
@@ -911,21 +963,21 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "display_name": "Agregación por entidad",
         "description": "Agrupa por entity y agrega (mean, sum, min, max, std, count, nunique). Broadcast a todas las filas del grupo.",
         "required_args": ["name", "value_field", "entity_field"],
-        "optional_args": ["agg", "value_type", "ordinal_levels", "min_points"],
+        "optional_args": ["agg", "value_type", "ordinal_levels", "min_points", "on_missing_entity"],
     },
     "slope": {
         "fn": apply_slope,
         "display_name": "Pendiente lineal expansiva",
         "description": "Para cada fila, regresión lineal sobre (time_field, value_field) usando los puntos hasta esa fila del mismo entity. Útil para Avance del estudiante.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity"],
     },
     "delta": {
         "fn": apply_delta,
         "display_name": "Último menos primero",
         "description": "Diferencia entre el último valor y el primero por entity, broadcast a todas las filas.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity"],
     },
     "row_mean_dynamic": {
         "fn": apply_row_mean_dynamic,
