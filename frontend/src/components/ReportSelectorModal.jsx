@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { X, FileText, FileType, Loader2, ChevronRight } from 'lucide-react';
+import { X, FileText, FileType, Loader2, Download, SlidersHorizontal } from 'lucide-react';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 
 /**
  * Selector unificado de tipo de informe (Fase 1 del motor único).
  * Consulta GET /api/indicators/{id}/report-options y muestra las opciones
- * disponibles; al elegir una, delega en el modal específico vía onSelect(opcion).
+ * disponibles. Dos acciones por opción:
+ *   - Clic principal → onSelect(opcion, 'quick'): descarga directa con la
+ *     configuración guardada (encabezados del último uso o defaults).
+ *   - Botón "Personalizar" → onSelect(opcion, 'custom'): abre el modal para
+ *     editar encabezados / nombre de archivo antes de descargar.
  */
 export default function ReportSelectorModal({ open, onClose, indicatorId, onSelect }) {
     const { fetchAuth } = useAuth();
@@ -57,34 +61,54 @@ export default function ReportSelectorModal({ open, onClose, indicatorId, onSele
                 {options && (
                     <div className="space-y-2">
                         {options.map(op => (
-                            <button
+                            <div
                                 key={op.id}
-                                disabled={!op.disponible}
-                                onClick={() => onSelect(op)}
-                                title={op.disponible ? op.descripcion : op.motivo_no_disponible}
-                                className={`w-full flex items-center gap-4 p-4 rounded-2xl border-2 text-left transition-all ${
+                                className={`w-full flex items-center gap-3 p-4 rounded-2xl border-2 transition-all ${
                                     op.disponible
-                                        ? 'border-slate-100 dark:border-slate-800 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-slate-800 cursor-pointer'
-                                        : 'border-slate-50 dark:border-slate-800/50 opacity-50 cursor-not-allowed'
+                                        ? 'border-slate-100 dark:border-slate-800 hover:border-indigo-400 hover:bg-indigo-50/50 dark:hover:bg-slate-800'
+                                        : 'border-slate-50 dark:border-slate-800/50 opacity-50'
                                 }`}
                             >
-                                <div className={`p-2.5 rounded-xl ${op.formato === 'word' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
-                                    {op.formato === 'word'
-                                        ? <FileType size={18} className="text-emerald-600 dark:text-emerald-400" />
-                                        : <FileText size={18} className="text-indigo-600 dark:text-indigo-400" />}
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{op.label}</p>
-                                    <p className="text-xs text-slate-400 mt-0.5">
-                                        {op.disponible ? op.descripcion : op.motivo_no_disponible}
-                                    </p>
-                                </div>
-                                {op.disponible && <ChevronRight size={16} className="text-slate-300 shrink-0" />}
-                            </button>
+                                {/* Zona principal: clic = descargar con configuración guardada */}
+                                <button
+                                    disabled={!op.disponible}
+                                    onClick={() => onSelect(op, 'quick')}
+                                    title={op.disponible ? 'Descargar con la configuración guardada' : op.motivo_no_disponible}
+                                    className={`flex-1 flex items-center gap-4 text-left min-w-0 ${op.disponible ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                                >
+                                    <div className={`p-2.5 rounded-xl shrink-0 ${op.formato === 'word' ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
+                                        {op.formato === 'word'
+                                            ? <FileType size={18} className="text-emerald-600 dark:text-emerald-400" />
+                                            : <FileText size={18} className="text-indigo-600 dark:text-indigo-400" />}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-semibold text-sm text-slate-800 dark:text-slate-100">{op.label}</p>
+                                        <p className="text-xs text-slate-400 mt-0.5">
+                                            {op.disponible ? op.descripcion : op.motivo_no_disponible}
+                                        </p>
+                                    </div>
+                                    {op.disponible && <Download size={16} className="text-indigo-400 shrink-0" />}
+                                </button>
+                                {/* Acción secundaria: editar encabezados / nombre de archivo */}
+                                {op.disponible && (
+                                    <button
+                                        onClick={() => onSelect(op, 'custom')}
+                                        title="Personalizar encabezados y nombre de archivo antes de descargar"
+                                        className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/60 dark:hover:bg-slate-700 transition-all shrink-0"
+                                    >
+                                        <SlidersHorizontal size={16} />
+                                    </button>
+                                )}
+                            </div>
                         ))}
                         {options.length === 0 && (
                             <p className="text-sm text-slate-400 text-center py-6">
                                 Este indicador aún no tiene informes configurados.
+                            </p>
+                        )}
+                        {options.length > 0 && (
+                            <p className="text-[11px] text-slate-400 text-center pt-2">
+                                Un clic descarga el informe · <SlidersHorizontal size={11} className="inline -mt-0.5" /> para personalizar títulos y archivo
                             </p>
                         )}
                     </div>

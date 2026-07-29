@@ -245,16 +245,89 @@ export default function Results() {
         return params;
     };
 
-    const handleReportOptionSelect = (op) => {
-        if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
-            setReportV1Context({
-                tipo: op.invocacion?.params?.tipo || 'evaluacion',
-                engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
-            });
-            setShowReportSelector(false);
-            setShowReportModal(true);
-            return;
+    // Descarga un Response como archivo, respetando Content-Disposition.
+    const descargarRespuesta = async (resp, fallbackName) => {
+        const blob = await resp.blob();
+        const disposition = resp.headers.get('Content-Disposition') || '';
+        const match = disposition.match(/filename="?([^";]+)"?/);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = match ? match[1] : fallbackName;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+    };
+
+    // Descarga directa (modo 'quick') sin pasar por el modal de la opción:
+    // usa la configuración guardada (branding del último uso o defaults).
+    const descargaRapida = async (op) => {
+        const tid = toast.loading('Generando informe…');
+        try {
+            let resp;
+            let fallbackName = 'informe.pdf';
+            if (op.motor === 'v2') {
+                // Branding: último usado para este tipo (mismo storage que el modal v2)
+                let overrides;
+                try {
+                    const saved = JSON.parse(localStorage.getItem(`report_v2_branding_${op.tipo_v2}`) || 'null');
+                    if (saved) {
+                        overrides = {
+                            branding: {
+                                center_header: [saved.line1, saved.line2, saved.line3].filter(Boolean),
+                                left_footer: saved.autor || '',
+                            },
+                        };
+                    }
+                } catch { /* sin branding guardado: usa defaults del esquema */ }
+                resp = await fetchAuth(`${API_BASE_URL}/reports/${op.tipo_v2}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        indicator_id: parseInt(selectedIndicator, 10),
+                        filtros: mapFiltersToNames(),
+                        ...(overrides ? { overrides } : {}),
+                    }),
+                });
+                fallbackName = `informe_${op.tipo_v2}.pdf`;
+            } else if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
+                resp = await fetchAuth(`${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filters: selectedFilters,
+                        tipo: op.invocacion?.params?.tipo || 'evaluacion',
+                        engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+                    }),
+                });
+                fallbackName = 'informe.pdf';
+            } else if (op.motor === 'docxtpl') {
+                const nombreInforme = op.id.replace(/^word_/, '');
+                resp = await fetchAuth(`${API_BASE_URL}/reports/word/${nombreInforme}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        indicator_id: parseInt(selectedIndicator, 10),
+                        filtros: mapFiltersToNames(),
+                    }),
+                });
+                fallbackName = `${nombreInforme}.docx`;
+            }
+            if (!resp.ok) {
+                let detail = 'Error generando el informe';
+                try { detail = (await resp.json()).detail || detail; } catch { /* binario o vacío */ }
+                throw new Error(detail);
+            }
+            await descargarRespuesta(resp, fallbackName);
+            toast.success('Informe descargado', { id: tid });
+        } catch (err) {
+            toast.error(err.message || 'No se pudo generar el informe', { id: tid });
         }
+    };
+
+    const handleReportOptionSelect = (op, mode = 'custom') => {
+        // Validación temporal del motor v2 aplica en ambos modos
         if (op.motor === 'v2') {
             const params = mapFiltersToNames();
             const temporales = op.requiere_filtro_temporal || [];
@@ -268,10 +341,29 @@ export default function Results() {
                 toast.error(`Este informe requiere UN solo punto temporal. Selecciona un único valor en ${temporales.slice(0, 2).join(' o ')}.`);
                 return;
             }
+        }
+
+        if (mode === 'quick') {
+            setShowReportSelector(false);
+            descargaRapida(op);
+            return;
+        }
+
+        // Modo 'custom': abrir el modal específico para personalizar
+        if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
+            setReportV1Context({
+                tipo: op.invocacion?.params?.tipo || 'evaluacion',
+                engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+            });
+            setShowReportSelector(false);
+            setShowReportModal(true);
+            return;
+        }
+        if (op.motor === 'v2') {
             setReportV2Context({
                 tipoV2: op.tipo_v2,
                 indicatorId: parseInt(selectedIndicator, 10),
-                filtros: params,
+                filtros: mapFiltersToNames(),
             });
             setShowReportSelector(false);
             setShowReportV2Modal(true);

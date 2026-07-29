@@ -23,7 +23,10 @@ export default function GenerateReportV2Modal({
     indicatorId,
     filtros,            // dict {nombre_dim_humano: valor}
 }) {
-    const { fetchAuth } = useAuth();
+    const { fetchAuth, user } = useAuth();
+    // Autor por defecto: nombre de la organización del usuario (neutro,
+    // sin nombres propios hardcodeados). Editable en el modal.
+    const autorDefault = user?.org_name || '';
 
     const [headerLine1, setHeaderLine1] = useState('');
     const [headerLine2, setHeaderLine2] = useState('');
@@ -40,19 +43,19 @@ export default function GenerateReportV2Modal({
             line1: 'Informe Ensayo SIMCE',
             line2: 'Lenguaje 2° Medio',
             line3: 'Mes Año',
-            autor: 'Miguel Godoy Díaz',
+            autor: autorDefault,
         },
         simce_panguipulli: {
             line1: 'Informe SIMCE Panguipulli',
             line2: 'Asignatura · Nivel · Curso',
             line3: 'Mes Año',
-            autor: 'Miguel Godoy Díaz',
+            autor: autorDefault,
         },
         dia: {
             line1: 'Informe DIA Diagnóstico',
             line2: 'Asignatura Nivel Medio',
             line3: 'Mes Año',
-            autor: 'Miguel Godoy Díaz',
+            autor: autorDefault,
         },
     };
 
