@@ -99,6 +99,7 @@ scripts/_oneshot/
 # Datos de entrada del cliente (Panguipulli y otros establecimientos):
 # planillas Excel con PII (nombres, RUTs, notas).
 data/input/emn_panguipulli/
+data/input/simce_2026/
 
 # Imágenes temporales en raíz (debug, screenshots descartables).
 /tmp_img_*.png

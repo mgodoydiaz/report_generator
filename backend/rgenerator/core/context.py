@@ -46,6 +46,20 @@ class RunContext:
     last_artifact_key: Optional[str] = None
     status: str = "NEW"  # NEW, RUNNING, NEEDS_REVIEW, DONE, FAILED
 
+    # Advertencias no bloqueantes acumuladas durante la corrida (ej. una
+    # dimensión de la métrica que quedó sin poblar). El runner las expone en
+    # el resultado de cada paso para que el frontend pueda mostrarlas.
+    warnings: List[str] = field(default_factory=list)
+
+    def add_warning(self, message: str) -> None:
+        """Registra una advertencia no bloqueante del run (idempotente)."""
+        if not message:
+            return
+        if self.warnings is None:
+            self.warnings = []
+        if message not in self.warnings:
+            self.warnings.append(message)
+
     def show_attrs(self, indent: int = 2):
         space = " " * indent
         lines = [f"{self.__class__.__name__}"]

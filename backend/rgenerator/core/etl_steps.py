@@ -764,8 +764,16 @@ class EnrichWithLookup(Step):
                     right_on=self.right_on,
                     how=self.how,
                 )
-                # Eliminar la columna right_on del resultado si no fue pedida en columns
-                if self.right_on not in self.columns and self.right_on in df_result.columns:
+                # Eliminar la columna right_on del resultado si no fue pedida en
+                # columns. OJO: cuando left_on y right_on se llaman IGUAL, pandas
+                # colapsa ambas llaves en UNA sola columna; borrarla se llevaría
+                # también la llave del DataFrame principal (bug que hizo que la
+                # carga SIMCE de mayo 2026 perdiera la dimensión 'Pregunta').
+                if (
+                    self.right_on != self.left_on
+                    and self.right_on not in self.columns
+                    and self.right_on in df_result.columns
+                ):
                     df_result = df_result.drop(columns=[self.right_on])
         except Exception as e:
             raise ValueError(f"[{self.name}] Error ejecutando merge: {e}")

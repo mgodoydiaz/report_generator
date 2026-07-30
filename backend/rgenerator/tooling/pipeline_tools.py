@@ -134,6 +134,9 @@ class PipelineRunner:
                 "next_index": self.current_step_index,
                 "step_name": step.__class__.__name__,
                 "artifacts": list(self.ctx.artifacts.keys()),
+                # Advertencias no bloqueantes acumuladas (ej. una dimensión de
+                # la métrica que quedó sin poblar en SaveToMetric).
+                "warnings": list(getattr(self.ctx, "warnings", []) or []),
                 "finished": self.status == "COMPLETED"
             }
         except WaitingForInputException as e:

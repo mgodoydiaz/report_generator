@@ -110,6 +110,59 @@ class SaveToMetric(Step):
         self.input_key = input_key
         self.clear_existing = clear_existing
 
+    def _advertir_dimensiones_sin_cobertura(
+        self,
+        ctx,
+        metric_name: str,
+        dim_name_to_id: Dict[str, int],
+        cobertura: Dict[int, int],
+        columnas_df,
+        filas: int,
+    ) -> list:
+        """Avisa si una dimensión de la métrica quedó con 0% de cobertura.
+
+        Una dimensión asociada a la métrica que no aparece en NINGUNA de las
+        filas guardadas casi siempre significa que la columna se perdió antes
+        de llegar acá: el XLS la renombró, el pipeline no la mapea, o un merge
+        se llevó la llave por delante (caso SIMCE mayo 2026, dimensión
+        'Pregunta'). No es un error duro — la carga sigue — pero tiene que
+        verse: queda en el log como warning, en los logs del paso y en
+        `ctx.warnings` (que el runner devuelve en el resultado del paso).
+
+        Devuelve la lista de mensajes emitidos (vacía si todo tiene cobertura).
+        """
+        mensajes = []
+        if filas <= 0 or not dim_name_to_id:
+            return mensajes
+
+        columnas = set(columnas_df or [])
+        for dim_name, dim_id in sorted(dim_name_to_id.items()):
+            if cobertura.get(dim_id, 0) > 0:
+                continue
+            if dim_name in columnas:
+                causa = (
+                    f"la columna '{dim_name}' existe en el DataFrame pero está "
+                    f"vacía/NaN en las {filas} filas"
+                )
+            else:
+                causa = (
+                    f"no hay ninguna columna '{dim_name}' en el DataFrame "
+                    f"(columnas: {sorted(columnas)})"
+                )
+            msg = (
+                f"[{self.name}] Dimensión '{dim_name}' (id {dim_id}) de la métrica "
+                f"'{metric_name}' quedó con 0% de cobertura: {causa}. "
+                f"Las {filas} filas se guardan igual, pero revisá el mapeo del "
+                f"pipeline antes de usar esos datos."
+            )
+            mensajes.append(msg)
+            logger.warning(msg)
+            self._append_log(msg)
+            add_warning = getattr(ctx, "add_warning", None)
+            if callable(add_warning):
+                add_warning(msg)
+        return mensajes
+
     def run(self, ctx):
         logger.info(f"[{self.name}] Iniciando guardado para métrica ID {self.metric_id} desde artifact '{self.input_key}'")
         logger.info(f"[{self.name}] Artifacts disponibles: {list(ctx.artifacts.keys())}")
@@ -157,6 +210,11 @@ class SaveToMetric(Step):
 
         # 5. Iterar filas del DataFrame y construir registros
         new_data_points = []
+        # Cobertura por dimensión: cuántas de las filas guardadas traen valor.
+        # Sirve para detectar en el acto una dimensión que se perdió en silencio
+        # (columna renombrada en el XLS, mapeo ausente, llave dropeada en un
+        # merge, etc.) — ver `_advertir_dimensiones_sin_cobertura`.
+        cobertura = {dim_id: 0 for dim_id in dim_name_to_id.values()}
 
         for _, row in df_input.iterrows():
             # Extraer dimensiones
@@ -203,6 +261,9 @@ class SaveToMetric(Step):
                             final_value = str(v)
 
             if final_value is not None:
+                for dim_id in cobertura:
+                    if str(dims_json.get(str(dim_id), "")).strip():
+                        cobertura[dim_id] += 1
                 new_data_points.append(make_metric_data(
                     metric_id=self.metric_id,
                     value=final_value,
@@ -211,6 +272,16 @@ class SaveToMetric(Step):
                     user_id=ctx.user_id,
                     via=("pipeline" if ctx.user_id else "pipeline_cron"),
                 ))
+
+        # 5.b Guard anti-columnas-perdidas-en-silencio
+        self._advertir_dimensiones_sin_cobertura(
+            ctx=ctx,
+            metric_name=metric.name,
+            dim_name_to_id=dim_name_to_id,
+            cobertura=cobertura,
+            columnas_df=df_input.columns.tolist(),
+            filas=len(new_data_points),
+        )
 
         # 6. Guardar en PostgreSQL
         if new_data_points:
