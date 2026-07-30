@@ -228,6 +228,294 @@ def filtrar_records_por_metrica(records: list, metric_id: Optional[int]) -> list
     return filtrados or records
 
 
+def rol_de_campo_de_valor(column_roles: dict, field_original,
+                          field_resuelto=None) -> Optional[str]:
+    """Rol de un campo de VALOR, aceptando el alias de rol o el field resuelto.
+
+    Los layouts escriben indistintamente `'_logro_1'` (alias del rol) o
+    `'_logro'` (la columna ya resuelta). El primero se lee directo del nombre;
+    el segundo se busca contra las columnas de los roles (`rol_de_campo`).
+    """
+    if (isinstance(field_original, str) and field_original.startswith('_')
+            and field_original[1:] in _KNOWN_ROLES):
+        return field_original[1:]
+    return rol_de_campo(column_roles, field_resuelto or field_original)
+
+
+def records_para_campo_de_valor(records: list, column_roles: dict, field_original,
+                                field_resuelto=None, group_field: Optional[str] = None) -> list:
+    """Records de la métrica dueña de un campo de valor (promedio/mín/máx).
+
+    Mismo problema que en los conteos (`filtrar_records_por_metrica`): en DIA
+    `logro_1` está declarado en la métrica 6 ("por estudiante") y en la 7 ("por
+    Pregunta"), ambas con la columna "Logro" → el mismo field `_logro`. Sin
+    filtrar, "Logro prom." promediaba alumnos junto con preguntas.
+
+    `group_field` es una salvaguarda: hay layouts que cruzan la columna de
+    valor compartida con una dimensión que SOLO existe en la otra métrica
+    (DIA: "Logro Promedio por Eje Temático" agrupa por una dimensión de la
+    métrica 7). Si al filtrar el campo de agrupación desaparece, se devuelven
+    todos los records — mejor el promedio mezclado que un gráfico en blanco.
+    """
+    rol = rol_de_campo_de_valor(column_roles, field_original, field_resuelto)
+    if not rol:
+        return records
+    filtrados = filtrar_records_por_metrica(records, metric_id_del_rol(column_roles, rol))
+    if filtrados is records or not group_field:
+        return filtrados
+    if not any(r.get(group_field) not in (None, '') for r in filtrados):
+        return records
+    return filtrados
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Combinación temporal — el "último período" de los componentes snapshot
+#
+# El rol `evaluacion_num` puede declarar VARIAS columnas (DIA: Hito + Año;
+# SIMCE: Mes + Año; Fluidez Lectora: N Prueba + Fecha). Resolver el período con
+# `evaluacion_num[0]` ignoraba el resto: sin filtro de año del usuario,
+# DIAGNOSTICO 2025 y DIAGNOSTICO 2026 caían en la misma "última evaluación".
+#
+# El último período es la última COMBINACIÓN de todas esas columnas, y el
+# filtro snapshot exige que el record calce con la combinación completa.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Prioridad de la clave de orden de un valor temporal (menor = más antiguo
+# dentro de su tier; los tiers se comparan primero). Un valor que la columna no
+# declara ni el módulo `periodos` sabe interpretar se considera "no
+# clasificado" y queda al final del orden.
+_TIER_DECLARADO = 0   # orden explícito de indicator.temporal_config
+_TIER_SEMANTICO = 1   # semántica de reports.periodos (año, mes, hito, versión)
+_TIER_NATURAL = 2     # fallback alfanumérico (_natural_sort_key)
+
+
+def _columna_de_anio(columnas) -> Optional[str]:
+    """Cuál de `columnas` es la de año, según `reports.periodos`."""
+    try:
+        from ..reports.periodos import detectar_columnas_temporales
+        return detectar_columnas_temporales([str(c) for c in columnas]).get('anio')
+    except Exception:
+        return None
+
+
+def _columna_desde_campo(campo: str) -> str:
+    """`'_n_prueba'` → `'n prueba'`.
+
+    Nombre pseudo-humano para poder reusar la semántica de `reports.periodos`
+    y el lookup de `temporal_config` cuando el layout solo declara el field
+    (`periodField`) y no el nombre de la dimensión. `_to_field_name` de la
+    vuelta reconstruye el mismo field, así que el matcheo sigue siendo exacto.
+    """
+    return str(campo).lstrip('_').replace('_', ' ')
+
+
+def columnas_temporales_del_rol(column_roles: dict,
+                                rol: str = 'evaluacion_num') -> List[str]:
+    """Columnas distintas declaradas en el rol temporal, con el año primero.
+
+    El orden importa: es el orden de significancia de la tupla que decide cuál
+    es la última combinación. La columna de año manda; el resto conserva el
+    orden en que aparecen las entradas del rol.
+    """
+    entries = (column_roles or {}).get(rol)
+    if not isinstance(entries, list):
+        return []
+    cols: List[str] = []
+    for e in entries:
+        col = e.get('column') if isinstance(e, dict) else None
+        if col and str(col) not in cols:
+            cols.append(str(col))
+    if len(cols) < 2:
+        return cols
+    col_anio = _columna_de_anio(cols)
+    if col_anio in cols:
+        cols = [col_anio] + [c for c in cols if c != col_anio]
+    return cols
+
+
+def columnas_snapshot_temporal(period_field: Optional[str], column_roles: dict,
+                               rol: str = 'evaluacion_num') -> List[str]:
+    """Columnas que definen el "último período" de un componente snapshot.
+
+    Manda el rol temporal del indicador (que puede declarar varias columnas).
+    El `periodField` del layout solo se usa cuando apunta a un field ajeno al
+    rol — ahí se respeta el layout, como antes del fix. `'_mes'` es el default
+    histórico del renderer, no una declaración del usuario: se ignora.
+    """
+    cols = columnas_temporales_del_rol(column_roles, rol)
+    campos = [_to_field_name(c) for c in cols]
+    explicito = period_field if (period_field and period_field != '_mes') else None
+    if explicito and explicito not in campos:
+        return [_columna_desde_campo(explicito)]
+    return cols
+
+
+def _temporal_config_de_indicador(indicator) -> dict:
+    """`indicator.temporal_config` parseado (patrón defensivo del archivo)."""
+    raw = getattr(indicator, 'temporal_config', None)
+    try:
+        cfg = json.loads(raw) if isinstance(raw, str) else (raw or {})
+    except Exception:
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
+def _orden_declarado(columna: str, temporal_config: Optional[dict]) -> List[str]:
+    """Lista `order` que `temporal_config` declara para `columna` (o vacía).
+
+    El match es por field name para tolerar tildes y mayúsculas entre el
+    `label` del config ("Versión") y el nombre de la dimensión ("versión").
+    """
+    levels = (temporal_config or {}).get('levels')
+    if not isinstance(levels, list):
+        return []
+    objetivo = _to_field_name(columna)
+    for lvl in levels:
+        if not isinstance(lvl, dict):
+            continue
+        label = lvl.get('label') or ''
+        if label and _to_field_name(str(label)) == objetivo:
+            order = lvl.get('order')
+            return [str(v) for v in order] if isinstance(order, list) else []
+    return []
+
+
+def _valor_semantico_temporal(columna: str, crudo: str) -> Optional[int]:
+    """Valor comparable de un valor temporal según la semántica de su columna.
+
+    Delega en `backend.rgenerator.reports.periodos`, única fuente de verdad de
+    la semántica temporal del proyecto: años como entero, meses en español,
+    hitos DIA (DIAGNOSTICO→INICIO=3, INTERMEDIO=6, CIERRE=11) y versiones IDEL.
+    """
+    try:
+        from ..reports.periodos import _a_entero, a_numero_mes, tipo_mes_like
+    except Exception:
+        return None
+    if _columna_de_anio([columna]):
+        return _a_entero(crudo)
+    semantica = tipo_mes_like(columna)
+    if semantica:
+        mes = a_numero_mes(crudo, semantica)
+        if mes is not None:
+            return mes
+    return _a_entero(crudo)
+
+
+def _clave_natural_estable(valor: str) -> tuple:
+    """`_natural_sort_key` con las partes normalizadas a tuplas comparables.
+
+    `_natural_sort_key` mezcla int y str en la misma lista; comparar dos claves
+    que difieren de tipo en la misma posición explota. Acá cada parte se
+    envuelve en `(0, numero, '')` o `(1, 0, texto)` — los números siguen
+    ordenando antes que el texto, sin TypeError.
+    """
+    partes = []
+    for p in _natural_sort_key(valor):
+        if isinstance(p, int):
+            partes.append((0, p, ''))
+        else:
+            partes.append((1, 0, str(p)))
+    return tuple(partes)
+
+
+def orden_valor_temporal(columna: str, valor, temporal_config: Optional[dict] = None) -> tuple:
+    """Clave ordenable de `valor` dentro de la columna temporal `columna`.
+
+    Orden de preferencia: (1) el orden declarado en `temporal_config` para esa
+    dimensión, (2) la semántica de `reports.periodos`, (3) `_natural_sort_key`.
+    Cada estrategia es un tier: un valor que la columna no declara queda
+    después de todos los declarados.
+    """
+    crudo = '' if valor is None else str(valor)
+    declarado = _orden_declarado(columna, temporal_config)
+    if crudo in declarado:
+        return (_TIER_DECLARADO, float(declarado.index(crudo)), ())
+    n = _valor_semantico_temporal(columna, crudo)
+    if n is not None:
+        return (_TIER_SEMANTICO, float(n), ())
+    return (_TIER_NATURAL, 0.0, _clave_natural_estable(crudo))
+
+
+def combinaciones_temporales(records: list, columnas: List[str],
+                             temporal_config: Optional[dict] = None) -> List[Dict[str, str]]:
+    """Combinaciones temporales presentes en `records`, de la más antigua a la
+    más reciente.
+
+    Cada combinación es `{columna: valor}`. Se descartan las incompletas (algún
+    valor vacío): sin el año no se puede ubicar la evaluación en el tiempo, y
+    dejarla competir la hacía ganar por venir de un tier "no clasificado".
+    Las columnas vacías en TODOS los records se ignoran (no participan del
+    orden ni del filtro).
+
+    Devuelve `[]` si no se puede resolver — el llamador mantiene entonces su
+    comportamiento previo (fail-open).
+    """
+    if not columnas or not records:
+        return []
+    campos = [(str(c), _to_field_name(c)) for c in columnas]
+    campos = [(c, f) for c, f in campos
+              if any(r.get(f) not in (None, '') for r in records)]
+    if not campos:
+        return []
+
+    combos = set()
+    for r in records:
+        valores = tuple(
+            '' if r.get(f) in (None, '') else str(r.get(f)) for _, f in campos
+        )
+        if any(v == '' for v in valores):
+            continue
+        combos.add(valores)
+    if not combos:
+        return []
+
+    def _clave(combo):
+        return tuple(orden_valor_temporal(c, v, temporal_config)
+                     for (c, _), v in zip(campos, combo))
+
+    return [{c: v for (c, _), v in zip(campos, combo)}
+            for combo in sorted(combos, key=_clave)]
+
+
+def ultima_combinacion_temporal(records: list, columnas: List[str],
+                                temporal_config: Optional[dict] = None) -> Optional[Dict[str, str]]:
+    """`{columna: valor}` de la última combinación temporal de `records`.
+
+    None si no hay columnas, no hay records o ninguna combinación es completa.
+    """
+    combos = combinaciones_temporales(records, columnas, temporal_config)
+    return combos[-1] if combos else None
+
+
+def filtrar_records_por_combinacion(records: list,
+                                    combinacion: Optional[Dict[str, str]]) -> list:
+    """Deja solo los records que calzan con la combinación temporal completa."""
+    if not combinacion:
+        return records
+    pares = [(_to_field_name(c), str(v)) for c, v in combinacion.items()]
+    return [r for r in records
+            if all(str(r.get(f, '')) == v for f, v in pares)]
+
+
+def etiqueta_combinacion_temporal(combinacion: Optional[Dict[str, str]]) -> str:
+    """`{'Año': '2025', 'Hito': 'CIERRE'}` → `'2025 CIERRE'` (para headers).
+
+    Las fechas a medianoche pierden la hora: los valores de una columna "Fecha"
+    llegan como `'2025-10-09 00:00:00'` y el `Δ vs …` quedaba ilegible.
+    """
+    import re
+    if not combinacion:
+        return ''
+    partes = []
+    for v in combinacion.values():
+        s = str(v).strip()
+        if not s:
+            continue
+        s = re.sub(r'\s+00:00:00$', '', s)
+        partes.append(s)
+    return ' '.join(partes)
+
+
 def _build_records(
     db,
     indicator,
@@ -389,7 +677,10 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             column_roles = {}
 
     comp = item.get('component', '')
-    x_field = _resolve_field(item.get('xField') or item.get('valueField', ''), column_roles)
+    # El field SIN resolver se conserva: `records_para_campo_de_valor` acepta
+    # tanto el alias de rol ('_logro_1') como la columna resuelta ('_logro').
+    x_field_orig = item.get('xField') or item.get('valueField', '')
+    x_field = _resolve_field(x_field_orig, column_roles)
     y_field = _resolve_field(item.get('yField', ''), column_roles)
     group_field = _resolve_field(item.get('groupField', ''), column_roles)
     period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
@@ -456,29 +747,23 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 records, metric_id_del_rol(column_roles, rol_lf) if rol_lf else None
             )
 
-            # Filtro al último periodo si hay múltiples y groupField no es el
-            # periodField (modo "snapshot" por evaluación). En histórico,
-            # groupField suele ser el periodo (_mes, _hito), entonces NO
-            # filtramos.
-            period_field_local = period_field
-            if not period_field_local or period_field_local == '_mes':
-                ev_role = column_roles.get('evaluacion_num') or []
-                if ev_role:
-                    col = ev_role[0].get('column', '')
-                    if col:
-                        period_field_local = _to_field_name(col)
+            # Filtro a la última COMBINACIÓN temporal si hay más de una y
+            # groupField no es una de las columnas de período (modo "snapshot"
+            # por evaluación). En histórico, groupField suele ser el período
+            # (_mes, _hito), entonces NO filtramos.
+            columnas_periodo = columnas_snapshot_temporal(period_field, column_roles)
+            campos_periodo = [_to_field_name(c) for c in columnas_periodo]
 
             records_filtered = records_metrica
-            if period_field_local and gf != period_field_local:
-                periods_present = sorted(
-                    {str(r.get(period_field_local, '')) for r in records_metrica
-                     if r.get(period_field_local) is not None and str(r.get(period_field_local, '')) != ''},
-                    key=_natural_sort_key,
+            if campos_periodo and gf not in campos_periodo:
+                combos = combinaciones_temporales(
+                    records_metrica, columnas_periodo,
+                    _temporal_config_de_indicador(indicator),
                 )
-                if len(periods_present) >= 2:
-                    last = periods_present[-1]
-                    records_filtered = [r for r in records_metrica
-                                        if str(r.get(period_field_local, '')) == last]
+                if len(combos) >= 2:
+                    records_filtered = filtrar_records_por_combinacion(
+                        records_metrica, combos[-1]
+                    ) or records_metrica
 
             levels_cfg = _achievement_levels(indicator)
             level_order = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
@@ -530,6 +815,9 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             # Barras agrupadas: una serie por groupField, eje X por periodField.
             gf = group_field or '_curso'
             pf = period_field or '_mes'
+            vf_orig = item.get('xField') or item.get('valueField') or '_logro_1'
+            if isinstance(vf_orig, list):
+                vf_orig = vf_orig[0] if vf_orig else '_logro_1'
             vf = x_field if isinstance(x_field, str) else (x_field[0] if x_field else '_logro_1')
             vf = _resolve_field(vf, column_roles)
 
@@ -542,9 +830,16 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     role_formats = {}
             fmt = _role_format_for_field(vf, column_roles, role_formats)
 
-            groups = sorted({str(r.get(gf, '')) for r in records if r.get(gf) is not None},
+            # Promediar solo los records de la métrica dueña del campo de valor
+            # (ver `records_para_campo_de_valor`). El eje X sigue siendo el
+            # período completo: este componente es de tendencia, no snapshot.
+            records_vf = records_para_campo_de_valor(
+                records, column_roles, vf_orig, vf, group_field=gf
+            )
+
+            groups = sorted({str(r.get(gf, '')) for r in records_vf if r.get(gf) is not None},
                             key=_natural_sort_key)
-            periods = sorted({str(r.get(pf, '')) for r in records if r.get(pf) is not None},
+            periods = sorted({str(r.get(pf, '')) for r in records_vf if r.get(pf) is not None},
                              key=_natural_sort_key)
 
             import numpy as np
@@ -556,7 +851,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                 vals = []
                 for p in periods:
                     nums = []
-                    for r in records:
+                    for r in records_vf:
                         if str(r.get(gf, '')) == g and str(r.get(pf, '')) == p:
                             v = r.get(vf)
                             if v is None or v == '':
@@ -587,10 +882,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             # Si valueField es lista → barras agrupadas (una por valueField).
             # Si es string → barras simples por groupField.
             gf = group_field or '_curso'
-            vfs = item.get('valueField', x_field)
-            if isinstance(vfs, str):
-                vfs = [vfs]
-            vfs = [_resolve_field(v, column_roles) for v in vfs]
+            vfs_orig = item.get('valueField', x_field)
+            if isinstance(vfs_orig, str):
+                vfs_orig = [vfs_orig]
+            vfs_orig = list(vfs_orig)
+            vfs = [_resolve_field(v, column_roles) for v in vfs_orig]
 
             # Detectar formato del primer vf para ylim/ticks
             role_formats = {}
@@ -601,29 +897,23 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     role_formats = {}
             fmt_first = _role_format_for_field(vfs[0] if vfs else '', column_roles, role_formats)
 
-            # Filtrar al último periodo cuando hay múltiples y groupField no es
-            # el periodField. Garantiza consistencia con SummaryTable
-            # (issue 1A: tabla y gráfico mostraban valores distintos en SIMCE
-            # por evaluación cuando la tabla filtraba al último periodo y el
-            # gráfico promediaba todos).
-            period_field_local = period_field
-            if not period_field_local or period_field_local == '_mes':
-                ev_role = column_roles.get('evaluacion_num') or []
-                if ev_role:
-                    col = ev_role[0].get('column', '') if isinstance(ev_role[0], dict) else ''
-                    if col:
-                        period_field_local = _to_field_name(col)
+            # Filtrar a la última COMBINACIÓN temporal cuando hay más de una y
+            # groupField no es una columna de período. Garantiza consistencia
+            # con SummaryTable (issue 1A: tabla y gráfico mostraban valores
+            # distintos en SIMCE por evaluación cuando la tabla filtraba al
+            # último periodo y el gráfico promediaba todos).
+            columnas_periodo = columnas_snapshot_temporal(period_field, column_roles)
+            campos_periodo = [_to_field_name(c) for c in columnas_periodo]
             records_local = records
-            if period_field_local and gf != period_field_local:
-                periods_present = sorted(
-                    {str(r.get(period_field_local, '')) for r in records
-                     if r.get(period_field_local) is not None and str(r.get(period_field_local, '')) != ''},
-                    key=_natural_sort_key,
+            if campos_periodo and gf not in campos_periodo:
+                combos = combinaciones_temporales(
+                    records, columnas_periodo,
+                    _temporal_config_de_indicador(indicator),
                 )
-                if len(periods_present) >= 2:
-                    last = periods_present[-1]
-                    records_local = [r for r in records
-                                     if str(r.get(period_field_local, '')) == last]
+                if len(combos) >= 2:
+                    records_local = filtrar_records_por_combinacion(
+                        records, combos[-1]
+                    ) or records
 
             groups = sorted({str(r.get(gf, '')) for r in records_local if r.get(gf) is not None},
                             key=_natural_sort_key)
@@ -636,11 +926,18 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             # agrupadas (multi vf) más finos en gris para no saturar.
             edge_color, edge_width = ('black', 1.2) if len(vfs) == 1 else ('gray', 0.8)
             max_val = 0
-            for i, vf in enumerate(vfs):
+            for i, (vf, vf_orig) in enumerate(zip(vfs, vfs_orig)):
+                # Promediar SOLO los records de la métrica dueña del campo de
+                # valor: con dos métricas que comparten la columna (DIA metric 6
+                # estudiantes + metric 7 preguntas, ambas con "Logro") la barra
+                # mezclaba alumnos con preguntas.
+                recs_vf = records_para_campo_de_valor(
+                    records_local, column_roles, vf_orig, vf, group_field=gf
+                )
                 vals = []
                 for g in groups:
                     nums = []
-                    for r in records_local:
+                    for r in recs_vf:
                         if str(r.get(gf, '')) == g:
                             v = r.get(vf)
                             if v is None or v == '':
@@ -699,7 +996,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             fig.colorbar(im, ax=ax)
 
         elif comp == 'GaugeIndicator':
-            vals = [float(r.get(x_field) or 0) for r in records if r.get(x_field) is not None]
+            # Promedio de la métrica dueña del campo (ver BarByGroup).
+            records_vf = records_para_campo_de_valor(
+                records, column_roles, x_field_orig, x_field
+            )
+            vals = [float(r.get(x_field) or 0) for r in records_vf if r.get(x_field) is not None]
             val = sum(vals) / len(vals) if vals else 0
             ax.axis('off')
             ax.text(0.5, 0.6, f'{val:.1f}', ha='center', va='center',
@@ -708,7 +1009,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     fontsize=11, color='#444', transform=ax.transAxes)
 
         elif comp == 'Histogram':
-            vals = [float(r.get(x_field) or 0) for r in records if r.get(x_field) is not None]
+            # Distribución de la métrica dueña del campo (ver BarByGroup).
+            records_vf = records_para_campo_de_valor(
+                records, column_roles, x_field_orig, x_field
+            )
+            vals = [float(r.get(x_field) or 0) for r in records_vf if r.get(x_field) is not None]
             ax.hist(vals, bins=item.get('nbins', 10), color=pal_cat[0], alpha=0.85,
                     edgecolor='black', linewidth=1.0)
             ax.set_xlabel(item.get('labelX', x_field))
@@ -887,12 +1192,8 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
 
         compare_previous = bool(item.get('comparePrevious', False))
         period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
-        if not period_field or period_field == '_mes':
-            ev_role = column_roles.get('evaluacion_num') or []
-            if ev_role:
-                col = ev_role[0].get('column', '')
-                if col:
-                    period_field = _to_field_name(col)
+        columnas_periodo = columnas_snapshot_temporal(period_field, column_roles)
+        campos_periodo = [_to_field_name(c) for c in columnas_periodo]
 
         # Resolver nivel_de_logro
         level_field = None
@@ -905,8 +1206,8 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         # conteo por nivel y la columna "Alumnos" se calculan SOLO sobre ella:
         # con dos métricas vinculadas que comparten la columna (DIA metric 6
         # estudiantes + metric 7 preguntas) el conteo sumaba preguntas como
-        # alumnos. Los promedios/mín/máx siguen sobre todos los records
-        # (ver `buckets` abajo) — son campos de valor, no de conteo.
+        # alumnos. Los promedios/mín/máx hacen lo propio con la métrica dueña de
+        # SU campo de valor (ver `buckets` abajo).
         records_nivel = filtrar_records_por_metrica(
             records, metric_id_del_rol(column_roles, 'nivel_de_logro')
         )
@@ -922,53 +1223,72 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
             except Exception:
                 role_formats = {}
 
-        # Detectar periodos en records (siempre, no solo si comparePrevious).
-        # Si hay 2+ periodos y groupField NO es el periodFiel, asumimos que es
-        # un layout "por evaluación" y filtramos al último periodo. Esto evita
-        # que counts se inflen sumando todos los periodos.
-        period_actual = None
-        period_prev = None
-        if period_field and gf != period_field:
-            periods = sorted(
-                {str(r.get(period_field, '')) for r in records
-                 if r.get(period_field) is not None and str(r.get(period_field, '')) != ''},
-                key=_natural_sort_key,
+        # Detectar las combinaciones temporales de los records (siempre, no solo
+        # si comparePrevious). Si groupField NO es una columna de período,
+        # asumimos que es un layout "por evaluación" y recortamos a la última
+        # combinación. Esto evita que los counts se inflen sumando períodos —
+        # y que DIAGNOSTICO 2025 se sume con DIAGNOSTICO 2026 por resolver el
+        # período con una sola columna del rol.
+        combo_actual = None
+        combo_prev = None
+        if campos_periodo and gf not in campos_periodo:
+            combos = combinaciones_temporales(
+                records, columnas_periodo, _temporal_config_de_indicador(indicator)
             )
-            if len(periods) >= 1:
-                period_actual = periods[-1]
-            if compare_previous and len(periods) >= 2:
-                period_prev = periods[-2]
+            if combos:
+                combo_actual = combos[-1]
+            if compare_previous and len(combos) >= 2:
+                combo_prev = combos[-2]
 
-        # Recolectar grupos y agregaciones
+        def _pares(combo):
+            if not combo:
+                return None
+            return [(_to_field_name(c), str(v)) for c, v in combo.items()]
+
+        pares_actual = _pares(combo_actual)
+        pares_prev = _pares(combo_prev)
+
+        def _calza(r, pares):
+            return pares is not None and all(
+                str(r.get(f, '')) == v for f, v in pares
+            )
+
+        # Recolectar grupos y agregaciones. Cada campo de valor se promedia
+        # SOLO sobre los records de su métrica fuente (DIA: `logro_1` está en la
+        # métrica 6 y en la 7 con la misma columna "Logro" → "Logro prom."
+        # mezclaba alumnos con preguntas).
         from collections import defaultdict
         buckets = defaultdict(list)
         buckets_prev = defaultdict(list)
-        for r in records:
-            g = str(r.get(gf, ''))
-            if not g: continue
-            r_period = str(r.get(period_field, '')) if period_field else None
-            for vf in vfs_resolved:
+        for vf, vf_orig in zip(vfs_resolved, vfs):
+            recs_vf = records_para_campo_de_valor(
+                records, column_roles, vf_orig, vf, group_field=gf
+            )
+            for r in recs_vf:
+                g = str(r.get(gf, ''))
+                if not g: continue
                 try:
                     val = float(r.get(vf))
                 except (TypeError, ValueError):
                     continue
-                if period_actual and r_period == period_actual:
+                if combo_actual and _calza(r, pares_actual):
                     buckets[(g, vf)].append(val)
-                elif period_prev and r_period == period_prev:
+                elif combo_prev and _calza(r, pares_prev):
                     buckets_prev[(g, vf)].append(val)
-                elif not period_actual:
+                elif not combo_actual:
                     buckets[(g, vf)].append(val)
 
         groups = sorted({k[0] for k in buckets.keys()}, key=_natural_sort_key)
 
         # Headers
         header = [item.get('groupLabel', 'Curso'), 'Alumnos']
-        show_delta = bool(period_actual and period_prev)
+        show_delta = bool(combo_actual and combo_prev)
+        etiqueta_prev = etiqueta_combinacion_temporal(combo_prev)
         for vf, vf_orig in zip(vfs_resolved, vfs):
             label = vf.lstrip('_').replace('_', ' ').title()
             header.append(f'{label} prom.')
             if show_delta:
-                header.append(f'Δ vs {period_prev}')
+                header.append(f'Δ vs {etiqueta_prev}')
             header.extend([f'{label} mín.', f'{label} máx.'])
         for lname in level_names:
             header.append(lname)
@@ -984,12 +1304,11 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
 
         rows_out = []
         for g in groups:
-            # Records del periodo actual (filtra siempre que period_actual exista),
+            # Records de la combinación temporal actual (si se pudo resolver),
             # ya restringidos a la métrica dueña del nivel de logro.
-            if period_actual:
+            if combo_actual:
                 actual_records = [r for r in records_nivel
-                                  if str(r.get(gf, '')) == g
-                                  and str(r.get(period_field, '')) == period_actual]
+                                  if str(r.get(gf, '')) == g and _calza(r, pares_actual)]
             else:
                 actual_records = [r for r in records_nivel if str(r.get(gf, '')) == g]
             # Identidades distintas descartando vacíos: un `None` (fila sin
@@ -1235,66 +1554,64 @@ def build_pdf_bytes(
         etiquetas = _etiquetas_de_filtros(db, filters)
         raise DatosInsuficientes(mensaje_sin_datos(formatear_filtros(etiquetas)))
 
-    # ── Auto-filtrar al último periodo si layout es modo "evaluacion" ──
+    # ── Auto-filtrar a la última evaluación si layout es modo "evaluacion" ──
     # Cuando el pdf_layout declara `"mode": "evaluacion"` y el usuario NO
-    # filtró explícitamente la dimensión temporal, recortamos records al
-    # periodo más reciente. Esto evita que SummaryTable/StackedCount cuenten
+    # filtró explícitamente las dimensiones temporales, recortamos records a la
+    # última COMBINACIÓN temporal (todas las columnas del rol `evaluacion_num`,
+    # ej Año + Hito). Esto evita que SummaryTable/StackedCount cuenten
     # registros de varios periodos (bug pre-fix: II A SIMCE mostraba 49
-    # alumnos en counts cuando son 28 — sumaba todas las pruebas).
+    # alumnos en counts cuando son 28 — sumaba todas las pruebas) y que dos
+    # años con el mismo hito se fusionen en una sola evaluación.
     layout_mode = (pdf_layout.get('mode') or 'historico').lower()
     if layout_mode == 'evaluacion':
-        # Resolver el field temporal del indicator (column_roles.evaluacion_num)
+        # Resolver las columnas temporales del indicator (evaluacion_num)
         try:
             cr = json.loads(indicator.column_roles) if isinstance(indicator.column_roles, str) else (indicator.column_roles or {})
         except Exception:
             cr = {}
-        ev_role = (cr or {}).get('evaluacion_num') or []
-        if ev_role:
-            col = ev_role[0].get('column', '') if isinstance(ev_role[0], dict) else ''
-            if col:
-                period_field_auto = _to_field_name(col)
-                # Si el usuario ya filtró este periodo via `filters`, no tocar
-                user_filtered_period = False
-                if filters:
-                    try:
-                        from backend.models import Dimension
-                        dim_ids_in_filter = [int(k) for k in filters.keys()]
-                        dims_in_filter = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids_in_filter)).all()
-                        for d in dims_in_filter:
-                            if _to_field_name(d.name) == period_field_auto:
-                                user_filtered_period = True
-                                break
-                    except Exception:
-                        pass
-                if not user_filtered_period:
-                    periods_present = sorted(
-                        {str(r.get(period_field_auto, '')) for r in records
-                         if r.get(period_field_auto) is not None and str(r.get(period_field_auto, '')) != ''},
-                        key=_natural_sort_key,
+        columnas_periodo_auto = columnas_temporales_del_rol(cr)
+        if columnas_periodo_auto:
+            campos_periodo_auto = [_to_field_name(c) for c in columnas_periodo_auto]
+            # Solo se respeta el filtro del usuario si cubre TODAS las columnas
+            # temporales: filtrar únicamente el Hito (sin el Año) es justamente
+            # el caso que fusionaba DIAGNOSTICO 2025 con DIAGNOSTICO 2026.
+            campos_filtrados_usuario = set()
+            if filters:
+                try:
+                    from backend.models import Dimension
+                    dim_ids_in_filter = [int(k) for k in filters.keys()]
+                    dims_in_filter = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids_in_filter)).all()
+                    for d in dims_in_filter:
+                        campos_filtrados_usuario.add(_to_field_name(d.name))
+                except Exception:
+                    pass
+            user_filtered_period = all(
+                campo in campos_filtrados_usuario for campo in campos_periodo_auto
+            )
+            if not user_filtered_period:
+                combo_auto = ultima_combinacion_temporal(
+                    records, columnas_periodo_auto,
+                    _temporal_config_de_indicador(indicator),
+                )
+                if combo_auto:
+                    # Mantener los de la evaluación más reciente. Para
+                    # SummaryTable con comparePrevious hace falta el penúltimo
+                    # período (delta), y esa tabla filtra internamente sobre los
+                    # records que recibe: si recortáramos acá, el Δ quedaría
+                    # vacío. Por eso NO recortamos si alguna sección lo pide
+                    # (mantenemos histórico para que pueda comparar).
+                    any_compare = any(
+                        (sec.get('item') or {}).get('comparePrevious')
+                        for sec in raw_sections
+                        if sec.get('type') == 'table'
                     )
-                    if len(periods_present) >= 1:
-                        last_period = periods_present[-1]
-                        # Mantener los del periodo más reciente. Para tabla de
-                        # SummaryTable que necesita el penúltimo (delta), ese
-                        # filtra usando el period_field internamente sobre
-                        # records ya pasados — pero al haber recortado acá,
-                        # comparePrevious con un solo periodo no calcula Δ.
-                        # Solución: NO recortar si comparePrevious está
-                        # activo en alguna sección (mantenemos histórico para
-                        # que SummaryTable pueda comparar).
-                        any_compare = any(
-                            (sec.get('item') or {}).get('comparePrevious')
-                            for sec in raw_sections
-                            if sec.get('type') == 'table'
-                        )
-                        if not any_compare:
-                            records = [r for r in records
-                                       if str(r.get(period_field_auto, '')) == last_period]
-                        # Si any_compare, dejamos records con todos los
-                        # periodos. SummaryTable filtra al último internamente
-                        # para counts, y StackedCount también lo hace por su
-                        # propio filtro interno. (Ver fix en _chart_to_png_b64
-                        # y _table_section.)
+                    if not any_compare:
+                        records = filtrar_records_por_combinacion(records, combo_auto) or records
+                    # Si any_compare, dejamos records con todos los
+                    # periodos. SummaryTable filtra a la última combinación
+                    # internamente para counts, y StackedCount también lo hace
+                    # por su propio filtro interno. (Ver fix en
+                    # _chart_to_png_b64 y _table_section.)
 
     # Resolver nombre de la organización
     org_name = resolver_nombre_organizacion(db, org_id, default=str(org_id))

@@ -21,6 +21,8 @@ from backend.rgenerator.core.report_steps import (
     filtrar_records_por_metrica,
     metric_id_del_rol,
     rol_de_campo,
+    rol_de_campo_de_valor,
+    records_para_campo_de_valor,
 )
 
 
@@ -347,6 +349,108 @@ class TestStackedCountByGroupUnaSolaMetrica:
         assert niveles_cat == {"BAJA", "MEDIA", "ALTA"}
         assert niveles_cal == {"Silábica", "Unidades Cortas", "Fluida"}
         assert niveles_cat != niveles_cal
+
+
+# ───────────── agregaciones de VALOR restringidas a su métrica ───────────────
+
+@pytest.mark.unit
+class TestRolDeCampoDeValor:
+    def test_acepta_el_alias_del_rol(self):
+        assert rol_de_campo_de_valor(COLUMN_ROLES_DIA, "_logro_1") == "logro_1"
+
+    def test_acepta_el_field_ya_resuelto(self):
+        assert rol_de_campo_de_valor(COLUMN_ROLES_DIA, "_logro", "_logro") == "logro_1"
+
+    def test_campo_ajeno_a_todo_rol(self):
+        assert rol_de_campo_de_valor(COLUMN_ROLES_DIA, "_promedio") is None
+
+
+@pytest.mark.unit
+class TestRecordsParaCampoDeValor:
+    def _records(self):
+        return [
+            {METRIC_ID_KEY: 6, "_curso": "1 A", "_logro": 60},
+            {METRIC_ID_KEY: 7, "_curso": "1 A", "_logro": 0, "_eje_tematico": "Números"},
+        ]
+
+    def test_filtra_a_la_metrica_del_rol(self):
+        out = records_para_campo_de_valor(self._records(), COLUMN_ROLES_DIA, "_logro_1", "_logro")
+        assert [r[METRIC_ID_KEY] for r in out] == [6]
+
+    def test_campo_sin_rol_no_filtra(self):
+        recs = self._records()
+        assert records_para_campo_de_valor(recs, COLUMN_ROLES_DIA, "_promedio") is recs
+
+    def test_group_field_de_otra_metrica_degrada_a_todos(self):
+        """DIA: "Logro Promedio por Eje Temático" cruza `logro_1` (métrica 6)
+        con una dimensión que solo existe en la 7 — filtrar dejaría el gráfico
+        en blanco, así que se devuelven todos los records."""
+        recs = self._records()
+        out = records_para_campo_de_valor(
+            recs, COLUMN_ROLES_DIA, "_logro_1", "_logro", group_field="_eje_tematico"
+        )
+        assert out is recs
+
+    def test_group_field_presente_en_la_metrica_fuente_si_filtra(self):
+        out = records_para_campo_de_valor(
+            self._records(), COLUMN_ROLES_DIA, "_logro_1", "_logro", group_field="_curso"
+        )
+        assert [r[METRIC_ID_KEY] for r in out] == [6]
+
+
+@pytest.mark.unit
+class TestValoresNoMezclanMetricas:
+    """"Logro prom." / mín / máx salen solo de la métrica fuente del campo.
+
+    En DIA `logro_1` está declarado en la métrica 6 ("por estudiante") y en la 7
+    ("por Pregunta"), ambas con la columna "Logro": el promedio mezclaba notas
+    de alumnos con el logro por pregunta.
+    """
+
+    def _records(self):
+        # Alumnos (métrica 6) con 60 y 70; preguntas (métrica 7) con 0 y 1.
+        # Promedio correcto = 65; mezclado = 32.75.
+        records = []
+        for i, v in enumerate((60, 70)):
+            records.append({
+                METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "CIERRE",
+                "_nombre": f"Alumno {i}", "_nivel_logro": "Inicial", "_logro": v,
+            })
+        for j, v in enumerate((0, 1)):
+            records.append({
+                METRIC_ID_KEY: 7, "_curso": "1 A", "_hito": "CIERRE",
+                "_nivel_logro": "Inicial", "_logro": v,
+            })
+        return records
+
+    def _indicador(self):
+        return _IndicadorFake(
+            column_roles=COLUMN_ROLES_DIA,
+            achievement_levels=[{"name": n, "order": i} for i, n in enumerate(NIVELES)],
+        )
+
+    def test_summary_table_promedio_min_max(self):
+        item = {
+            "component": "SummaryTable",
+            "groupField": "_curso",
+            "valueField": ["_logro_1"],
+            "periodField": "_hito",
+        }
+        out = _table_section(item, self._records(), indicator=self._indicador())
+        fila = out["rows"][0]
+        # [Curso, Alumnos, prom, mín, máx, ...niveles]
+        assert fila[2] == "65.0", f"promedio mezclado: {fila[2]}"
+        assert fila[3] == "60.0"
+        assert fila[4] == "70.0"
+
+    def test_barbygroup_promedia_solo_la_metrica_fuente(self, barras_espiadas):
+        from backend.rgenerator.core.report_steps import _chart_to_png_b64
+
+        item = {"component": "BarByGroup", "groupField": "_curso",
+                "valueField": "_logro_1"}
+        _chart_to_png_b64(item, self._records(), indicator=self._indicador())
+        alturas = [v for _, vals in barras_espiadas for v in vals]
+        assert alturas == pytest.approx([65.0])
 
 
 @pytest.mark.unit
