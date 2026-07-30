@@ -141,7 +141,7 @@ def main():
             "DIA Diagnóstico — Matemáticas",
             "Mayo 2026",
         ],
-        "left_footer": "Miguel Godoy Díaz",
+        "left_footer": "Organización Demo",
         "show_page_number": True,
     }
 
@@ -173,7 +173,7 @@ def main():
     template = env.get_template("report_base.html")
     html_str = template.render(
         sections=sections,
-        org_name="Fundación PHP",
+        org_name="Organización Demo",
         report_date=date.today().strftime("%d/%m/%Y"),
         branding=branding,
     )

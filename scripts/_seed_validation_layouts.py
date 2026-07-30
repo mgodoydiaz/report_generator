@@ -40,7 +40,7 @@ BRANDING_PHP = {
     "left_image_id": None,
     "right_image_id": None,
     "center_header": ["Fundación PHP"],  # con tilde
-    "left_footer": "Miguel Godoy Díaz",
+    "left_footer": "Organización Demo",
     "show_page_number": True,
 }
 

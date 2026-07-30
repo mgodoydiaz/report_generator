@@ -19,6 +19,12 @@ from pathlib import Path
 import pandas as pd
 
 from .. import runtime
+from ..branding import (
+    aplicar_center_header,
+    formatear_filtros,
+    formatear_valor_filtro,
+    valor_unico,
+)
 from ...core.derived_fields_engine import apply_derived_fields
 
 
@@ -67,6 +73,7 @@ def construir(
     # por hito). Las derived_fields slope/delta necesitan ver todas las
     # pruebas del año para calcular correctamente.
     esquema_path = Path(__file__).parent / "esquema.json"
+    esquema: dict = {}
     if esquema_path.exists():
         with open(esquema_path, encoding="utf-8") as f:
             esquema = json.load(f)
@@ -90,4 +97,30 @@ def construir(
         "estudiantes": df_estudiantes,
         "preguntas": df_preguntas,
     }
-    return runtime.construir_pdf("dia", dataframes, overrides=overrides)
+
+    # Encabezado central con hito/año/asignatura REALES. El esquema traía
+    # "Informe DIA Diagnóstico / Asignatura Nivel Medio / Mes Año" fijo, que
+    # contradecía el contenido del informe (QA 2026-07-30, P0-10 y P0-11).
+    # La asignatura solo se nombra si el informe cubre una sola: el DIA
+    # mezcla Lenguaje y Matemática en el mismo agregado (P1-15).
+    asignatura = valor_unico(df_estudiantes, "Asignatura")
+    nivel = valor_unico(df_estudiantes, "Nivel")
+    linea_materia = " ".join(x for x in (asignatura, nivel) if x)
+    linea_periodo = " ".join(
+        x for x in (formatear_valor_filtro(hito), formatear_valor_filtro(anio)) if x
+    )
+    overrides = aplicar_center_header(
+        overrides,
+        base=(esquema.get("branding") or {}).get("center_header"),
+        lineas=[linea_materia, linea_periodo],
+    )
+
+    filtros_desc = formatear_filtros({"Hito": hito, "Año": anio})
+
+    return runtime.construir_pdf(
+        "dia",
+        dataframes,
+        overrides=overrides,
+        df_principal="estudiantes",
+        filtros_desc=filtros_desc,
+    )

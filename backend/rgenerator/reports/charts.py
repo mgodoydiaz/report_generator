@@ -30,6 +30,71 @@ import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 
+from .helpers import (
+    contar_estudiantes,
+    es_columna_temporal,
+    ordenar_valores_temporales,
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Utilidades internas
+# ─────────────────────────────────────────────────────────────────────────
+
+def _colores_ciclados(claves, cmap=None) -> dict:
+    """Mapea cada clave a un color, CICLANDO la paleta si hace falta.
+
+    Set2 tiene 8 colores: indexarla directamente con `colores[i]` reventaba
+    con `IndexError: tuple index out of range` en cuanto la categoría
+    secundaria tenía más de 8 valores (el `Eje Temático` del DIA tiene 14).
+    Ver P0-2 del QA 2026-07-30.
+    """
+    paleta = list((cmap or plt.cm.Set2).colors)
+    return {clave: paleta[i % len(paleta)] for i, clave in enumerate(claves)}
+
+
+def _rotacion_etiquetas(valores) -> int:
+    """Rotación del eje X según cantidad y largo de las etiquetas.
+
+    18 nombres de curso horizontales se superponen hasta formar una mancha
+    (P0-15 / P1-14 del QA). Umbral conservador: rotamos con ≥6 categorías o
+    etiquetas de más de 6 caracteres.
+    """
+    vals = list(valores)
+    if len(vals) >= 6 or any(len(str(v)) > 6 for v in vals):
+        return 45
+    return 0
+
+
+def _aplicar_etiquetas_x(ax, posiciones, etiquetas) -> None:
+    """set_xticks/set_xticklabels con rotación y alineación coherentes."""
+    rot = _rotacion_etiquetas(etiquetas)
+    ax.set_xticks(posiciones)
+    ax.set_xticklabels(
+        etiquetas,
+        rotation=rot,
+        ha="right" if rot else "center",
+        fontsize=8 if len(list(etiquetas)) > 12 else None,
+    )
+
+
+def _placeholder_sin_datos(nombre_grafico: str, mensaje: str) -> None:
+    """Guarda un PNG con un texto explicativo en vez de un gráfico vacío.
+
+    Un gráfico con ejes -0.04…0.04 y cero barras se lee como "el dato es
+    cero", que es falso: el dato no existe.
+    """
+    fig, ax = plt.subplots(figsize=(8, 3))
+    ax.axis("off")
+    ax.text(
+        0.5, 0.5, mensaje,
+        ha="center", va="center",
+        fontsize=11, color="#666", style="italic",
+        transform=ax.transAxes, wrap=True,
+    )
+    plt.savefig(nombre_grafico, dpi=300, bbox_inches="tight")
+    plt.close()
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Gráficos de barras simples
@@ -67,12 +132,17 @@ def grafico_barras_promedio_por(
         Promedio=(columna_valor, "mean")
     ).reset_index()
 
+    # Orden del eje X: cronológico si la categoría es temporal (Mes, Hito,
+    # Versión, N° Prueba, Año). El groupby default es alfabético (P0-9).
+    orden_x = ordenar_valores_temporales(resumen[agrupar_por].tolist(), agrupar_por)
+    resumen = resumen.set_index(agrupar_por).reindex(orden_x).reset_index()
+
     # Crear gráfico
     fig, ax = plt.subplots(figsize=(8, 4))
     bars = ax.bar(
-        resumen[agrupar_por],
+        resumen[agrupar_por].astype(str),
         resumen["Promedio"],
-        color=plt.cm.Set2.colors,
+        color=list(_colores_ciclados(resumen[agrupar_por]).values()),
         edgecolor="black",
         linewidth=1.2,
         zorder=3,
@@ -87,8 +157,10 @@ def grafico_barras_promedio_por(
     ax.set_xlabel(agrupar_por)
     ax.tick_params(axis="x", rotation=45)
 
-    # Etiquetas arriba de cada barra
+    # Etiquetas arriba de cada barra (sin etiqueta si no hay dato)
     for bar, val in zip(bars, resumen["Promedio"]):
+        if pd.isna(val):
+            continue
         ax.text(
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + 0.01,
@@ -144,28 +216,27 @@ def valor_promedio_agrupado_por(
     Equivalente LaTeX: SIMCE.valor_promedio_agrupado_por,
         DIA.logro_promedio_por_eje, DIA.logro_promedio_por_habilidad.
     """
-    # Filtrar filas donde la categoría secundaria es null/vacía: si el dato
-    # no está cargado (ej "Eje Temático" None en DIA por bug de seed), no
-    # tiene sentido graficarlo como serie en blanco.
-    df_local = df_preguntas[
-        df_preguntas[agrupar_secundario_por].notna()
-        & (df_preguntas[agrupar_secundario_por].astype(str).str.strip() != "")
-    ].copy()
+    # Filtrar filas donde alguna de las dos categorías de agrupación es
+    # null/vacía: si el dato no está cargado (ej "Eje Temático" None en DIA
+    # por bug de seed), no tiene sentido graficarlo como serie en blanco.
+    # Sin este dropna del eje PRINCIPAL, el pivote produce grupos con
+    # cantidades desiguales de categorías (P0-2 del QA 2026-07-30).
+    df_local = df_preguntas.copy()
+    for col in (agrupar_principal_por, agrupar_secundario_por):
+        if col and col in df_local.columns:
+            df_local = df_local[
+                df_local[col].notna()
+                & (df_local[col].astype(str).str.strip() != "")
+            ]
+    df_local = df_local.copy()
 
     # Si después del filtro no queda nada útil, devolvemos un placeholder
     # "Sin datos" en lugar de generar un gráfico vacío con eje -0.04 a 0.04.
     if df_local.empty or df_local[columna_valor].isna().all():
-        fig, ax = plt.subplots(figsize=(8, 3))
-        ax.axis("off")
-        ax.text(
-            0.5, 0.5,
+        _placeholder_sin_datos(
+            nombre_grafico,
             f"Sin datos disponibles para «{agrupar_secundario_por}»",
-            ha="center", va="center",
-            fontsize=11, color="#666", style="italic",
-            transform=ax.transAxes,
         )
-        plt.savefig(nombre_grafico, dpi=300, bbox_inches="tight")
-        plt.close()
         return None
 
     # Agrupamos por las dos categorías
@@ -173,26 +244,55 @@ def valor_promedio_agrupado_por(
         Promedio=(columna_valor, "mean")
     ).reset_index()
 
-    grupo_primario = resumen[agrupar_principal_por].unique()
-    grupo_secundario = resumen[agrupar_secundario_por].unique()
-    x = np.arange(len(grupo_primario))
-    width = 0.18
+    # Orden de los ejes: cronológico cuando la categoría es temporal (Mes,
+    # Hito, Versión, N° Prueba, Año), de lo contrario el que trae el
+    # groupby. Antes el eje "Evolución …" salía alfabético y la secuencia
+    # mostrada no era la real (P0-9 del QA 2026-07-30).
+    grupo_primario = ordenar_valores_temporales(
+        resumen[agrupar_principal_por].unique().tolist(), agrupar_principal_por
+    )
+    grupo_secundario = ordenar_valores_temporales(
+        resumen[agrupar_secundario_por].unique().tolist(), agrupar_secundario_por
+    )
 
-    # Se ordena el grupo secundario si se indicó una columna de orden
-    if orden_grupo_secundario in df_local.columns and orden_grupo_secundario != "":
-        orden = df_local[[agrupar_secundario_por, orden_grupo_secundario]].drop_duplicates()
+    # `orden_grupo_secundario` (columna explícita de orden) manda sobre todo,
+    # pero solo si aporta un orden completo.
+    if orden_grupo_secundario and orden_grupo_secundario in df_local.columns:
+        orden = df_local[[agrupar_secundario_por, orden_grupo_secundario]].drop_duplicates(
+            subset=[agrupar_secundario_por]
+        )
         orden = orden.sort_values(by=orden_grupo_secundario)
-        grupo_secundario = orden[agrupar_secundario_por].tolist()
+        explicito = [v for v in orden[agrupar_secundario_por].tolist() if v in grupo_secundario]
+        # Cualquier valor sin orden explícito se conserva al final: nunca se
+        # pierde una serie por no estar en la columna de orden.
+        grupo_secundario = explicito + [v for v in grupo_secundario if v not in explicito]
 
-    # Paleta Set2
-    colores = plt.cm.Set2.colors
-    colores = {eje: colores[i] for i, eje in enumerate(grupo_secundario)}
+    x = np.arange(len(grupo_primario))
+    # Ancho adaptativo: con 14 series el ancho fijo 0.18 desbordaba el grupo.
+    width = 0.8 / max(1, len(grupo_secundario))
+
+    # Pivote reindexado: cada serie tiene EXACTAMENTE un valor por categoría
+    # principal (NaN donde no hay dato). Antes se pasaba el array crudo del
+    # filtro, que para una serie presente en 2 de 18 cursos producía
+    # "shape mismatch: 'x' (18,) vs 'height' (2,)".
+    pivote = (
+        resumen.pivot_table(
+            index=agrupar_principal_por,
+            columns=agrupar_secundario_por,
+            values="Promedio",
+            aggfunc="mean",
+        )
+        .reindex(index=grupo_primario, columns=grupo_secundario)
+    )
+
+    # Paleta Set2 ciclada (soporta más de 8 series)
+    colores = _colores_ciclados(grupo_secundario)
 
     fig, ax = plt.subplots(figsize=(12, 6))
 
     # Se agregan barras con etiquetas
     for i, eje in enumerate(grupo_secundario):
-        valores = resumen[resumen[agrupar_secundario_por] == eje]["Promedio"].values
+        valores = pivote[eje].to_numpy(dtype=float)
         bars = ax.bar(
             x + i * width - (width * len(grupo_secundario) / 2),
             valores,
@@ -204,8 +304,11 @@ def valor_promedio_agrupado_por(
             linewidth=0.8,
         )
 
-        # Etiquetas con bbox blanco semi-transparente
+        # Etiquetas con bbox blanco semi-transparente (omitidas si no hay
+        # dato: un "nan%" flotando es peor que la ausencia de etiqueta).
         for bar, val in zip(bars, valores):
+            if pd.isna(val):
+                continue
             format_str = "{val:.0%}" if formato == "percent" else "{val:.0f}"
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
@@ -213,7 +316,7 @@ def valor_promedio_agrupado_por(
                 format_str.format(val=val),
                 ha="center",
                 va="bottom",
-                fontsize=8,
+                fontsize=7 if len(grupo_secundario) > 6 else 8,
                 zorder=3,
                 bbox=dict(facecolor="white", edgecolor="none", pad=1, alpha=0.7),
             )
@@ -221,8 +324,7 @@ def valor_promedio_agrupado_por(
     # Grilla
     plt.grid(axis="y", linestyle="--", linewidth=0.9, zorder=0)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(grupo_primario, ha="right")
+    _aplicar_etiquetas_x(ax, x, [str(v) for v in grupo_primario])
     if y_lims is not None:
         ax.set_ylim(y_lims)
     if formato == "percent":
@@ -230,10 +332,17 @@ def valor_promedio_agrupado_por(
         ax.set_ylabel(f"{columna_valor} (%)")
     else:
         ax.set_ylabel(f"{columna_valor}")
-    ax.set_ylabel(columna_valor)
     ax.set_title(titulo_grafico)
 
-    ax.legend(title=titulo_leyenda)
+    # Leyenda FUERA del área de trazado: con 14 series dentro del plot
+    # tapaba las barras (P1-6 del QA 2026-07-30).
+    ax.legend(
+        title=titulo_leyenda,
+        loc="upper left",
+        bbox_to_anchor=(1.01, 1),
+        fontsize=8,
+        ncol=1 if len(grupo_secundario) <= 8 else 2,
+    )
     plt.tight_layout()
     plt.savefig(nombre_grafico, dpi=300)
     plt.close()
@@ -272,12 +381,30 @@ def boxplot_valor_por_curso(
     Equivalente LaTeX: SIMCE.boxplot_valor_por_curso,
         DIA.boxplot_logro_por_curso.
     """
-    # Datos
-    cursos = sorted(df_estudiantes[agrupar_por].unique(), key=lambda x: str(x))
+    # Datos. Si la categoría es temporal el orden es cronológico, no
+    # alfabético (P0-9); si no, se mantiene el orden alfabético histórico.
+    valores_unicos = df_estudiantes[agrupar_por].dropna().unique().tolist()
+    if es_columna_temporal(agrupar_por):
+        cursos = ordenar_valores_temporales(valores_unicos, agrupar_por)
+    else:
+        cursos = sorted(valores_unicos, key=lambda x: str(x))
     data = [
         df_estudiantes.loc[df_estudiantes[agrupar_por] == c, columna_valor].dropna().values
         for c in cursos
     ]
+
+    # Grupos sin ninguna observación: matplotlib no puede calcular las
+    # estadísticas de la caja y revienta con "List of boxplot statistics and
+    # 'positions' values must have same the length" (P0-1 del QA).
+    pares = [(c, d) for c, d in zip(cursos, data) if len(d) > 0]
+    if not pares:
+        _placeholder_sin_datos(
+            nombre_grafico,
+            f"Sin datos de «{columna_valor}» para graficar la distribución",
+        )
+        return None
+    cursos = [c for c, _ in pares]
+    data = [d for _, d in pares]
 
     # Colores por curso (tab10 cicled)
     cmap = plt.cm.tab10
@@ -339,6 +466,7 @@ def alumnos_por_nivel_cualitativo(
     titulo_leyenda: str = "",
     ylabel: str = "",
     nombre_grafico: str = "aux_files/alumnos_por_nivel.png",
+    columna_identidad: str | None = None,
 ):
     """Stacked bars: cantidad de alumnos por nivel cualitativo y categoría.
 
@@ -348,6 +476,11 @@ def alumnos_por_nivel_cualitativo(
     el mapping (de mejor a peor: Adecuado, Elemental, Insuficiente para
     SIMCE; Avanzado, Intermedio, Inicial para DIA).
 
+    Cada celda cuenta ESTUDIANTES DISTINTOS, no filas: cuando el df trae
+    varias filas por estudiante (una por asignatura, habilidad o subprueba)
+    contar filas infla el total — el gráfico decía 114 "alumnos" donde
+    había 19 (P0-12 del QA 2026-07-30).
+
     Args:
         df_estudiantes: DataFrame.
         columna_nivel: columna cualitativa con los nombres de los niveles.
@@ -355,17 +488,35 @@ def alumnos_por_nivel_cualitativo(
         lista_niveles: tupla/lista de 3 niveles ordenados de mejor a peor.
         titulo_grafico, titulo_leyenda, ylabel: texto.
         nombre_grafico: path PNG.
+        columna_identidad: columna que identifica al estudiante. Si no se
+            pasa se autodetecta (RUT → Nombre_Norm → Nombre → Curso+N°
+            Lista) y, sin ninguna, se cuentan filas.
 
     Equivalente LaTeX: SIMCE.alumnos_por_nivel_cualitativo,
         DIA.alumnos_por_nivel.
     """
-    # Agrupamos por agrupar_por y nivel → cantidad
-    resumen = df_estudiantes.groupby([agrupar_por, columna_nivel]).size().reset_index(name="Cantidad")
+    # Agrupamos por agrupar_por y nivel → estudiantes distintos
+    conteo = contar_estudiantes(
+        df_estudiantes.dropna(subset=[agrupar_por, columna_nivel]),
+        agrupar_por=[agrupar_por, columna_nivel],
+        columna_identidad=columna_identidad,
+    )
+    resumen = conteo.reset_index(name="Cantidad")
+    resumen.columns = [agrupar_por, columna_nivel, "Cantidad"]
 
     # Pivot para stacked bar
     pivot = resumen.pivot(index=agrupar_por, columns=columna_nivel, values="Cantidad").fillna(0)
 
-    cursos = pivot.index.tolist()
+    # Eje X en orden cronológico si la categoría es temporal (P0-9)
+    pivot = pivot.reindex(ordenar_valores_temporales(pivot.index.tolist(), agrupar_por))
+
+    cursos = [str(c) for c in pivot.index.tolist()]
+    if not cursos:
+        _placeholder_sin_datos(
+            nombre_grafico,
+            f"Sin registros de «{columna_nivel}» para graficar",
+        )
+        return None
 
     # Paleta semáforo: si no la pasan, default por cantidad de niveles
     # (mejor → peor). Soporta 3, 4 o 5 niveles.
@@ -410,6 +561,10 @@ def alumnos_por_nivel_cualitativo(
     ax.set_ylabel(ylabel)
     ax.set_xlabel(agrupar_por)
 
+    # Rotación adaptativa: 18 nombres de curso horizontales se pisaban hasta
+    # formar una mancha ilegible (P0-15 del QA 2026-07-30).
+    _aplicar_etiquetas_x(ax, np.arange(len(cursos)), cursos)
+
     # Leyenda fuera del plot a la derecha
     ax.legend(title=titulo_leyenda, loc="upper left", bbox_to_anchor=(1, 1))
 
@@ -438,6 +593,7 @@ def alumnos_por_nivel_curso_y_mes(
     nombre_grafico: str = "aux_files/alumnos_por_nivel_curso_mes.png",
     rot_x: int = 90,
     mostrar_totales: bool = True,
+    columna_identidad: str | None = None,
 ):
     """Stacked compuesto: evolución de niveles por curso × mes.
 
@@ -446,6 +602,10 @@ def alumnos_por_nivel_curso_y_mes(
     líneas discontinuas verticales y un rótulo bold debajo. Apto para SIMCE
     histórico (5 hitos del año).
 
+    Cada celda cuenta ESTUDIANTES DISTINTOS (ver
+    `alumnos_por_nivel_cualitativo`), y los meses se ordenan
+    cronológicamente, no alfabéticamente (P0-9 / P0-12 del QA 2026-07-30).
+
     Args:
         df_estudiantes: DataFrame con columnas curso, mes, nivel.
         columna_nivel, columna_curso, columna_mes: nombres de columna.
@@ -453,25 +613,39 @@ def alumnos_por_nivel_curso_y_mes(
             quede en la base del stack.
         lista_paleta: lista de 3 colores hex (default azul SIMCE).
         orden_cursos: lista para fijar el orden del eje X.
-        orden_meses: lista para fijar el orden de los meses.
+        orden_meses: lista para fijar el orden de los meses. Los meses
+            presentes en los datos que no estén en la lista se agregan al
+            final en orden cronológico (antes se descartaban en silencio).
         titulo_grafico, titulo_leyenda, ylabel: texto.
         rot_x: rotación de las etiquetas de mes.
         mostrar_totales: si True, suma encima de cada barra.
+        columna_identidad: columna que identifica al estudiante (default:
+            autodetección).
 
     Equivalente LaTeX: SIMCE.alumnos_por_nivel_curso_y_mes.
     """
-    # 1) Agregación
-    resumen = (
-        df_estudiantes
-        .groupby([columna_curso, columna_mes, columna_nivel])
-        .size()
-        .reset_index(name="Cantidad")
+    # 1) Agregación — estudiantes distintos, no filas
+    conteo = contar_estudiantes(
+        df_estudiantes.dropna(subset=[columna_curso, columna_mes, columna_nivel]),
+        agrupar_por=[columna_curso, columna_mes, columna_nivel],
+        columna_identidad=columna_identidad,
     )
+    resumen = conteo.reset_index(name="Cantidad")
+    resumen.columns = [columna_curso, columna_mes, columna_nivel, "Cantidad"]
 
     if orden_cursos is None:
         orden_cursos = df_estudiantes[columna_curso].dropna().unique().tolist()
+
+    meses_datos = ordenar_valores_temporales(
+        df_estudiantes[columna_mes].dropna().unique().tolist(), columna_mes
+    )
     if orden_meses is None:
-        orden_meses = df_estudiantes[columna_mes].dropna().unique().tolist()
+        orden_meses = meses_datos
+    else:
+        # Un mes presente en los datos pero ausente del orden declarado se
+        # convertía en NaN al hacer pd.Categorical y desaparecía del
+        # gráfico. Se conserva al final, en orden cronológico.
+        orden_meses = list(orden_meses) + [m for m in meses_datos if m not in orden_meses]
 
     # Categorías ordenadas
     resumen[columna_curso] = pd.Categorical(resumen[columna_curso], categories=orden_cursos, ordered=True)
@@ -604,12 +778,19 @@ def comparacion_logro_por_curso(
     x = np.arange(len(cursos))
     width = 0.8 / max(1, len(evaluaciones))
 
-    colores = plt.cm.Set2.colors
-    colores = {evaluacion: colores[i] for i, evaluacion in enumerate(evaluaciones)}
+    colores = _colores_ciclados(evaluaciones)
+
+    # Pivote reindexado: una fila por curso y una columna por evaluación,
+    # para que todas las series tengan el largo del eje X aunque a un curso
+    # le falte una evaluación.
+    pivote = (
+        resumen.pivot_table(index=columna_id, columns="Evaluación", values="Logro", aggfunc="mean")
+        .reindex(index=cursos, columns=evaluaciones)
+    )
 
     fig, ax = plt.subplots(figsize=(12, 6))
     for i, evaluacion in enumerate(evaluaciones):
-        valores = resumen[resumen["Evaluación"] == evaluacion]["Logro"].values
+        valores = pivote[evaluacion].to_numpy(dtype=float)
         bars = ax.bar(
             x + i * width - (width * len(evaluaciones) / 2),
             valores,
@@ -621,6 +802,8 @@ def comparacion_logro_por_curso(
             linewidth=0.8,
         )
         for bar, val in zip(bars, valores):
+            if pd.isna(val):
+                continue
             ax.text(
                 bar.get_x() + bar.get_width() / 2,
                 bar.get_height() + 0.01,
@@ -634,8 +817,7 @@ def comparacion_logro_por_curso(
 
     plt.grid(axis="y", linestyle="--", linewidth=0.9, zorder=0)
 
-    ax.set_xticks(x)
-    ax.set_xticklabels(cursos, ha="right")
+    _aplicar_etiquetas_x(ax, x, [str(c) for c in cursos])
     ax.set_ylim(0, 1)
     ax.yaxis.set_major_formatter(PercentFormatter(1.0))
     ax.set_ylabel("Logro")
@@ -680,17 +862,17 @@ CHART_REGISTRY = {
     "alumnos_por_nivel_cualitativo": {
         "fn": alumnos_por_nivel_cualitativo,
         "display_name": "Cantidad por nivel (stacked semáforo)",
-        "description": "Barras apiladas con paleta semáforo fija (verde/naranja/rojo). El orden de `lista_niveles` mapea los colores.",
+        "description": "Barras apiladas con paleta semáforo fija (verde/naranja/rojo). El orden de `lista_niveles` mapea los colores. Cuenta estudiantes distintos, no filas.",
         "required_params": ["columna_nivel", "agrupar_por", "lista_niveles"],
-        "optional_params": ["titulo_grafico", "titulo_leyenda", "ylabel"],
+        "optional_params": ["titulo_grafico", "titulo_leyenda", "ylabel", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
     },
     "alumnos_por_nivel_curso_y_mes": {
         "fn": alumnos_por_nivel_curso_y_mes,
         "display_name": "Evolución de niveles por curso y período",
-        "description": "Stacked compuesto: cada barra es un (curso × mes), con separadores verticales y rótulo de curso debajo.",
+        "description": "Stacked compuesto: cada barra es un (curso × mes), con separadores verticales y rótulo de curso debajo. Meses en orden cronológico y conteo de estudiantes distintos.",
         "required_params": ["columna_nivel", "columna_curso", "columna_mes", "lista_niveles"],
-        "optional_params": ["orden_cursos", "orden_meses", "titulo_grafico", "ylabel", "mostrar_totales"],
+        "optional_params": ["orden_cursos", "orden_meses", "titulo_grafico", "ylabel", "mostrar_totales", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
     },
     "comparacion_logro_por_curso": {

@@ -123,6 +123,11 @@ p {
   color: #444;
   margin-top: 0.15cm;
   font-style: italic;
+  /* Los filtros pueden ser largos (varios meses, varios cursos): que
+     hagan wrap dentro del bloque en vez de desbordar la caja y pasarse
+     de la regla del encabezado (QA 2026-07-30, P1-2). */
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 /* ── Salto de página ─────────────────────────────────────────────────────── */
@@ -134,8 +139,12 @@ h2 {
   color: #111;
   font-weight: 700;
   border: none;
-  padding: 0;
-  margin: 0.7cm 0 0.3cm 0;
+  /* El `padding-top` (a diferencia del `margin-top`) sobrevive al salto de
+     página: sin él el primer h2 de las páginas 2+ quedaba a ras de la regla
+     del encabezado (QA 2026-07-30, P1-5). El margen se reduce en la misma
+     medida para no alterar el espaciado dentro de una página. */
+  padding: 0.25cm 0 0 0;
+  margin: 0.45cm 0 0.3cm 0;
 }
 
 /* ── Tabla ───────────────────────────────────────────────────────────────── */

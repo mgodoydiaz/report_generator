@@ -52,10 +52,9 @@
   "branding": {
     "left_image": "logo_php.png",
     "right_image": null,
+    "_comment_center_header": "Solo el NOMBRE del informe. Las líneas de asignatura/curso y mes/año las construye simce_panguipulli/crear_informe.py con los params reales de la corrida (branding.lineas_encabezado_prueba).",
     "center_header": [
-      "Informe SIMCE Panguipulli",
-      "Asignatura - Curso",
-      "Mes Año"
+      "Informe SIMCE Panguipulli"
     ],
     "left_footer": "",
     "show_page_number": true

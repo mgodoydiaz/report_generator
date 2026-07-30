@@ -25,6 +25,7 @@ import argparse
 import json
 import os
 import sys
+import textwrap
 from datetime import datetime
 from pathlib import Path
 from typing import Iterable
@@ -120,6 +121,9 @@ FOOTER_RULE_Y    = 0.055
 FOOTER_TEXT_Y    = 0.035
 
 TITLE_INFORME = "Informe PDL IDEL-Woodcock"
+# Pie izquierdo de cada página. Es el nombre de la organización dueña de los
+# datos: el backend lo sobreescribe con `org.name` vía `render_all_pages(...,
+# institucion=...)`. El valor de acá es solo el default del CLI.
 INSTITUCION = "Fundación PHP"
 
 COLOR_TITLE   = "#0f172a"
@@ -201,6 +205,45 @@ def load_data(metric_id: int = DEFAULT_METRIC_ID,
 
 def eval_ids_sorted(df: pd.DataFrame) -> list[str]:
     return sorted(df["eval_id"].dropna().unique())
+
+
+def par_evaluaciones_comparables(df: pd.DataFrame) -> tuple[str | None, str | None]:
+    """(primera, última) evaluaciones que comparten estudiantes.
+
+    Las matrices de transición, el riesgo persistente y la tasa de mejora
+    comparan el nivel de CADA estudiante entre dos evaluaciones: si nadie
+    aparece en ambas, todo sale vacío. Tomar `evals[0]` y `evals[-1]` a
+    ciegas producía exactamente eso cuando el curso cruza años y la cohorte
+    cambia (P1-4 del QA 2026-07-30: la síntesis de la última página no
+    dibujaba ninguna barra).
+
+    Criterio: el mayor lapso posible que conserve seguimiento; a igual
+    lapso, el par más reciente. Devuelve (None, None) si ninguna pareja de
+    evaluaciones comparte estudiantes.
+    """
+    evals = eval_ids_sorted(df)
+    if len(evals) < 2:
+        return (None, None)
+
+    por_eval = {e: set(df.loc[df["eval_id"] == e, "estudiante"].dropna()) for e in evals}
+
+    for lapso in range(len(evals) - 1, 0, -1):
+        for j in range(len(evals) - 1, lapso - 1, -1):
+            i = j - lapso
+            if por_eval[evals[i]] & por_eval[evals[j]]:
+                return (evals[i], evals[j])
+    return (None, None)
+
+
+def etiqueta_par_evaluaciones(primera: str | None, ultima: str | None) -> str:
+    """'2026/v1 → v3' (compacto si comparten año) o '—' si no hay par."""
+    if not primera or not ultima:
+        return "—"
+    anio_1, _, resto_1 = primera.partition("/")
+    anio_2, _, resto_2 = ultima.partition("/")
+    if resto_1 and resto_2 and anio_1 == anio_2:
+        return f"{primera} → {resto_2}"
+    return f"{primera} → {ultima}"
 
 
 def subprueba_nivel_por_est(sub_df: pd.DataFrame, eval_id: str) -> pd.Series:
@@ -370,28 +413,52 @@ def render_panorama(pdf, df: pd.DataFrame, page_counter: PageCounter) -> None:
     section_heading(fig, "Panorama global")
 
     # — Mapa de riesgo curso × subprueba
+    #
+    # La última evaluación se toma POR CURSO: con la última evaluación global
+    # ("2026/v3") solo 1° BÁSICO tenía datos y las otras 5 filas quedaban en
+    # blanco sin explicación (P1-4 del QA 2026-07-30). El eval usado se
+    # rotula junto al nombre del curso.
     block_title(fig, CONTENT_L, 0.845,
-                f"Mapa de riesgo — % estudiantes en Crítico o Alto Riesgo ({latest})")
+                "Mapa de riesgo — % estudiantes en Crítico o Alto Riesgo "
+                "(última evaluación de cada curso)")
     ax1 = fig.add_axes([CONTENT_L, 0.55, CONTENT_W, 0.27])
 
-    latest_df = df[df["eval_id"] == latest]
-    risk = (latest_df.assign(is_risk=latest_df["nivel"].isin(RISK_LEVELS))
-                    .groupby(["curso", "subprueba"])["is_risk"].mean()
-                    .unstack()
-                    .reindex(index=CURSOS_ORDER, columns=SUBPRUEBAS_ORDER)) * 100
+    cursos_mapa: list[str] = []
+    etiquetas_mapa: list[str] = []
+    filas_riesgo: list[pd.Series] = []
+    for curso in CURSOS_ORDER:
+        cdf = df[df["curso"] == curso]
+        if cdf.empty:
+            continue
+        ultimo = eval_ids_sorted(cdf)[-1]
+        sub = cdf[cdf["eval_id"] == ultimo]
+        cursos_mapa.append(curso)
+        # Dos líneas: el margen izquierdo de la página no da para "curso · eval".
+        etiquetas_mapa.append(f"{curso}\n{ultimo}")
+        filas_riesgo.append(
+            sub.assign(is_risk=sub["nivel"].isin(RISK_LEVELS))
+               .groupby("subprueba")["is_risk"].mean()
+               .reindex(SUBPRUEBAS_ORDER) * 100
+        )
 
-    im = ax1.imshow(risk.values, aspect="auto", cmap="YlOrRd", vmin=0, vmax=100)
+    risk = pd.DataFrame(filas_riesgo, index=cursos_mapa) if filas_riesgo else pd.DataFrame(
+        index=CURSOS_ORDER, columns=SUBPRUEBAS_ORDER, dtype=float
+    )
+
+    im = ax1.imshow(risk.values.astype(float), aspect="auto", cmap="YlOrRd", vmin=0, vmax=100)
     ax1.set_xticks(range(len(SUBPRUEBAS_ORDER))); ax1.set_xticklabels(SUBPRUEBAS_ORDER)
-    ax1.set_yticks(range(len(CURSOS_ORDER)));    ax1.set_yticklabels(CURSOS_ORDER)
+    ax1.set_yticks(range(len(risk.index)))
+    ax1.set_yticklabels(etiquetas_mapa or list(risk.index), fontsize=8)
     ax1.tick_params(length=0)
     for i in range(risk.shape[0]):
         for j in range(risk.shape[1]):
             v = risk.iloc[i, j]
-            if not np.isnan(v):
+            if not pd.isna(v):
                 ax1.text(j, i, f"{v:.0f}", ha="center", va="center", fontsize=8.5,
                          color="white" if v > 55 else "#1f2937", fontweight="bold")
     cbar = fig.colorbar(im, ax=ax1, fraction=0.022, pad=0.015)
     cbar.ax.tick_params(labelsize=7)
+    cbar.set_label("% estudiantes", fontsize=7)
 
     # — Tabla de cobertura
     block_title(fig, CONTENT_L, 0.49, "Cobertura de estudiantes por curso")
@@ -431,7 +498,7 @@ def render_course_page_a(pdf, course_df: pd.DataFrame, curso: str,
     fig.legend(handles=legend_handles, loc="center", bbox_to_anchor=(0.5, 0.815),
                ncol=4, fontsize=8.5, frameon=False, handlelength=1.2, columnspacing=2.0)
 
-    ax_dist = fig.add_axes([CONTENT_L, 0.55, CONTENT_W, 0.24])
+    ax_dist = fig.add_axes([CONTENT_L, 0.585, CONTENT_W, 0.205])
     counts = (course_df.groupby(["eval_id", "nivel"]).size().unstack(fill_value=0)
               .reindex(columns=ACHIEVEMENT_LEVELS, fill_value=0)
               .reindex(index=evals, fill_value=0))
@@ -450,35 +517,90 @@ def render_course_page_a(pdf, course_df: pd.DataFrame, curso: str,
     ax_dist.set_ylabel("% registros")
     ax_dist.set_ylim(0, 100)
 
-    # — Tabla promedios/medianas por subprueba × evaluación
-    block_title(fig, CONTENT_L, 0.48, "Promedios y medianas por subprueba")
-    ax_tbl = fig.add_axes([CONTENT_L, 0.10, CONTENT_W, 0.36])
+    # — Tablas de promedio y mediana por subprueba × evaluación
+    #
+    # Antes era UNA tabla con 2 + 2×N columnas: con 8 evaluaciones daba 18
+    # columnas comprimidas en el ancho de página y tanto los encabezados
+    # como las celdas se superponían hasta quedar ilegibles (P0-14 del QA
+    # 2026-07-30). Se parte en dos tablas de 2 + N columnas, cada una con un
+    # solo estadístico, y el encabezado de la evaluación se corta en dos
+    # líneas ("2025 / v1") para que quepa.
+    _render_tabla_estadistico(
+        fig, course_df, evals, "mean",
+        titulo="Promedio de puntaje por subprueba y evaluación",
+        titulo_y=0.535, axes_rect=[CONTENT_L, 0.335, CONTENT_W, 0.185],
+    )
+    _render_tabla_estadistico(
+        fig, course_df, evals, "median",
+        titulo="Mediana de puntaje por subprueba y evaluación",
+        titulo_y=0.285, axes_rect=[CONTENT_L, 0.085, CONTENT_W, 0.185],
+    )
+
+    pdf.savefig(fig); plt.close(fig)
+
+
+def _render_tabla_estadistico(fig: plt.Figure,
+                              course_df: pd.DataFrame,
+                              evals: list[str],
+                              estadistico: str,
+                              titulo: str,
+                              titulo_y: float,
+                              axes_rect: list[float]) -> None:
+    """Tabla subpruebas (filas) × evaluaciones (columnas) de UN estadístico.
+
+    Args:
+        fig: figura de la página.
+        course_df: datos del curso.
+        evals: evaluaciones ordenadas.
+        estadistico: "mean" o "median".
+        titulo: rótulo del bloque.
+        titulo_y: posición Y del rótulo en coordenadas de figura.
+        axes_rect: [x, y, ancho, alto] del axes de la tabla.
+    """
+    block_title(fig, CONTENT_L, titulo_y, titulo)
+    ax = fig.add_axes(axes_rect)
+
+    # Con muchas evaluaciones la descripción cede ancho a los números y la
+    # fuente baja, en vez de dejar que las celdas se pisen.
+    n_eval = len(evals)
+    ancho_sub = 0.08
+    ancho_desc = 0.34 if n_eval <= 4 else (0.28 if n_eval <= 6 else 0.23)
+    ancho_num = (1.0 - ancho_sub - ancho_desc) / n_eval
+    fontsize = 9 if n_eval <= 4 else (8 if n_eval <= 6 else 7)
+    # Nombres largos ("Fluidez en Segmentación de Fonemas") no caben en una
+    # línea cuando la columna se angosta: se cortan en dos.
+    ancho_texto = 34 if n_eval <= 4 else (30 if n_eval <= 6 else 24)
 
     tbl_rows = []
     for sub in SUBPRUEBAS_ORDER:
         sdf = course_df[course_df["subprueba"] == sub]
         if sdf.empty:
             continue
-        row = [sub, SUBPRUEBAS_LABEL.get(sub, sub)]
+        etiqueta = SUBPRUEBAS_LABEL.get(sub, sub)
+        row = [sub, "\n".join(textwrap.wrap(etiqueta, ancho_texto) or [etiqueta])]
         for e in evals:
             e_vals = sdf[sdf["eval_id"] == e]["puntaje"]
             if e_vals.empty:
-                row.extend(["—", "—"])
+                row.append("—")
             else:
-                row.append(f"{e_vals.mean():.1f}")
-                row.append(f"{e_vals.median():.1f}")
+                valor = e_vals.mean() if estadistico == "mean" else e_vals.median()
+                row.append("—" if pd.isna(valor) else f"{valor:.1f}")
         tbl_rows.append(row)
-    cols = ["Sub.", "Descripción"]
-    for e in evals:
-        cols.append(f"{e}\nProm.")
-        cols.append(f"{e}\nMed.")
-    if tbl_rows:
-        n_eval_cols = 2 * len(evals)
-        col_widths = [0.09, 0.35] + [0.56 / n_eval_cols] * n_eval_cols
-        tbl_df = pd.DataFrame(tbl_rows, columns=cols)
-        render_table(ax_tbl, tbl_df, col_widths=col_widths, fontsize=9, row_height=1.7)
 
-    pdf.savefig(fig); plt.close(fig)
+    if not tbl_rows:
+        ax.axis("off")
+        ax.text(0.5, 0.5, "Sin datos de puntaje para este curso.",
+                ha="center", va="center", fontsize=10, color=COLOR_MUTED)
+        return
+
+    # "2025/v1" → "2025\nv1": dos líneas para que el encabezado quepa en una
+    # columna estrecha.
+    cols = ["Sub.", "Descripción"] + [e.replace("/", "\n") for e in evals]
+
+    tbl_df = pd.DataFrame(tbl_rows, columns=cols)
+    render_table(ax, tbl_df,
+                 col_widths=[ancho_sub, ancho_desc] + [ancho_num] * n_eval,
+                 fontsize=fontsize, row_height=1.6)
 
 
 # ── Curso — Página B: small multiples boxplot ───────────────────────────────
@@ -590,10 +712,14 @@ def _render_transition_matrix_subprueba(ax, matrix: pd.DataFrame, total: int,
     ax.add_patch(Rectangle((-0.5, -0.5), 4, 4, fill=False,
                            edgecolor=COLOR_SOFT, linewidth=0.8))
 
-    # Título en una sola línea (evita colisión con N= a la derecha)
-    ax.text(0.0, 1.10, f"{sub_code} — {sub_label}  ·  N={total}",
+    # Título en una sola línea (evita colisión con N= a la derecha). La
+    # fuente cede con los nombres largos ("Fluidez en Segmentación de
+    # Fonemas") para no salirse del ancho del panel.
+    titulo = f"{sub_code} — {sub_label}  ·  N={total}"
+    ax.text(0.0, 1.10, titulo,
             transform=ax.transAxes, ha="left", va="bottom",
-            fontsize=8.5, fontweight="bold", color=COLOR_TEXT)
+            fontsize=8.5 if len(titulo) <= 42 else 7.5,
+            fontweight="bold", color=COLOR_TEXT)
 
     if show_xlabel:
         ax.set_xlabel(f"Nivel en {latest}", fontsize=7.5, labelpad=2)
@@ -609,11 +735,21 @@ def _render_transition_matrix_subprueba(ax, matrix: pd.DataFrame, total: int,
 
 def render_course_page_transitions(pdf, course_df: pd.DataFrame, curso: str,
                                    page_counter: PageCounter) -> None:
-    evals = eval_ids_sorted(course_df)
-    first, latest = evals[0], evals[-1]
+    # Par con seguimiento real: comparar la primera con la última evaluación
+    # a ciegas deja las 6 matrices en cero cuando la cohorte cambió de año.
+    first, latest = par_evaluaciones_comparables(course_df)
     est_str = ", ".join(sorted(course_df["establecimiento"].dropna().unique())) or ""
     fig, _ = new_page(f"{curso} · {est_str}", page_counter)
     section_heading(fig, curso)
+
+    if not first or not latest:
+        block_title(fig, CONTENT_L, 0.855, "Matrices de transición por subprueba")
+        fig.text(0.5, 0.5,
+                 "Ningún estudiante de este curso aparece en dos evaluaciones:\n"
+                 "no hay transiciones que calcular.",
+                 ha="center", va="center", fontsize=11, color=COLOR_MUTED)
+        pdf.savefig(fig); plt.close(fig)
+        return
 
     block_title(fig, CONTENT_L, 0.855,
                 f"Matrices de transición por subprueba ({first} → {latest})")
@@ -668,9 +804,20 @@ def render_course_page_transitions(pdf, course_df: pd.DataFrame, curso: str,
 
 def render_course_page_persistent(pdf, course_df: pd.DataFrame, curso: str,
                                   page_counter: PageCounter) -> None:
-    evals = eval_ids_sorted(course_df)
-    first, latest = evals[0], evals[-1]
+    # Mismo par con seguimiento que usan las matrices de transición.
+    first, latest = par_evaluaciones_comparables(course_df)
     est_str = ", ".join(sorted(course_df["establecimiento"].dropna().unique())) or ""
+
+    if not first or not latest:
+        fig, _ = new_page(f"{curso} · {est_str}", page_counter)
+        section_heading(fig, curso)
+        block_title(fig, CONTENT_L, 0.855, "Estudiantes en riesgo persistente")
+        fig.text(0.5, 0.5,
+                 "Ningún estudiante de este curso aparece en dos evaluaciones:\n"
+                 "no se puede evaluar la persistencia del riesgo.",
+                 ha="center", va="center", fontsize=11, color=COLOR_MUTED)
+        pdf.savefig(fig); plt.close(fig)
+        return
 
     # Construir listado por (estudiante, subprueba) donde ambos niveles son de riesgo
     rows: list[list[str]] = []
@@ -693,13 +840,16 @@ def render_course_page_persistent(pdf, course_df: pd.DataFrame, curso: str,
     # Ordenar por estudiante (alfabético) y luego por subprueba
     rows.sort(key=lambda row: (row[0], SUBPRUEBAS_ORDER.index(row[1])))
 
-    # Paginación
-    PER_PAGE = 48
+    # Paginación. 48 filas no caben en la página: la tabla desbordaba por
+    # debajo de la regla del pie. Antes no se notaba porque estas páginas
+    # salían siempre vacías (ver `par_evaluaciones_comparables`).
+    PER_PAGE = 32
     total_rows = len(rows)
     if total_rows == 0:
         fig, _ = new_page(f"{curso} · {est_str}", page_counter)
         section_heading(fig, curso)
-        block_title(fig, CONTENT_L, 0.855, "Estudiantes en riesgo persistente")
+        block_title(fig, CONTENT_L, 0.855,
+                    f"Estudiantes en riesgo persistente ({first} → {latest})")
         fig.text(0.5, 0.5, "Sin estudiantes en riesgo persistente en este curso.",
                  ha="center", va="center", fontsize=12, color=COLOR_MUTED)
         pdf.savefig(fig); plt.close(fig)
@@ -789,8 +939,14 @@ def render_closing(pdf, df: pd.DataFrame, page_counter: PageCounter) -> None:
     section_heading(fig, "Síntesis comparativa")
 
     # Tasa de mejora por curso (agregando subpruebas — cada pareja estudiante×subprueba cuenta)
+    #
+    # El par de evaluaciones se elige POR CURSO: cada curso tiene su propio
+    # rango de evaluaciones y su propia continuidad de cohorte. Con el par
+    # global (primera vs última del informe) el gráfico salía sin una sola
+    # barra porque ningún estudiante aparecía en ambas (P1-4 del QA
+    # 2026-07-30). El par usado se rotula bajo cada curso.
     block_title(fig, CONTENT_L, 0.845,
-                f"Tasa de mejora por curso ({first} → {latest})")
+                "Tasa de mejora por curso (primera → última evaluación con seguimiento)")
 
     # Banner de leyenda horizontal
     legend_patches = [
@@ -801,18 +957,26 @@ def render_closing(pdf, df: pd.DataFrame, page_counter: PageCounter) -> None:
     fig.legend(handles=legend_patches, loc="center", bbox_to_anchor=(0.5, 0.815),
                ncol=3, fontsize=8.5, frameon=False, handlelength=1.3, columnspacing=2.5)
 
-    ax1 = fig.add_axes([CONTENT_L, 0.52, CONTENT_W, 0.26])
+    # El eje X lleva dos líneas por curso (nombre + par de evaluaciones), así
+    # que el gráfico cede altura para no pisar el título del bloque siguiente.
+    ax1 = fig.add_axes([CONTENT_L, 0.555, CONTENT_W, 0.235])
 
-    imp_v, same_v, wor_v, labels = [], [], [], []
+    imp_v, same_v, wor_v, labels, sin_par = [], [], [], [], []
     for c in CURSOS_ORDER:
         cdf = df[df["curso"] == c]
         if cdf.empty:
             continue
-        imp, wor, same = course_aggregate_transitions(cdf, first, latest)
+        c_first, c_latest = par_evaluaciones_comparables(cdf)
+        labels.append(f"{c}\n{etiqueta_par_evaluaciones(c_first, c_latest)}")
+        if not c_first or not c_latest:
+            imp_v.append(0); same_v.append(0); wor_v.append(0)
+            sin_par.append(len(labels) - 1)
+            continue
+        imp, wor, same = course_aggregate_transitions(cdf, c_first, c_latest)
         total = imp + wor + same
-        labels.append(c)
         if total == 0:
             imp_v.append(0); same_v.append(0); wor_v.append(0)
+            sin_par.append(len(labels) - 1)
         else:
             imp_v.append(imp / total * 100)
             same_v.append(same / total * 100)
@@ -834,13 +998,19 @@ def render_closing(pdf, df: pd.DataFrame, page_counter: PageCounter) -> None:
         if w >= 4:
             ax1.text(i, imp + s + w / 2, f"{w:.0f}%", ha="center", va="center",
                      color="white", fontsize=8.5, fontweight="bold")
+    # Una barra en cero se lee como "nadie mejoró"; si en realidad no hay
+    # seguimiento hay que decirlo.
+    for i in sin_par:
+        ax1.text(i, 3, "sin seguimiento", ha="center", va="bottom",
+                 fontsize=7.5, color=COLOR_MUTED, style="italic", rotation=90)
     ax1.set_ylabel("% estudiante×subprueba")
     ax1.set_ylim(0, 100)
+    ax1.tick_params(axis="x", labelsize=7.5)
 
     # Evolución del promedio por subprueba
-    block_title(fig, CONTENT_L, 0.475,
+    block_title(fig, CONTENT_L, 0.465,
                 f"Evolución del promedio por subprueba ({first} → {latest})")
-    ax2 = fig.add_axes([CONTENT_L, 0.10, CONTENT_W, 0.35])
+    ax2 = fig.add_axes([CONTENT_L, 0.10, CONTENT_W, 0.34])
 
     rows = []
     for sub in SUBPRUEBAS_ORDER:
@@ -918,26 +1088,44 @@ def main(argv: list[str] | None = None) -> None:
     print(f"OK — PDF generado en {out_path} ({pc.n} páginas)")
 
 
-def render_all_pages(pdf: "PdfPages", df: pd.DataFrame) -> PageCounter:
+def render_all_pages(
+    pdf: "PdfPages",
+    df: pd.DataFrame,
+    institucion: str | None = None,
+) -> PageCounter:
     """Orquestador de renderizado: panorama + páginas por curso + cierre.
 
     Función pública reutilizable desde el CLI y desde el backend (Fase B).
     Recibe un PdfPages ya abierto y escribe todas las páginas en él.
     Retorna el PageCounter final (útil para saber total de páginas).
+
+    Args:
+        pdf: PdfPages abierto.
+        df: DataFrame de datos IDEL ya filtrado.
+        institucion: nombre a imprimir en el pie izquierdo. El backend pasa
+            `org.name` para que el informe identifique a la organización
+            dueña de los datos. None mantiene el default del módulo.
     """
-    pc = PageCounter()
-    render_panorama(pdf, df, pc)
-    for curso in CURSOS_ORDER:
-        cdf = df[df["curso"] == curso]
-        if cdf.empty:
-            continue
-        render_course_page_a(pdf, cdf, curso, pc)
-        render_course_page_b(pdf, cdf, curso, pc)
-        render_course_page_transitions(pdf, cdf, curso, pc)
-        render_course_page_persistent(pdf, cdf, curso, pc)
-        render_course_roster(pdf, cdf, curso, pc)
-    render_closing(pdf, df, pc)
-    return pc
+    global INSTITUCION
+    previo = INSTITUCION
+    if institucion:
+        INSTITUCION = institucion
+    try:
+        pc = PageCounter()
+        render_panorama(pdf, df, pc)
+        for curso in CURSOS_ORDER:
+            cdf = df[df["curso"] == curso]
+            if cdf.empty:
+                continue
+            render_course_page_a(pdf, cdf, curso, pc)
+            render_course_page_b(pdf, cdf, curso, pc)
+            render_course_page_transitions(pdf, cdf, curso, pc)
+            render_course_page_persistent(pdf, cdf, curso, pc)
+            render_course_roster(pdf, cdf, curso, pc)
+        render_closing(pdf, df, pc)
+        return pc
+    finally:
+        INSTITUCION = previo
 
 
 if __name__ == "__main__":

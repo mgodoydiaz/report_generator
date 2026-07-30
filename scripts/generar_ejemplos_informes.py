@@ -41,27 +41,63 @@ def _token() -> str:
     return create_access_token(1, 1, "admin")
 
 
-def _valores_por_dimension(hdr: dict, indicator_id: int) -> dict[str, list]:
-    """{nombre_dimension: [valores distintos]} — el endpoint ya los trae.
+def _datos_indicador(hdr: dict, indicator_id: int) -> tuple[dict[str, list], list[dict]]:
+    """(valores_por_dimension, filas) del indicador.
 
-    `dimensions` es un dict {id_str: {id, name, data_type, values}}.
+    `dimensions` es un dict {id_str: {id, name, data_type, values}}; `data`
+    es {id_metric: [{dimensions_json: {id_dim: valor}}]}. Las filas se
+    devuelven ya traducidas a {nombre_dimension: valor} para poder validar
+    COMBINACIONES de filtros (ej Hito+Año) y no solo valores sueltos.
     """
-    r = requests.get(f"{BASE}/api/results/indicator/{indicator_id}/data", headers=hdr, timeout=120)
+    r = requests.get(f"{BASE}/api/results/indicator/{indicator_id}/data", headers=hdr, timeout=180)
     r.raise_for_status()
-    dims = r.json().get("dimensions") or {}
-    return {meta["name"]: [str(v) for v in meta.get("values") or []] for meta in dims.values()}
+    payload = r.json()
+    dims = payload.get("dimensions") or {}
+    valores = {meta["name"]: [str(v) for v in meta.get("values") or []] for meta in dims.values()}
+    nombre_por_id = {str(k): meta["name"] for k, meta in dims.items()}
+
+    filas: list[dict] = []
+    for registros in (payload.get("data") or {}).values():
+        for reg in registros:
+            filas.append({
+                nombre_por_id[k]: str(v)
+                for k, v in (reg.get("dimensions_json") or {}).items()
+                if k in nombre_por_id
+            })
+    return valores, filas
 
 
-def _filtro_temporal(requeridos: list[str], valores: dict[str, list]) -> dict | None:
-    """Elige UN punto temporal para informes v2. None si no hay valores."""
+def _filtro_temporal(
+    requeridos: list[str],
+    valores: dict[str, list],
+    filas: list[dict] | None = None,
+) -> dict | None:
+    """Elige UN punto temporal que EXISTA en los datos. None si no hay.
+
+    Con `filas` se valida la combinación completa (Hito+Año): elegir Hito y
+    Año por separado producía combos vacíos (ej INTERMEDIO+2026 cuando
+    INTERMEDIO solo existe en 2025) y el informe salía en blanco.
+    """
     filtros = {}
     if "Hito" in requeridos:
-        # DIA: Hito (+ Año si existe) — preferir INTERMEDIO, año más reciente
+        # DIA: Hito + Año — preferir el año más reciente y, dentro de él, el
+        # hito más avanzado que tenga datos.
+        anios = valores.get("Año", [])
+        combos = {
+            (f.get("Hito"), f.get("Año"))
+            for f in (filas or [])
+            if f.get("Hito") and f.get("Año")
+        }
+        if combos:
+            for anio in sorted({a for _, a in combos}, reverse=True):
+                hitos = {h for h, a in combos if a == anio}
+                elegido = next((h for h in PREFERENCIA_HITO if h in hitos), None)
+                if elegido:
+                    return {"Hito": elegido, "Año": anio}
         hitos = valores.get("Hito", [])
         if not hitos:
             return None
         filtros["Hito"] = next((h for h in PREFERENCIA_HITO if h in hitos), hitos[0])
-        anios = valores.get("Año", [])
         if anios:
             filtros["Año"] = max(anios)
         return filtros
@@ -84,18 +120,38 @@ def main() -> int:
         opciones = requests.get(
             f"{BASE}/api/indicators/{iid}/report-options", headers=hdr, timeout=60
         ).json()["opciones"]
-        valores = None  # lazy: solo escanear datos si alguna opción lo necesita
+        valores = filas = None  # lazy: solo escanear datos si alguna opción lo necesita
 
         for op in opciones:
             archivo = f"{_slug(nombre)}__{_slug(op['id'])}.{'docx' if op['formato'] == 'word' else 'pdf'}"
             if not op["disponible"]:
                 resumen.append((archivo, "OMITIDO", op.get("motivo_no_disponible") or "no disponible"))
                 continue
+            if op.get("requiere_configuracion"):
+                resumen.append((archivo, "OMITIDO", "requiere configuración manual (rango/filtros)"))
+                continue
             try:
-                if op["motor"] == "v2":
+                if op["motor"] == "custom":
+                    # Informe hardcodeado del registro reports/custom/.
+                    filtros = {}
+                    requeridos = op.get("requiere_filtro_temporal") or []
+                    if requeridos:
+                        if valores is None:
+                            valores, filas = _datos_indicador(hdr, iid)
+                        filtros = _filtro_temporal(requeridos, valores, filas) or {}
+                        if not filtros:
+                            resumen.append((archivo, "OMITIDO", "sin valores temporales en los datos"))
+                            continue
+                    resp = requests.post(
+                        f"{BASE}/api/reports/custom/{op['nombre']}", headers=hdr, timeout=300,
+                        json={"indicator_id": iid, "filtros": filtros},
+                    )
+                elif op["motor"] == "v2":  # contrato legacy (pre-registro custom)
                     if valores is None:
-                        valores = _valores_por_dimension(hdr, iid)
-                    filtros = _filtro_temporal(op.get("requiere_filtro_temporal", []), valores)
+                        valores, filas = _datos_indicador(hdr, iid)
+                    filtros = _filtro_temporal(
+                        op.get("requiere_filtro_temporal", []), valores, filas
+                    )
                     if filtros is None:
                         resumen.append((archivo, "OMITIDO", "sin valores temporales en los datos"))
                         continue
@@ -104,9 +160,14 @@ def main() -> int:
                         json={"indicator_id": iid, "filtros": filtros},
                     )
                 elif op["motor"] in ("weasyprint", "pdl_idel"):
+                    # Las cards de período mandan `periodo`; el contrato viejo, `tipo`.
                     body = {"engine": op["motor"]}
+                    params = op.get("invocacion", {}).get("params") or {}
                     if op["motor"] == "weasyprint":
-                        body["tipo"] = op["invocacion"]["params"].get("tipo", "evaluacion")
+                        if params.get("periodo"):
+                            body["periodo"] = params["periodo"]
+                        else:
+                            body["tipo"] = params.get("tipo", "evaluacion")
                     resp = requests.post(
                         f"{BASE}/api/indicators/{iid}/export-pdf", headers=hdr, timeout=300, json=body,
                     )

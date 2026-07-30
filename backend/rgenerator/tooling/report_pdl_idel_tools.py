@@ -19,7 +19,7 @@ import pandas as pd
 from matplotlib.backends.backend_pdf import PdfPages
 from sqlalchemy.orm import Session
 
-from backend.models import MetricData
+from backend.models import MetricData, Organization
 
 # Reusamos funciones puras y constantes del script CLI (side-effect-free tras
 # el refactor: scripts/__init__.py existe y el script ya no lee DATABASE_URL
@@ -199,7 +199,13 @@ def build_pdl_idel_pdf_bytes(
             "filtros solicitados."
         )
 
+    # Pie izquierdo = nombre de la organización dueña de los datos (no un
+    # nombre hardcodeado). Si la org no se encuentra, el script cae a su
+    # default.
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    institucion = org.name if org and org.name else None
+
     buf = io.BytesIO()
     with PdfPages(buf) as pdf:
-        render_all_pages(pdf, df)
+        render_all_pages(pdf, df, institucion=institucion)
     return buf.getvalue()

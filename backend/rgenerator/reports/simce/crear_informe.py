@@ -30,6 +30,11 @@ from pathlib import Path
 import pandas as pd
 
 from .. import runtime
+from ..branding import (
+    aplicar_center_header,
+    formatear_filtros,
+    lineas_encabezado_prueba,
+)
 from ...core.derived_fields_engine import apply_derived_fields
 
 
@@ -75,6 +80,7 @@ def construir(
     # está filtrado por asignatura. Una vez calculadas las columnas
     # derivadas, el filter por prueba las hereda automáticamente.
     esquema_path = Path(__file__).parent / "esquema.json"
+    esquema: dict = {}
     if esquema_path.exists():
         with open(esquema_path, encoding="utf-8") as f:
             esquema = json.load(f)
@@ -112,4 +118,25 @@ def construir(
         "preguntas_prueba": df_preguntas_prueba,      # df preguntas filtrado a 1 prueba
     }
 
-    return runtime.construir_pdf("simce", dataframes, overrides=overrides)
+    # Encabezado central con los params reales (si el usuario no lo definió).
+    overrides = aplicar_center_header(
+        overrides,
+        base=(esquema.get("branding") or {}).get("center_header"),
+        lineas=lineas_encabezado_prueba(
+            df_estudiantes_prueba, asignatura, numero_prueba, mes
+        ),
+    )
+
+    filtros_desc = formatear_filtros({
+        "Asignatura": asignatura,
+        "Mes": mes,
+        "N Prueba": None if mes else numero_prueba,
+    })
+
+    return runtime.construir_pdf(
+        "simce",
+        dataframes,
+        overrides=overrides,
+        df_principal="estudiantes_prueba",
+        filtros_desc=filtros_desc,
+    )

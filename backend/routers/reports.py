@@ -21,11 +21,12 @@ from backend.auth import get_current_user
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import User
-from backend.rgenerator.reports import runtime
 from backend.rgenerator.reports.data import cargar_dataframes_indicator
-from backend.rgenerator.reports.dia import crear_informe as dia_informe
-from backend.rgenerator.reports.simce import crear_informe as simce_informe
-from backend.rgenerator.reports.simce_panguipulli import crear_informe as simce_panguipulli_informe
+from backend.rgenerator.reports.dispatch_v2 import (
+    DatosInsuficientes,
+    TipoNoSoportado,
+    generar_pdf_v2,
+)
 
 
 logger = get_logger(__name__)
@@ -165,7 +166,105 @@ def generar_informe_word(
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Generación de PDF
+# Informes custom (hardcodeados en Python) — registro auto-descubierto
+# ─────────────────────────────────────────────────────────────────────────
+
+class CustomReportRequest(BaseModel):
+    """Request body para POST /api/reports/custom/{nombre}."""
+    indicator_id: int
+    filtros: dict[str, Any] | None = None
+    params: dict[str, Any] | None = None      # libres, los define cada informe
+    overrides: dict[str, Any] | None = None   # ej {"branding": {"left_footer": "..."}}
+
+
+@router.get("/custom/informes")
+def listar_informes_custom(user: User = Depends(get_current_user)):
+    """Informes custom registrados (un módulo Python por informe).
+
+    El campo `nombre` es el identificador para
+    POST /api/reports/custom/{nombre}.
+    """
+    from backend.rgenerator.reports import custom as custom_reports
+    return custom_reports.listar_informes()
+
+
+@router.post("/custom/{nombre}")
+def generar_informe_custom(
+    nombre: str,
+    body: CustomReportRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Genera el informe custom `nombre` con datos del Indicator.
+
+    El nombre asocia directamente al archivo
+    `backend/rgenerator/reports/custom/<nombre>.py`. Devuelve el binario
+    con el `FILENAME` que declare el módulo.
+
+    Raises:
+        404 si `nombre` no está registrado o el indicador no existe.
+        400 si el informe no aplica al engine_type del indicador, o si el
+            informe reporta datos/filtros insuficientes.
+        500 en cualquier otro error de generación.
+    """
+    from backend.models import Indicator
+    from backend.rgenerator.reports import custom as custom_reports
+    from backend.rgenerator.reports.engine_types import resolver_engine_type
+
+    try:
+        modulo = custom_reports.obtener_modulo(nombre)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+
+    record = db.query(Indicator).filter(
+        Indicator.id_indicator == body.indicator_id,
+        Indicator.org_id == user.org_id,
+    ).first()
+    if not record:
+        raise HTTPException(404, "Indicador no encontrado")
+
+    engine_type, _origen = resolver_engine_type(record)
+    if not custom_reports.aplica_a(modulo, engine_type):
+        permitidos = getattr(modulo, "ENGINE_TYPES", None) or []
+        raise HTTPException(
+            400,
+            f"El informe '{nombre}' no aplica a este indicador "
+            f"(tipo detectado: {engine_type or 'genérico'}). "
+            f"Aplica a: {', '.join(permitidos) or '(ninguno)'}.",
+        )
+
+    meta = custom_reports.metadata(nombre, modulo)
+
+    try:
+        contenido = modulo.generar(
+            db,
+            indicator_id=body.indicator_id,
+            org_id=user.org_id,
+            filtros=body.filtros,
+            params=body.params,
+            overrides=body.overrides,
+        )
+    except TipoNoSoportado as e:
+        raise HTTPException(404, str(e))
+    except (DatosInsuficientes, ValueError) as e:
+        raise HTTPException(400, str(e))
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("Error generando informe custom '%s'", nombre, exc_info=True)
+        raise HTTPException(500, "Error generando el informe")
+
+    return Response(
+        content=contenido,
+        media_type=meta["mime"],
+        headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Generación de PDF (motor v2 — endpoint legacy por tipo)
 # ─────────────────────────────────────────────────────────────────────────
 
 @router.post("/{tipo}")
@@ -175,7 +274,11 @@ def generar_reporte(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Genera el PDF para `tipo` (simce | dia) con datos del Indicator.
+    """Genera el PDF para `tipo` (simce | simce_panguipulli | dia).
+
+    Endpoint histórico: la lógica vive en
+    `backend/rgenerator/reports/dispatch_v2.py`, compartida con los informes
+    del registro `reports/custom/` (que es la vía nueva y preferida).
 
     Args:
         tipo: identificador del informe — coincide con el subdirectorio
@@ -187,136 +290,23 @@ def generar_reporte(
 
     Raises:
         404 si el tipo no existe.
-        400 si el indicator no se encuentra o no tiene metrics.
+        400 si falta el filtro temporal, o el indicator no se encuentra o
+            no tiene las metrics requeridas.
         500 si la generación falla.
     """
-    if tipo not in ("simce", "simce_panguipulli", "dia"):
-        raise HTTPException(404, f"Tipo '{tipo}' no soportado. Disponibles: simce, simce_panguipulli, dia")
-
-    # Validación: el motor v2 está pensado para UNA evaluación. Sin filtro
-    # temporal mezclaría datos de múltiples meses/hitos y los gráficos
-    # quedarían sucios. Exigimos al menos uno de los filtros temporales
-    # conocidos por tipo.
-    filtros_aplicados = body.filtros or {}
-    filtros_temporales = {
-        "simce": ["Mes", "N Prueba", "Numero_Prueba"],
-        "simce_panguipulli": ["Mes", "N Prueba", "Numero_Prueba"],
-        "dia": ["Hito", "Año"],
-    }
-    requeridos = filtros_temporales.get(tipo, [])
-    if not any(k in filtros_aplicados for k in requeridos):
-        raise HTTPException(
-            400,
-            f"El motor v2 requiere al menos un filtro temporal para mantener "
-            f"un solo punto en el tiempo. Para '{tipo}', aplicar uno de: "
-            f"{', '.join(requeridos)}.",
-        )
-
-    # Separar filtros temporales (van a crear_informe como param) de los
-    # estructurales (van al loader). Esto permite que las derived_fields
-    # tipo slope/delta vean todo el histórico antes de filtrar a una prueba.
-    temporales_set = set(requeridos)
-    filtros_estructurales = {k: v for k, v in filtros_aplicados.items() if k not in temporales_set}
-    filtros_temporales_dict = {k: v for k, v in filtros_aplicados.items() if k in temporales_set}
-
     try:
-        dataframes = cargar_dataframes_indicator(
+        pdf_bytes = generar_pdf_v2(
             db,
+            tipo=tipo,
             indicator_id=body.indicator_id,
             org_id=user.org_id,
-            filtros=filtros_estructurales,
+            filtros=body.filtros,
+            overrides=body.overrides,
         )
-    except ValueError as e:
+    except TipoNoSoportado as e:
+        raise HTTPException(404, str(e))
+    except (DatosInsuficientes, ValueError) as e:
         raise HTTPException(400, str(e))
-    except Exception:
-        logger.error("Error cargando datos para reporte", exc_info=True)
-        raise HTTPException(500, "Error interno del servidor")
-
-    try:
-        if tipo == "simce":
-            # SIMCE necesita asignatura + numero_prueba (o el Mes específico).
-            # crear_informe.construir aplica el filtro temporal después de
-            # ejecutar las derived_fields, para que slope/delta vean todas
-            # las pruebas del histórico.
-            asignatura = filtros_estructurales.get("Asignatura", "LENGUAJE")
-            mes = filtros_temporales_dict.get("Mes")
-            n_prueba_raw = filtros_temporales_dict.get("N Prueba") or filtros_temporales_dict.get("Numero_Prueba", 5)
-            try:
-                numero_prueba = int(n_prueba_raw)
-            except (TypeError, ValueError):
-                numero_prueba = 5
-            df_estudiantes = dataframes.get("estudiantes", None)
-            df_preguntas = dataframes.get("preguntas", None)
-            if df_estudiantes is None or df_preguntas is None:
-                raise HTTPException(
-                    400,
-                    "El indicator debe tener metrics 'estudiantes' y 'preguntas' asociadas",
-                )
-            pdf_bytes = simce_informe.construir(
-                df_estudiantes,
-                df_preguntas,
-                asignatura=asignatura,
-                numero_prueba=numero_prueba,
-                mes=mes,
-                overrides=body.overrides,
-            )
-        elif tipo == "simce_panguipulli":
-            # Variante Panguipulli: usa df_estudiantes (metric 24) + df_habilidad
-            # (metric 26) en lugar de df_preguntas. data.py asigna a metric 26 el
-            # rol "otros" → key "metric_26"; el detector aquí intenta varias
-            # claves conocidas para localizarlo.
-            asignatura = filtros_estructurales.get("Asignatura", "LENGUAJE")
-            mes = filtros_temporales_dict.get("Mes")
-            n_prueba_raw = filtros_temporales_dict.get("N Prueba") or filtros_temporales_dict.get("Numero_Prueba", 4)
-            try:
-                numero_prueba = int(n_prueba_raw)
-            except (TypeError, ValueError):
-                numero_prueba = 4
-            df_estudiantes = dataframes.get("estudiantes", None)
-            # Buscar el DataFrame de habilidad por las keys posibles que asigna
-            # `cargar_dataframes_indicator` (rol detectado por nombre). No uso
-            # `or` porque pandas no permite evaluar la verdad de un DataFrame.
-            df_habilidad = dataframes.get("habilidad")
-            if df_habilidad is None:
-                df_habilidad = dataframes.get("metric_26")
-            if df_habilidad is None:
-                df_habilidad = next(
-                    (v for k, v in dataframes.items() if k.startswith("metric_")),
-                    None,
-                )
-            if df_estudiantes is None or df_habilidad is None:
-                raise HTTPException(
-                    400,
-                    "El indicator SIMCE Panguipulli debe tener metrics 'por Estudiante' "
-                    "y 'por Habilidad' asociadas",
-                )
-            pdf_bytes = simce_panguipulli_informe.construir(
-                df_estudiantes,
-                df_habilidad,
-                asignatura=asignatura,
-                numero_prueba=numero_prueba,
-                mes=mes,
-                overrides=body.overrides,
-            )
-        else:  # dia
-            df_estudiantes = dataframes.get("estudiantes", None)
-            df_preguntas = dataframes.get("preguntas", None)
-            if df_estudiantes is None or df_preguntas is None:
-                raise HTTPException(
-                    400,
-                    "El indicator DIA debe tener metrics 'estudiantes' y 'preguntas' asociadas",
-                )
-            hito = filtros_temporales_dict.get("Hito")
-            anio = filtros_temporales_dict.get("Año")
-            pdf_bytes = dia_informe.construir(
-                df_estudiantes,
-                df_preguntas,
-                hito=hito,
-                anio=anio,
-                overrides=body.overrides,
-            )
-    except HTTPException:
-        raise
     except Exception:
         logger.error("Error generando PDF de reporte", exc_info=True)
         raise HTTPException(500, "Error interno del servidor")

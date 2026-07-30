@@ -34,12 +34,26 @@ from jinja2 import Environment, FileSystemLoader
 # para que importar este módulo no falle en setups de testing/dev.
 
 from . import charts, tables
+from .errores import DatosInsuficientes, mensaje_sin_datos
 from .helpers import df_a_html_table, embed_png_b64
 from ..core.derived_fields_engine import apply_derived_fields
+
+try:  # el logger del backend no está disponible en usos standalone del paquete
+    from backend.logging_config import get_logger
+    logger = get_logger(__name__)
+except Exception:  # pragma: no cover — fallback defensivo
+    import logging
+    logger = logging.getLogger(__name__)
 
 REPORTS_DIR = Path(__file__).parent
 TEMPLATES_DIR = REPORTS_DIR / "templates"
 ASSETS_DIR = REPORTS_DIR / "assets"
+
+# Aviso que se imprime en el PDF cuando una sección falla. El detalle
+# técnico (tipo de excepción + traceback) va SOLO al log: un informe que se
+# entrega a la fundación no debe mostrar `ValueError: List of boxplot
+# statistics...` (QA 2026-07-30, P0-1 / P0-2).
+AVISO_SECCION_FALLIDA = "No fue posible generar esta sección con los datos disponibles."
 
 
 def _resolve_logo_path(name: str | None) -> str | None:
@@ -70,6 +84,27 @@ def _interpolar(obj: Any, context: dict) -> Any:
     if isinstance(obj, list):
         return [_interpolar(v, context) for v in obj]
     return obj
+
+
+def _error_seccion(titulo: str, contexto: str, exc: BaseException | None = None) -> dict:
+    """Sección de error: aviso neutro al PDF, detalle técnico al log.
+
+    Args:
+        titulo: título de la sección que falló (se conserva en el PDF).
+        contexto: qué se estaba ejecutando, para el log ("chart 'x'").
+        exc: excepción capturada, si hubo una. Se loguea con traceback.
+
+    Returns:
+        Dict de sección tipo "error" con el mensaje neutro.
+    """
+    if exc is not None:
+        logger.error(
+            "Sección de informe fallida (%s, título=%r)", contexto, titulo,
+            exc_info=exc,
+        )
+    else:
+        logger.error("Sección de informe no ejecutable (%s, título=%r)", contexto, titulo)
+    return {"tipo": "error", "titulo": titulo, "msg": AVISO_SECCION_FALLIDA}
 
 
 def _ejecutar_seccion(
@@ -105,30 +140,30 @@ def _ejecutar_seccion(
     params = dict(seccion.get("params", {}))  # copia, no mutamos el esquema
 
     if df_key not in dataframes:
-        return {"tipo": "error", "titulo": titulo, "msg": f"DataFrame '{df_key}' no disponible"}
+        return _error_seccion(titulo, f"DataFrame '{df_key}' no disponible")
     df = dataframes[df_key]
 
     if tipo == "chart":
         spec = charts.CHART_REGISTRY.get(fn_name)
         if not spec:
-            return {"tipo": "error", "titulo": titulo, "msg": f"Chart '{fn_name}' no existe"}
+            return _error_seccion(titulo, f"chart '{fn_name}' no existe en CHART_REGISTRY")
         # Path PNG temporal
         png_path = aux_dir / f"{fn_name}_{abs(hash(json.dumps(params, sort_keys=True, default=str)))}.png"
         params["nombre_grafico"] = str(png_path)
         try:
             spec["fn"](df, **params)
-        except Exception as e:  # pragma: no cover — defensivo, mostramos error in-place
-            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        except Exception as e:  # defensivo: una sección rota no cae el informe
+            return _error_seccion(titulo, f"chart '{fn_name}'", e)
         return {"tipo": "chart", "titulo": titulo, "image_b64": embed_png_b64(png_path)}
 
     if tipo == "table":
         spec = tables.TABLE_REGISTRY.get(fn_name)
         if not spec:
-            return {"tipo": "error", "titulo": titulo, "msg": f"Table '{fn_name}' no existe"}
+            return _error_seccion(titulo, f"table '{fn_name}' no existe en TABLE_REGISTRY")
         try:
             df_out = spec["fn"](df, **params)
-        except Exception as e:  # pragma: no cover
-            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        except Exception as e:
+            return _error_seccion(titulo, f"table '{fn_name}'", e)
         return {"tipo": "table", "titulo": titulo, "html": df_a_html_table(df_out)}
 
     if tipo == "pivot":
@@ -139,20 +174,22 @@ def _ejecutar_seccion(
         pivot_spec = seccion.get("spec")
         filtro = seccion.get("filtro")
         if not pivot_spec:
-            return {"tipo": "error", "titulo": titulo, "msg": "Sección 'pivot' sin 'spec'"}
+            return _error_seccion(titulo, "sección 'pivot' sin 'spec'")
         try:
             df_out = tables.tabla_pivote(df, spec=pivot_spec, filtro=filtro)
-        except Exception as e:  # pragma: no cover
-            return {"tipo": "error", "titulo": titulo, "msg": f"{type(e).__name__}: {e}"}
+        except Exception as e:
+            return _error_seccion(titulo, "pivot", e)
         return {"tipo": "table", "titulo": titulo, "html": df_a_html_table(df_out)}
 
-    return {"tipo": "error", "titulo": titulo, "msg": f"Tipo desconocido: {tipo}"}
+    return _error_seccion(titulo, f"tipo de sección desconocido: {tipo}")
 
 
 def construir_pdf(
     report_type: str,
     dataframes: dict[str, pd.DataFrame],
     overrides: dict | None = None,
+    df_principal: str | None = None,
+    filtros_desc: str = "",
 ) -> bytes:
     """Punto de entrada: genera bytes PDF para un tipo de informe.
 
@@ -165,16 +202,32 @@ def construir_pdf(
         overrides: dict opcional para sobreescribir partes del esquema en
             runtime (ej {"branding": {"center_header": ["...", "...", "..."]}}).
             Útil para que el endpoint reciba parámetros de UI.
+        df_principal: key del DataFrame sin el cual el informe no tiene
+            sentido (ej "estudiantes_prueba"). Si viene y ese DataFrame
+            quedó SIN FILAS tras los filtros, se aborta con
+            `DatosInsuficientes` en lugar de emitir un PDF vacío con
+            gráficos en blanco (QA 2026-07-30, P0-1).
+        filtros_desc: filtros aplicados en texto legible, para el mensaje
+            de error ("Hito: INTERMEDIO · Año: 2026").
 
     Returns:
         Bytes del PDF generado.
 
     Raises:
         FileNotFoundError: si no existe el esquema.json del tipo solicitado.
+        DatosInsuficientes: si `df_principal` quedó vacío.
     """
     esquema_path = REPORTS_DIR / report_type / "esquema.json"
     if not esquema_path.exists():
         raise FileNotFoundError(f"No existe esquema para tipo '{report_type}': {esquema_path}")
+
+    # Guardia de dataset vacío ANTES de gastar tiempo en secciones: sin
+    # filas todos los charts salen en blanco y las tablas con solo
+    # encabezados — un PDF que parece válido pero no dice nada.
+    if df_principal:
+        df_ppal = dataframes.get(df_principal)
+        if df_ppal is None or len(df_ppal) == 0:
+            raise DatosInsuficientes(mensaje_sin_datos(filtros_desc))
 
     with open(esquema_path, "r", encoding="utf-8") as f:
         esquema = json.load(f)

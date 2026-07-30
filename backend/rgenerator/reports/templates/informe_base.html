@@ -113,6 +113,10 @@ h1.document-title {
   color: #444;
   font-style: italic;
   margin: 0 0 0.8cm 0;
+  /* Filtros largos (varios meses/cursos) hacen wrap dentro del bloque en
+     vez de desbordar la caja (QA 2026-07-30, P1-2). */
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 /* ── Heading de sección (réplica del \section* LaTeX) ─────── */
@@ -121,9 +125,12 @@ h3.section-title {
   font-size: 12pt;
   font-weight: 700;
   color: #111;
-  margin: 0.6cm 0 0.25cm 0;
   border: none;
-  padding: 0;
+  /* `padding-top` en lugar de solo `margin-top`: el margen se descarta al
+     inicio de página y el título quedaba a ras de la regla del encabezado
+     (QA 2026-07-30, P1-5). */
+  padding: 0.25cm 0 0 0;
+  margin: 0.35cm 0 0.25cm 0;
 }
 
 /* ── Tabla report-table (réplica de df_a_latex_loop) ───────── */
@@ -235,7 +242,7 @@ p.error {
 
     {% elif sec.tipo == "error" %}
     {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
-    <p class="error">[Error en sección] {{ sec.msg }}</p>
+    <p class="error">{{ sec.msg }}</p>
 
     {% endif %}
   {% endfor %}

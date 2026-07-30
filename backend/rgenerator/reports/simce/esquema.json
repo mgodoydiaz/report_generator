@@ -2,7 +2,7 @@
   "_comment": "Esquema declarativo del informe SIMCE. Cada sección llama a una función de charts.py o tables.py vía CHART_REGISTRY/TABLE_REGISTRY. Los df_input deben matchear las keys que pasa el orquestador (estudiantes_prueba, df_estudiantes, df_preguntas).",
   "derived_fields": [
     {
-      "_comment": "Calcular columnas derivadas en runtime sobre el df 'estudiantes' (todas las pruebas del año, no filtrado a una). Usa Mes como eje temporal ordinal.",
+      "_comment": "Calcular columnas derivadas en runtime sobre el df 'estudiantes' (todas las pruebas del año, no filtrado a una). Usa Mes como eje temporal ordinal. time_ordinal_levels DEBE contener todos los meses presentes en los datos y en orden cronológico: un mes ausente deja Avance y Mejora_vs_Inicio 100% nulos para ese mes (QA 2026-07-30, P0-4b — faltaban MAYO y NOVIEMBRE y sobraba 'OCTUBRE 2').",
       "df_input": "estudiantes",
       "configs": [
         {
@@ -20,7 +20,7 @@
           "entity_field": "Rut",
           "time_field": "Mes",
           "time_type": "ordinal",
-          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "time_ordinal_levels": ["ABRIL", "MAYO", "JUNIO", "AGOSTO", "OCTUBRE", "NOVIEMBRE"],
           "min_points": 2
         },
         {
@@ -30,7 +30,7 @@
           "entity_field": "Rut",
           "time_field": "Mes",
           "time_type": "ordinal",
-          "time_ordinal_levels": ["ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "OCTUBRE 2"],
+          "time_ordinal_levels": ["ABRIL", "MAYO", "JUNIO", "AGOSTO", "OCTUBRE", "NOVIEMBRE"],
           "min_points": 2
         }
       ]
@@ -42,10 +42,9 @@
   "branding": {
     "left_image": "logo_php.png",
     "right_image": "pullinque_php.png",
+    "_comment_center_header": "Solo el NOMBRE del informe. Las líneas de asignatura/curso y mes/año las construye simce/crear_informe.py con los params reales de la corrida (branding.lineas_encabezado_prueba). No agregar literales tipo 'Mes Año': se imprimen tal cual en todas las páginas.",
     "center_header": [
-      "Informe Ensayo SIMCE",
-      "Asignatura - Curso",
-      "Mes Año"
+      "Informe Ensayo SIMCE"
     ],
     "left_footer": "",
     "show_page_number": true

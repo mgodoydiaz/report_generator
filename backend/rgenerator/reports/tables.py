@@ -14,6 +14,13 @@ import itertools
 import pandas as pd
 
 from ..core.pivot_engine import pivot, pivot_to_dataframe
+from .helpers import (
+    coalescer_nombre_estudiante,
+    columnas_nombre_estudiante,
+    contar_estudiantes,
+    formatear_serie,
+    ordenar_valores_temporales,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -25,6 +32,7 @@ def resumen_estadistico_basico(
     columna: str,
     formato: str = "percent",
     agrupar_por: str = "Curso",
+    columna_identidad: str | None = None,
     **parametros,
 ):
     """Resumen: Alumnos, Promedio, Mínimo, Máximo de `columna` por `agrupar_por`.
@@ -32,12 +40,21 @@ def resumen_estadistico_basico(
     Display name: Resumen estadístico básico
     Genera tabla con conteo + 3 estadísticas formateadas según `formato`.
 
+    `Alumnos` cuenta estudiantes DISTINTOS, no filas: con un df que trae
+    varias filas por estudiante (asignatura, habilidad, subprueba) el conteo
+    por filas salía inflado y contradecía el gráfico de la misma página
+    (P0-12 del QA 2026-07-30). Con una fila por estudiante — el caso de
+    Cálculo Veloz — el resultado es idéntico al anterior.
+
     Args:
         df_estudiantes: DataFrame de entrada.
         columna: columna numérica a resumir (ej "Rend", "SIMCE", "Logro").
         formato: "percent" (multiplica por 100 y agrega %) o "number"
             (entero sin decimales).
         agrupar_por: columna categórica (default "Curso").
+        columna_identidad: columna que identifica al estudiante. Si no se
+            pasa se autodetecta (RUT → Nombre_Norm → Nombre → Curso+N°
+            Lista); sin ninguna se cuentan filas.
         **parametros: filtros adicionales aplicados antes de agrupar
             (ej Asignatura="LENGUAJE").
 
@@ -53,20 +70,33 @@ def resumen_estadistico_basico(
             df_estudiantes = df_estudiantes[df_estudiantes[key] == value]
 
     resumen = df_estudiantes.groupby(agrupar_por).agg(
-        Alumnos=(columna, "size"),
         Promedio=(columna, "mean"),
         Minimo=(columna, "min"),
         Maximo=(columna, "max"),
     ).reset_index()
 
-    # Formato
-    for col in ["Promedio", "Minimo", "Maximo"]:
-        if formato == "percent":
-            resumen[col] = resumen[col].apply(lambda x: f"{x:.0%}")
-        else:
-            resumen[col] = resumen[col].apply(lambda x: f"{x:.0f}")
+    alumnos = contar_estudiantes(
+        df_estudiantes, agrupar_por=agrupar_por, columna_identidad=columna_identidad,
+    )
+    resumen.insert(
+        1, "Alumnos",
+        resumen[agrupar_por].map(alumnos).fillna(0).astype(int),
+    )
 
-    resumen = resumen.sort_values(by=agrupar_por)
+    # Formato — SIEMPRE después de decidir si hay valor, para no emitir
+    # "nan%" cuando el grupo no tiene datos numéricos (P0-3 / P0-4).
+    for col in ["Promedio", "Minimo", "Maximo"]:
+        resumen[col] = formatear_serie(
+            resumen[col], "percent" if formato == "percent" else "number"
+        )
+
+    # Orden del grupo: cronológico si es una dimensión temporal (P0-9),
+    # alfabético en cualquier otro caso.
+    orden = ordenar_valores_temporales(resumen[agrupar_por].tolist(), agrupar_por)
+    if orden != resumen[agrupar_por].tolist():
+        resumen = resumen.set_index(agrupar_por).reindex(orden).reset_index()
+    else:
+        resumen = resumen.sort_values(by=agrupar_por)
     return resumen
 
 
@@ -125,17 +155,25 @@ def tabla_logro_por_alumno(
         if key in df_estudiantes.columns:
             df_estudiantes = df_estudiantes[df_estudiantes[key] == value]
 
+    # Coalesce de identidad: la carga DIA 2026 dejó `Nombre` nulo con
+    # `Nombre_Norm` poblado (y la de 2025 al revés), así que la columna
+    # Estudiante salía `nan` en 60 de 67 páginas. Es mitigación de
+    # presentación — el problema de datos queda reportado (P0-3 del QA
+    # 2026-07-30).
+    for col_nombre in columnas_nombre_estudiante(df_estudiantes):
+        if col_nombre in columnas:
+            df_estudiantes = coalescer_nombre_estudiante(df_estudiantes, col_nombre)
+            break
+
     df = df_estudiantes[columnas].copy()
     df = df.sort_values(by=sort_by, ascending=False)
     df = df.reset_index(drop=True)
 
-    # Formato por columna
+    # Formato por columna — se decide primero si hay valor, para que un
+    # faltante salga como "—" y no como "nan%".
     for col, fmt in formatos.items():
         if col in df.columns:
-            if fmt == "percent":
-                df[col] = df[col].apply(lambda x: f"{x:.0%}")
-            elif fmt == "number":
-                df[col] = df[col].apply(lambda x: f"{x:.0f}")
+            df[col] = formatear_serie(df[col], fmt)
 
     df = df.rename(columns=columnas_renombrar)
     return df
@@ -193,12 +231,10 @@ def tabla_logro_por_pregunta(
     df = df.sort_values(by=sort_by, ascending=False)
     df = df.reset_index(drop=True)
 
+    # Formato tras comprobar que haya valor: "—" en vez de "nan%".
     for col, fmt in formatos.items():
         if col in df.columns:
-            if fmt == "percent":
-                df[col] = df[col].apply(lambda x: f"{x:.0%}")
-            elif fmt == "number":
-                df[col] = df[col].apply(lambda x: f"{x:.0f}")
+            df[col] = formatear_serie(df[col], fmt)
 
     df = df.rename(columns=columnas_renombrar)
     return df
@@ -245,10 +281,10 @@ def crear_tabla_estadistica_por_pregunta(
     # Agrupa por Pregunta sumando A,B,C,D,E
     resumen = df_preguntas.groupby("Pregunta")[columnas_alternativas].sum().reset_index()
 
-    # %A, %B, ...
+    # %A, %B, ... (una pregunta sin respuestas registradas da 0/0 → "—")
     for col in columnas_alternativas:
         valor = resumen[col] / resumen[columnas_alternativas].sum(axis=1)
-        resumen[f"%{col}"] = valor.apply(lambda x: f"{x:.0%}")
+        resumen[f"%{col}"] = formatear_serie(valor, "percent")
 
     # Reordenar: Pregunta, A, %A, B, %B, ...
     resumen = resumen[
@@ -374,9 +410,9 @@ TABLE_REGISTRY = {
     "resumen_estadistico_basico": {
         "fn": resumen_estadistico_basico,
         "display_name": "Resumen estadístico básico",
-        "description": "Tabla con Alumnos, Promedio, Mínimo y Máximo de una columna numérica agrupado por categoría.",
+        "description": "Tabla con Alumnos, Promedio, Mínimo y Máximo de una columna numérica agrupado por categoría. Alumnos = estudiantes distintos.",
         "required_params": ["columna", "agrupar_por"],
-        "optional_params": ["formato"],
+        "optional_params": ["formato", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
     },
     "tabla_logro_por_alumno": {

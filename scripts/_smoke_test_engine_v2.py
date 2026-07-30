@@ -143,7 +143,7 @@ def main():
                 "Matemáticas Nivel Medio",
                 "Mayo 2026",
             ],
-            "left_footer": "Miguel Godoy Díaz",
+            "left_footer": "Organización Demo",
             "show_page_number": True,
         }},
     )
@@ -167,7 +167,7 @@ def main():
                 "Lenguaje 2° Medio",
                 "Noviembre 2025",
             ],
-            "left_footer": "Miguel Godoy Díaz",
+            "left_footer": "Organización Demo",
             "show_page_number": True,
         }},
     )

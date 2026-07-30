@@ -316,8 +316,13 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
     y_field = _resolve_field(item.get('yField', ''), column_roles)
     group_field = _resolve_field(item.get('groupField', ''), column_roles)
     period_field = _resolve_field(item.get('periodField', '_mes'), column_roles)
+    # StackedCountByGroup acepta 'levelField' o su alias 'categoryField' (los
+    # layouts del Editor usan ambos). Ignorar categoryField hacía que dos
+    # secciones con categorías distintas (_logro vs _habilidad) rendericen el
+    # mismo gráfico (QA visual 2026-07-30, hallazgo P1-8 Fluidez Lectora).
     level_field = _resolve_field(item.get('levelField', '_logro') if comp != 'StackedCountByGroup'
-                                 else item.get('levelField') or '_' + (column_roles.get('nivel_de_logro', [{}])[0].get('column', '') or '').lower().replace(' ', '_'),
+                                 else item.get('levelField') or item.get('categoryField')
+                                 or '_' + (column_roles.get('nivel_de_logro', [{}])[0].get('column', '') or '').lower().replace(' ', '_'),
                                  column_roles)
 
     # figsize por componente: barras simples medium (8,4), grouped/stacked
@@ -340,12 +345,23 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             # bug previo era hacer fallback cuando lf == '_logro', cayendo
             # a '_categoria' que no existe en SIMCE/DIA.
             lf = level_field
-            if not lf:
+
+            def _lf_desde_rol():
                 role_entries = column_roles.get('nivel_de_logro') or []
                 if role_entries:
                     col = role_entries[0].get('column', '')
                     if col:
-                        lf = _to_field_name(col)
+                        return _to_field_name(col)
+                return None
+
+            if not lf:
+                lf = _lf_desde_rol()
+            elif records and not any(r.get(lf) is not None for r in records):
+                # El campo declarado no existe en los datos (ej layouts con el
+                # alias '_logro' en indicadores cuyo nivel vive en otra columna,
+                # como Fluidez Lectora → '_categoria'). Caer al rol en vez de
+                # dibujar un gráfico vacío.
+                lf = _lf_desde_rol() or lf
             if not lf:
                 lf = '_categoria'  # último fallback
 
@@ -383,9 +399,14 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
 
             groups = sorted({str(r.get(gf, '')) for r in records_filtered if r.get(gf) is not None},
                             key=_natural_sort_key)
-            if not level_order:
-                level_order = sorted({str(r.get(lf, '')) for r in records_filtered
-                                     if r.get(lf) is not None and str(r.get(lf, '')) != ''})
+            observed = {str(r.get(lf, '')) for r in records_filtered
+                        if r.get(lf) is not None and str(r.get(lf, '')) != ''}
+            # Los achievement_levels solo aplican cuando el campo contado ES el
+            # de niveles. Para otras categorías (ej Calidad Lectora vía
+            # categoryField) los valores no intersectan la config y el orden
+            # debe salir de los datos; los colores caen al fallback semáforo.
+            if not level_order or not (set(level_order) & observed):
+                level_order = sorted(observed)
 
             counts = {g: {l: 0 for l in level_order} for g in groups}
             for r in records_filtered:
@@ -933,6 +954,61 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         return {'columns': columns, 'rows': rows_out}
 
 
+def resolver_nombre_organizacion(db, org_id, default: str = '') -> str:
+    """Resuelve el nombre de la organización dueña de los datos.
+
+    Es el pie de página / autor por defecto de TODOS los informes: ninguno
+    debe salir con un nombre personal hardcodeado (equivalente en el motor v2:
+    `reports/dispatch_v2.aplicar_pie_organizacion`).
+
+    Devuelve `default` si no hay sesión, no hay `org_id`, la organización no
+    existe o su nombre está vacío — hay contextos (tests, pipelines sin DB)
+    donde el step corre sin `ctx.db`.
+    """
+    if db is None or org_id is None:
+        return default
+    try:
+        from backend.models import Organization
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+    except Exception:
+        return default
+    if org and org.name:
+        return org.name
+    return default
+
+
+def _etiquetas_de_filtros(db, filters: Optional[Dict[str, object]]) -> Dict[str, object]:
+    """{id_dimension: valor} → {nombre_dimension: valor}, en el mismo orden.
+
+    Los valores se devuelven CRUDOS (escalar o lista): quien los muestre
+    debe pasarlos por `reports.branding.formatear_filtros` para no imprimir
+    el `repr` de la lista (QA 2026-07-30, P1-2: "Mes: ['MAYO']").
+    """
+    if not filters:
+        return {}
+    try:
+        from backend.models import Dimension
+        dim_ids = []
+        for k in filters.keys():
+            try:
+                dim_ids.append(int(k))
+            except (ValueError, TypeError):
+                continue
+        dims = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids)).all()
+        nombre_por_id = {d.id_dimension: d.name for d in dims}
+        etiquetas: Dict[str, object] = {}
+        for k, v in filters.items():
+            try:
+                nombre = nombre_por_id.get(int(k), '')
+            except (ValueError, TypeError):
+                nombre = ''
+            if nombre and v not in (None, '', [], ()):
+                etiquetas[nombre] = v
+        return etiquetas
+    except Exception:
+        return {}
+
+
 def _load_branding(pdf_layout: dict, db, org_id: int) -> Optional[dict]:
     """Carga los assets de branding desde la DB y los convierte a base64."""
     import base64
@@ -967,13 +1043,18 @@ def _load_branding(pdf_layout: dict, db, org_id: int) -> Optional[dict]:
     if isinstance(center, str):
         center = [center]
 
+    # `pie_saneado` degrada a "" los pies legacy con nombre personal que
+    # arrastran los layouts persistidos en la DB; el template cae entonces al
+    # nombre de la organización (QA 2026-07-30, P1-1).
+    from ..reports.branding import pie_saneado
+
     return {
         'left_image_b64': left_b64,
         'left_image_ct': left_ct or 'image/png',
         'right_image_b64': right_b64,
         'right_image_ct': right_ct or 'image/png',
         'center_header': center,
-        'left_footer': brand_cfg.get('left_footer', ''),
+        'left_footer': pie_saneado(brand_cfg.get('left_footer', '')),
         'show_page_number': brand_cfg.get('show_page_number', True),
     }
 
@@ -1006,7 +1087,6 @@ def build_pdf_bytes(
     from datetime import date
     from jinja2 import Environment, FileSystemLoader
     from weasyprint import HTML as WeasyprintHTML
-    from backend.models import Organization
 
     if pdf_layout_override is not None:
         pdf_layout = pdf_layout_override
@@ -1027,6 +1107,16 @@ def build_pdf_bytes(
 
     raw_sections = pdf_layout.get('sections', [])
     records = _build_records(db, indicator, org_id, filters=filters)
+
+    # ── Guardia de dataset vacío ──
+    # Sin filas, todos los gráficos salen en blanco (ejes −0.04…0.04) y las
+    # tablas con solo encabezados: un PDF que parece válido y no dice nada.
+    # El router lo traduce a 400 accionable (QA 2026-07-30, P0-1).
+    if not records:
+        from ..reports.branding import formatear_filtros
+        from ..reports.errores import DatosInsuficientes, mensaje_sin_datos
+        etiquetas = _etiquetas_de_filtros(db, filters)
+        raise DatosInsuficientes(mensaje_sin_datos(formatear_filtros(etiquetas)))
 
     # ── Auto-filtrar al último periodo si layout es modo "evaluacion" ──
     # Cuando el pdf_layout declara `"mode": "evaluacion"` y el usuario NO
@@ -1090,32 +1180,15 @@ def build_pdf_bytes(
                         # y _table_section.)
 
     # Resolver nombre de la organización
-    org = db.query(Organization).filter(Organization.id == org_id).first()
-    org_name = org.name if org else str(org_id)
+    org_name = resolver_nombre_organizacion(db, org_id, default=str(org_id))
 
     # Cargar branding (logos + header)
     branding = _load_branding(pdf_layout, db, org_id)
 
     # ── Construir etiqueta de filtros aplicados (para enriquecer el cover) ──
-    # Mapea {id_dimension: valor} → "Curso 2°A · Mes Octubre · Año 2025".
-    filters_label = ''
-    if filters:
-        try:
-            from backend.models import Dimension
-            dim_ids = [int(k) for k in filters.keys()]
-            dims = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids)).all()
-            dim_name_by_id = {d.id_dimension: d.name for d in dims}
-            parts = []
-            for k, v in filters.items():
-                try:
-                    name = dim_name_by_id.get(int(k), '')
-                except (ValueError, TypeError):
-                    name = ''
-                if name and v:
-                    parts.append(f'{name}: {v}')
-            filters_label = ' · '.join(parts)
-        except Exception:
-            filters_label = ''
+    # {id_dimension: valor} → "Curso: 2°A · Mes: MAYO · Año: 2025".
+    from ..reports.branding import formatear_filtros
+    filters_label = formatear_filtros(_etiquetas_de_filtros(db, filters))
 
     # Si el layout declara `title` (sin sección cover explícita), inyectar
     # un encabezado minimalista al inicio del documento — al estilo LaTeX:
@@ -1247,6 +1320,11 @@ class RenderHtmlReport(Step):
         - ctx.aux_dir con tablas .xlsx e imágenes .png ya generadas (por
           GenerateGraphics + GenerateTables o pre-existentes).
 
+    Opcional:
+        - ctx.db + ctx.org_id: si el esquema no define `leftfooter` /
+          `theauthor`, se rellenan con el nombre de la organización. Sin
+          sesión de DB quedan vacíos (nunca un nombre personal).
+
     Produce:
         - ctx.outputs['report_pdf']: Path al PDF generado.
     """
@@ -1298,8 +1376,22 @@ class RenderHtmlReport(Step):
         if "evaluacion" not in variables and getattr(ctx, "evaluation", None):
             variables["evaluacion"] = ctx.evaluation
 
-        # 3. Branding (logos en header)
+        # 3. Branding (logos en header) + pie/autor por defecto
         branding = self._build_branding(variables, aux_dir, base_dir)
+
+        # El pie izquierdo y el autor identifican a la organización dueña de
+        # los datos, no a una persona. Los esquemas quedaron con la cadena
+        # vacía; el nombre se resuelve acá en runtime contra la DB. Si el
+        # esquema sí trae un valor explícito, ese gana — salvo que sea uno de
+        # los pies legacy con nombre personal (`branding.LEFT_FOOTER_DENYLIST`),
+        # que pueden venir de un spec guardado en la DB (QA 2026-07-30, P1-1).
+        from ..reports.branding import pie_saneado
+
+        org_name = resolver_nombre_organizacion(
+            getattr(ctx, "db", None), getattr(ctx, "org_id", None)
+        )
+        leftfooter = pie_saneado(variables.get("leftfooter")) or org_name
+        theauthor = pie_saneado(variables.get("theauthor")) or org_name
 
         # 4. Renderizar secciones (delega tablas e imágenes a report_html_tools)
         secciones_fijas = [
@@ -1321,7 +1413,8 @@ class RenderHtmlReport(Step):
             centerheaderone=variables.get("centerheaderone", ""),
             centerheadertwo=variables.get("centerheadertwo", ""),
             centerheaderthree=variables.get("centerheaderthree", ""),
-            leftfooter=variables.get("leftfooter", ""),
+            leftfooter=leftfooter,
+            theauthor=theauthor,
             branding=branding,
             secciones_fijas=secciones_fijas,
             secciones_dinamicas=secciones_dinamicas,

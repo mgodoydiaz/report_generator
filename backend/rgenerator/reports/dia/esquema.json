@@ -44,10 +44,9 @@
   "branding": {
     "left_image": "logo_php.png",
     "right_image": "pullinque_php.png",
+    "_comment_center_header": "Solo el NOMBRE del informe (sin el hito: el informe sirve a los tres). Las líneas de asignatura/nivel y hito/año las construye dia/crear_informe.py con los params reales de la corrida.",
     "center_header": [
-      "Informe DIA Diagnóstico",
-      "Asignatura Nivel Medio",
-      "Mes Año"
+      "Informe DIA"
     ],
     "left_footer": "",
     "show_page_number": true
