@@ -216,16 +216,28 @@ Esto cierra de una vez el defecto compartido SIMCE + Panguipulli (P1.8 de la com
 ### 3.3 Riesgo persistente
 
 ```python
-def tabla_riesgo_persistente(
+def riesgo_persistente(
     df: pd.DataFrame, *,
     columna_nivel: str,            # "Logro" (SIMCE), "Nivel" (DIA/IDEL), "Nivel_Logro" (Panguipulli)
     nivel_objetivo: str,           # "Insuficiente" / "Crítico" / "INICIAL"
     columna_temporal: str,         # "Mes" / "Hito" / "Versión"
     n_evaluaciones: int = 2,
     columnas_puntaje: list[str] | None = None,   # ["Rend", "Simce"] → una columna por evaluación
-) -> pd.DataFrame
+    exigir_ultima_evaluacion: bool = True,       # criterio calibrado (ver abajo)
+    incluir_columna_nivel: bool = False,
+    incluir_columna_evaluaciones: bool | None = None,   # None = auto
+) -> RiesgoPersistente        # .vigentes · .sin_evaluacion_reciente
+                              # .ultima_evaluacion · .descripcion_ultima_evaluacion
 ```
-**Semántica**: identidad del estudiante vía `helpers.serie_identidad_estudiante` (existe: RUT → Nombre_Norm → Nombre → Curso+N°Lista — cubre el RUT vacío de Cálculo Veloz). Se ordenan las evaluaciones con `clave_orden_temporal`, se toman las `n_evaluaciones` últimas **consecutivas presentes para ese estudiante**, y se incluye al estudiante si `columna_nivel == nivel_objetivo` en todas. Salida: `Curso · Estudiante · <puntaje eval n-1> · <puntaje eval n> · Nivel`, ordenada por curso (orden natural) y puntaje ascendente. Sin segunda evaluación ⇒ DataFrame vacío ⇒ la sección se omite igual que la evolución.
+`tabla_riesgo_persistente(df, **kwargs)` es azúcar: devuelve solo `.vigentes`.
+
+**Semántica**: identidad del estudiante vía `helpers.serie_identidad_estudiante` (existe: RUT → Nombre_Norm → Nombre → Curso+N°Lista — cubre el RUT vacío de Cálculo Veloz). Se ordenan las evaluaciones con `clave_orden_temporal`, se toman las `n_evaluaciones` últimas **consecutivas presentes para ese estudiante**, y se incluye al estudiante si `columna_nivel == nivel_objetivo` en todas. Salida ordenada por curso (orden natural) y puntaje ascendente. Sin segunda evaluación ⇒ tablas vacías ⇒ la sección se omite igual que la evolución.
+
+> **Criterio calibrado** (decisión del dueño tras el QA del piloto, 2026-07-30): ese par debe además **incluir la última evaluación del período** — la más reciente presente en los datos ya filtrados. Sin la exigencia, el 24% de las filas del anual 2025 eran alumnos cuyo último par fue meses antes y que ya no rinden, mezclados sin marca con los que están en riesgo hoy. Los que quedan fuera **no se pierden**: van a `.sin_evaluacion_reciente`, una segunda tabla con las mismas columnas más `Última rendida` (hasta cuándo hay datos), que se **omite entera y sin nota** cuando está vacía. `exigir_ultima_evaluacion=False` vuelve al criterio inicial.
+>
+> Presentación de la tabla vigente: **sin la columna `Nivel`** (era constante — es el criterio de entrada, no un dato) y sin `Evaluaciones` (con el criterio calibrado el par es siempre el mismo). En su lugar la sección imprime bajo el título la línea **"Última evaluación considerada: NOVIEMBRE 2025 (prueba 5). Entran los estudiantes en nivel Insuficiente en esa evaluación y en la inmediatamente anterior."**, con la descripción que produce `periodos.describir_ultima_evaluacion` — la misma fuente que el encabezado. Con esas columnas la tabla cabe a **8 pt** (`tabla-compacta-1`) en vez de los 6 pt que reportó el QA.
+>
+> Las secciones las arma `secciones_riesgo_persistente(riesgo, …)`: `heading` (con `break_before`) + `nota` de la última evaluación + `table`, y a continuación el mismo trío para la tabla secundaria cuando tiene filas.
 
 > **Cómo se materializa la auto-omisión** (mismo criterio que §3.2, aceptado por el orquestador tras el QA del piloto, 2026-07-30): con el DataFrame vacío el módulo imprime una **nota explicativa en gris** en lugar de la tabla ("El riesgo persistente compara el nivel de cada estudiante en dos evaluaciones consecutivas. El período seleccionado no tiene dos evaluaciones consecutivas con datos…"). Mejor UX que un hueco silencioso, sin dibujar una tabla vacía.
 

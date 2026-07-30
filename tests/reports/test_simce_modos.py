@@ -112,12 +112,21 @@ class TestEstructuraDeSecciones:
         assert dinamicas == {}
 
     def test_anual_agrega_riesgo_persistente_al_final(self):
-        dfs = _dataframes()
-        dfs["riesgo_persistente"] = pd.DataFrame([{"Curso": "II A", "Estudiante": "X"}])
-        fijas, _ = simce._secciones("anual", dfs)
-        assert fijas[-1]["titulo"] == "Estudiantes en Riesgo Persistente"
-        assert fijas[-1]["tipo"] == "table"
+        """Título + línea de la última evaluación considerada + tabla."""
+        riesgo = sec.RiesgoPersistente(
+            vigentes=pd.DataFrame([{"Curso": "II A", "Estudiante": "X"}]),
+            descripcion_ultima_evaluacion="MAYO 2026 (prueba 2)",
+        )
+        fijas, _ = simce._secciones("anual", _dataframes(), riesgo=riesgo)
+        assert [s["tipo"] for s in fijas[-3:]] == ["heading", "nota", "table"]
+        assert fijas[-3]["titulo"] == "Estudiantes en Riesgo Persistente"
+        assert fijas[-3]["break_before"] is True
+        assert fijas[-2]["texto"].startswith(
+            "Última evaluación considerada: MAYO 2026 (prueba 2)."
+        )
+        assert "Insuficiente" in fijas[-2]["texto"]
         assert fijas[-1]["df_input"] == "riesgo_persistente"
+        assert fijas[-1]["fn"] == "tabla_desde_dataframe"
 
     def test_personalizado_es_igual_a_anual(self):
         dfs = _dataframes()
@@ -129,6 +138,7 @@ class TestEstructuraDeSecciones:
     def test_todas_las_fn_existen_en_los_registries(self):
         dfs = _dataframes()
         dfs["riesgo_persistente"] = pd.DataFrame([{"Curso": "II A"}])
+        dfs["riesgo_sin_evaluacion_reciente"] = pd.DataFrame([{"Curso": "II B"}])
         for modo in simce.MODOS:
             fijas, dinamicas = simce._secciones(modo, dfs)
             secciones = list(fijas) + list(dinamicas.get("secciones", []))
@@ -142,6 +152,7 @@ class TestEstructuraDeSecciones:
         dfs = _dataframes()
         dfs["resumen_logro_comparado"] = pd.DataFrame()
         dfs["riesgo_persistente"] = pd.DataFrame([{"Curso": "II A"}])
+        dfs["riesgo_sin_evaluacion_reciente"] = pd.DataFrame([{"Curso": "II B"}])
         for modo in simce.MODOS:
             fijas, dinamicas = simce._secciones(modo, dfs)
             secciones = list(fijas) + list(dinamicas.get("secciones", []))
@@ -168,8 +179,9 @@ class TestEstructuraDeSecciones:
             titulos = _titulos(simce._secciones(modo, dfs)[0])
             assert "Estudiantes en Riesgo Persistente" not in titulos
         for modo in ("anual", "personalizado"):
-            titulos = _titulos(simce._secciones(modo, dfs)[0])
-            assert titulos[-1] == "Estudiantes en Riesgo Persistente"
+            fijas = simce._secciones(modo, dfs)[0]
+            assert fijas[-2]["titulo"] == "Estudiantes en Riesgo Persistente"
+            assert fijas[-1]["df_input"] == "riesgo_persistente"
 
     def test_riesgo_persistente_vacio_degrada_a_nota(self):
         """Sin 2 evaluaciones consecutivas se explica, no se deja hueco."""
@@ -178,6 +190,35 @@ class TestEstructuraDeSecciones:
         ultima = simce._secciones("anual", dfs)[0][-1]
         assert ultima["tipo"] == "nota"
         assert "dos evaluaciones consecutivas" in ultima["texto"]
+
+    def test_tabla_secundaria_se_omite_cuando_esta_vacia(self):
+        """Decisión del dueño: vacía se omite entera, sin nota."""
+        riesgo = sec.RiesgoPersistente(
+            vigentes=pd.DataFrame([{"Curso": "II A", "Estudiante": "X"}]),
+            descripcion_ultima_evaluacion="MAYO 2026",
+        )
+        fijas, _ = simce._secciones("anual", _dataframes(), riesgo=riesgo)
+        assert not [
+            s for s in fijas if s.get("df_input") == "riesgo_sin_evaluacion_reciente"
+        ]
+        assert "sin Registro" not in " ".join(str(t) for t in _titulos(fijas))
+
+    def test_tabla_secundaria_va_a_continuacion_de_la_principal(self):
+        riesgo = sec.RiesgoPersistente(
+            vigentes=pd.DataFrame([{"Curso": "II A", "Estudiante": "X"}]),
+            sin_evaluacion_reciente=pd.DataFrame([{"Curso": "II B", "Estudiante": "Y"}]),
+            descripcion_ultima_evaluacion="MAYO 2026 (prueba 2)",
+        )
+        fijas, _ = simce._secciones("anual", _dataframes(), riesgo=riesgo)
+        assert [s["tipo"] for s in fijas[-6:]] == [
+            "heading", "nota", "table", "heading", "nota", "table",
+        ]
+        assert fijas[-3]["titulo"] == (
+            "Estudiantes en Riesgo sin Registro en la Última Evaluación"
+        )
+        # Sin salto de página propio: sigue a la principal en la misma hoja.
+        assert not fijas[-3].get("break_before")
+        assert fijas[-1]["df_input"] == "riesgo_sin_evaluacion_reciente"
 
 
 @pytest.mark.unit
@@ -307,29 +348,9 @@ class TestRiesgoPersistente:
              "Mes": "MAYO", "Logro": "Insuficiente", "Rend": 0.20, "Simce": 80},
         ])
 
-    def test_solo_los_persistentes(self):
-        tabla = sec.tabla_riesgo_persistente(
-            self._df(), columna_nivel="Logro", nivel_objetivo="Insuficiente",
-            columna_temporal="Mes", columnas_puntaje=["Rend", "Simce"],
-        )
-        assert list(tabla["Estudiante"]) == ["Persistente"]
-        assert tabla.loc[0, "Nivel"] == "Insuficiente"
-
-    def test_columnas_posicionales_no_una_por_mes(self):
-        """Con encabezados por mes la tabla explotaba a 11 columnas casi vacías."""
-        tabla = sec.tabla_riesgo_persistente(
-            self._df(), columna_nivel="Logro", nivel_objetivo="Insuficiente",
-            columna_temporal="Mes", columnas_puntaje=["Rend", "Simce"],
-        )
-        assert list(tabla.columns) == [
-            "Curso", "Estudiante", "Evaluaciones",
-            "Rend previo", "Rend actual", "Simce previo", "Simce actual",
-            "Nivel",
-        ]
-        assert tabla.loc[0, "Evaluaciones"] == "ABRIL → MAYO"
-
-    def test_alumnos_con_pares_distintos_comparten_columnas(self):
-        df = pd.concat([
+    def _df_pares_mixtos(self):
+        """El caso del QA: un par vigente y un par antiguo en el mismo df."""
+        return pd.concat([
             self._df(),
             pd.DataFrame([
                 {"Curso": "II C", "RUT": "7-7", "Nombre": "Otro Par",
@@ -339,27 +360,113 @@ class TestRiesgoPersistente:
                  "Mes": "NOVIEMBRE", "Logro": "Insuficiente", "Rend": 0.28,
                  "Simce": 110},
             ]),
-        ])
+        ], ignore_index=True)
+
+    def test_solo_los_persistentes(self):
         tabla = sec.tabla_riesgo_persistente(
+            self._df(), columna_nivel="Logro", nivel_objetivo="Insuficiente",
+            columna_temporal="Mes", columnas_puntaje=["Rend", "Simce"],
+        )
+        assert list(tabla["Estudiante"]) == ["Persistente"]
+
+    def test_sin_columna_nivel(self):
+        """QA P2-2: era 100% constante — es el criterio, no un dato."""
+        tabla = sec.tabla_riesgo_persistente(
+            self._df(), columna_nivel="Logro", nivel_objetivo="Insuficiente",
+            columna_temporal="Mes", columnas_puntaje=["Rend"],
+        )
+        assert "Nivel" not in tabla.columns
+
+    def test_columnas_posicionales_no_una_por_mes(self):
+        """Con encabezados por mes la tabla explotaba a 11 columnas casi vacías."""
+        tabla = sec.tabla_riesgo_persistente(
+            self._df(), columna_nivel="Logro", nivel_objetivo="Insuficiente",
+            columna_temporal="Mes", columnas_puntaje=["Rend", "Simce"],
+        )
+        # `Evaluaciones` se omite sola: con el criterio calibrado el par es
+        # siempre el mismo y lo dice la línea de la última evaluación.
+        assert list(tabla.columns) == [
+            "Curso", "Estudiante",
+            "Rend previo", "Rend actual", "Simce previo", "Simce actual",
+        ]
+
+    def test_la_columna_evaluaciones_vuelve_cuando_varia(self):
+        riesgo = sec.riesgo_persistente(
+            self._df_pares_mixtos(), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend"], exigir_ultima_evaluacion=False,
+        )
+        assert "Evaluaciones" in riesgo.vigentes.columns
+        assert set(riesgo.vigentes["Evaluaciones"]) == {
+            "ABRIL → MAYO", "OCTUBRE → NOVIEMBRE",
+        }
+
+    # ── Criterio calibrado (decisión del dueño, 2026-07-30) ──────────────
+
+    def test_el_par_debe_incluir_la_ultima_evaluacion(self):
+        """Los pares antiguos salen de la principal y van a la secundaria."""
+        riesgo = sec.riesgo_persistente(
+            self._df_pares_mixtos(), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend"],
+        )
+        assert riesgo.ultima_evaluacion == "NOVIEMBRE"
+        assert list(riesgo.vigentes["Estudiante"]) == ["Otro Par"]
+        assert list(riesgo.sin_evaluacion_reciente["Estudiante"]) == ["Persistente"]
+
+    def test_la_secundaria_dice_hasta_cuando_hay_datos(self):
+        riesgo = sec.riesgo_persistente(
+            self._df_pares_mixtos(), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend"],
+        )
+        secundaria = riesgo.sin_evaluacion_reciente
+        # Mismas columnas que la principal + hasta cuándo hay datos. El par
+        # completo no se repite: queda determinado por la última rendida.
+        assert list(secundaria.columns) == [
+            "Curso", "Estudiante", "Rend previo", "Rend actual",
+            "Última rendida",
+        ]
+        assert secundaria.loc[0, "Última rendida"] == "MAYO"
+
+    def test_evaluaciones_forzada_convive_con_la_ultima_rendida(self):
+        riesgo = sec.riesgo_persistente(
+            self._df_pares_mixtos(), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend"], incluir_columna_evaluaciones=True,
+        )
+        assert riesgo.sin_evaluacion_reciente.loc[0, "Evaluaciones"] == "ABRIL → MAYO"
+
+    def test_exigir_ultima_evaluacion_false_vuelve_al_criterio_inicial(self):
+        riesgo = sec.riesgo_persistente(
+            self._df_pares_mixtos(), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend"], exigir_ultima_evaluacion=False,
+        )
+        assert len(riesgo.vigentes) == 2
+        assert riesgo.sin_evaluacion_reciente.empty
+
+    def test_describe_la_ultima_evaluacion_como_el_encabezado(self):
+        df = self._df_pares_mixtos()
+        df["Año"] = "2025"
+        df["N Prueba"] = df["Mes"].map(
+            {"ABRIL": 1, "MAYO": 2, "OCTUBRE": 4, "NOVIEMBRE": 5}
+        )
+        riesgo = sec.riesgo_persistente(
             df, columna_nivel="Logro", nivel_objetivo="Insuficiente",
             columna_temporal="Mes", columnas_puntaje=["Rend"],
         )
-        assert len(tabla) == 2
-        assert set(tabla["Evaluaciones"]) == {"ABRIL → MAYO", "OCTUBRE → NOVIEMBRE"}
-        assert list(tabla.columns) == [
-            "Curso", "Estudiante", "Evaluaciones", "Rend previo", "Rend actual",
-            "Nivel",
-        ]
-        assert not tabla["Rend previo"].isna().any()
+        assert riesgo.descripcion_ultima_evaluacion == "NOVIEMBRE 2025 (prueba 5)"
 
     def test_sin_segunda_evaluacion_devuelve_vacio(self):
         df = self._df()
         df = df[df["Mes"] == "MAYO"]
-        tabla = sec.tabla_riesgo_persistente(
+        riesgo = sec.riesgo_persistente(
             df, columna_nivel="Logro", nivel_objetivo="Insuficiente",
             columna_temporal="Mes", columnas_puntaje=["Rend"],
         )
-        assert tabla.empty
+        assert riesgo.vigentes.empty
+        assert riesgo.sin_evaluacion_reciente.empty
 
     def test_evaluaciones_no_consecutivas_no_cuentan(self):
         df = pd.DataFrame([
@@ -370,11 +477,12 @@ class TestRiesgoPersistente:
             {"Curso": "II A", "RUT": "1-1", "Nombre": "Saltea", "Mes": "AGOSTO",
              "Logro": "Insuficiente", "Rend": 0.3},
         ])
-        tabla = sec.tabla_riesgo_persistente(
+        riesgo = sec.riesgo_persistente(
             df, columna_nivel="Logro", nivel_objetivo="Insuficiente",
             columna_temporal="Mes", columnas_puntaje=["Rend"],
         )
-        assert tabla.empty
+        assert riesgo.vigentes.empty
+        assert riesgo.sin_evaluacion_reciente.empty
 
     def test_formatos_aplicados(self):
         tabla = sec.tabla_riesgo_persistente(
@@ -384,6 +492,41 @@ class TestRiesgoPersistente:
         )
         assert tabla.loc[0, "Rend previo"] == "30%"
         assert tabla.loc[0, "Simce previo"] == "120"
+
+    def test_la_tabla_cabe_a_8pt(self):
+        """Decisión 4: sin `Nivel` la tabla no debe caer al escalón de 6 pt."""
+        from backend.rgenerator.reports.helpers import escalon_tabla
+        filas = []
+        for i in range(40):
+            for mes, logro in (("OCTUBRE", "Insuficiente"), ("NOVIEMBRE", "Insuficiente")):
+                filas.append({
+                    "Curso": "II A", "RUT": f"{i}-{i}",
+                    "Nombre": "MARIA FERNANDA GONZÁLEZ ACUÑA",
+                    "Mes": mes, "Logro": logro, "Rend": 0.30, "Simce": 120,
+                })
+        tabla = sec.tabla_riesgo_persistente(
+            pd.DataFrame(filas), columna_nivel="Logro",
+            nivel_objetivo="Insuficiente", columna_temporal="Mes",
+            columnas_puntaje=["Rend", "Simce"],
+            formatos={"Rend": "percent", "Simce": "number"},
+        )
+        assert escalon_tabla(tabla) in (None, "tabla-compacta-1")
+
+
+@pytest.mark.unit
+class TestTextoUltimaEvaluacion:
+    def test_declara_la_evaluacion_y_el_criterio(self):
+        texto = sec.texto_ultima_evaluacion(
+            "NOVIEMBRE 2025 (prueba 5)", nivel_objetivo="Insuficiente",
+        )
+        assert texto.startswith(
+            "Última evaluación considerada: NOVIEMBRE 2025 (prueba 5)."
+        )
+        assert "nivel Insuficiente" in texto
+        assert "inmediatamente anterior" in texto
+
+    def test_sin_descripcion_no_inventa_linea(self):
+        assert sec.texto_ultima_evaluacion("", nivel_objetivo="Insuficiente") == ""
 
 
 @pytest.mark.unit
@@ -455,9 +598,13 @@ class TestGenerarPorModo:
         )
         riesgo = args.args[1]["riesgo_persistente"]
         assert list(riesgo["Estudiante"]) == ["Alumno Uno"]
-        assert args.kwargs["esquema"]["secciones_fijas"][-1]["titulo"] == (
-            "Estudiantes en Riesgo Persistente"
-        )
+        assert "Nivel" not in riesgo.columns
+        # Todos rindieron la última evaluación ⇒ la secundaria no se imprime.
+        assert args.args[1]["riesgo_sin_evaluacion_reciente"].empty
+        fijas = args.kwargs["esquema"]["secciones_fijas"]
+        assert fijas[-3]["titulo"] == "Estudiantes en Riesgo Persistente"
+        assert fijas[-2]["texto"].startswith("Última evaluación considerada: MAYO")
+        assert fijas[-1]["df_input"] == "riesgo_persistente"
 
     def test_anual_compara_con_el_anio_anterior(
         self, db_session, simce_indicator_historico

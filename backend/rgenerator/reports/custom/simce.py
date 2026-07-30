@@ -78,6 +78,9 @@ TITULO = "Informe Ensayo SIMCE"
 NIVELES_SIMCE = ["Adecuado", "Elemental", "Insuficiente"]
 NIVEL_RIESGO = "Insuficiente"
 
+#: Evaluaciones consecutivas que exige el riesgo persistente.
+N_EVALUACIONES_RIESGO = 2
+
 _ESQUEMA_PATH = Path(__file__).resolve().parent.parent / "simce" / "esquema.json"
 
 _NOTA_SIN_EVOLUCION = (
@@ -88,9 +91,10 @@ _NOTA_SIN_EVOLUCION = (
 )
 _NOTA_SIN_RIESGO_PERSISTENTE = (
     "El riesgo persistente compara el nivel de cada estudiante en dos "
-    "evaluaciones consecutivas. El período seleccionado no tiene dos "
-    "evaluaciones consecutivas con datos, o ningún estudiante quedó en "
-    "nivel Insuficiente en ambas."
+    "evaluaciones consecutivas, la última de ellas la más reciente del "
+    "período. El período seleccionado no tiene dos evaluaciones "
+    "consecutivas con datos, o ningún estudiante quedó en nivel "
+    "Insuficiente en ambas."
 )
 
 
@@ -678,12 +682,17 @@ def _secciones(
     columna_temporal: Optional[str] = None,
     etiqueta_actual: str = "",
     etiqueta_previa: str = "",
+    riesgo: Optional[sec.RiesgoPersistente] = None,
 ) -> tuple[list[dict], dict]:
     """(secciones_fijas, secciones_dinamicas) del modo pedido.
 
     Es la función que testean los smokes de `tests/reports/test_simce_modos.py`:
     permite verificar títulos, orden, `fn` y `df_input` sin renderizar PDF
     (WeasyPrint no está en todos los hosts).
+
+    `riesgo` es el resultado de `_secciones.riesgo_persistente`. Sin él se
+    reconstruye desde las tablas ya publicadas en `dataframes` (queda sin
+    la descripción de la última evaluación, que no es un DataFrame).
     """
     if modo not in MODOS:
         raise ValueError(
@@ -720,24 +729,26 @@ def _secciones(
     fijas += _secciones_evolucion(dataframes, columna_temporal, niveles, colores)
 
     if modo in ("anual", "personalizado"):
-        riesgo = dataframes.get("riesgo_persistente")
-        if riesgo is not None and len(riesgo) > 0:
-            fijas.append({
-                "tipo": "table",
-                "titulo": "Estudiantes en Riesgo Persistente",
-                "fn": "tabla_desde_dataframe",
-                "df_input": "riesgo_persistente",
-                "break_before": True,
-                "params": {},
-            })
-        else:
-            fijas.append({
-                "tipo": "nota",
-                "titulo": "Estudiantes en Riesgo Persistente",
-                "texto": _NOTA_SIN_RIESGO_PERSISTENTE,
-            })
+        fijas += sec.secciones_riesgo_persistente(
+            riesgo if riesgo is not None else _riesgo_desde_dataframes(dataframes),
+            texto_sin_datos=_NOTA_SIN_RIESGO_PERSISTENTE,
+            nivel_objetivo=NIVEL_RIESGO,
+            n_evaluaciones=N_EVALUACIONES_RIESGO,
+        )
 
     return fijas, {}
+
+
+def _riesgo_desde_dataframes(dataframes: dict) -> sec.RiesgoPersistente:
+    """Reconstruye el resultado del riesgo desde las tablas publicadas."""
+    def _df(key: str) -> pd.DataFrame:
+        valor = dataframes.get(key)
+        return valor if valor is not None else pd.DataFrame()
+
+    return sec.RiesgoPersistente(
+        vigentes=_df("riesgo_persistente"),
+        sin_evaluacion_reciente=_df("riesgo_sin_evaluacion_reciente"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -789,16 +800,19 @@ def _generar_por_modo(
             ),
             formato="percent",
         )
+    riesgo: Optional[sec.RiesgoPersistente] = None
     if modo in ("anual", "personalizado"):
-        dataframes["riesgo_persistente"] = sec.tabla_riesgo_persistente(
+        riesgo = sec.riesgo_persistente(
             dataframes["estudiantes_periodo"],
             columna_nivel="Logro",
             nivel_objetivo=NIVEL_RIESGO,
             columna_temporal=columna_temporal or "Mes",
-            n_evaluaciones=2,
+            n_evaluaciones=N_EVALUACIONES_RIESGO,
             columnas_puntaje=["Rend", "Simce"],
             formatos={"Rend": "percent", "Simce": "number"},
         )
+        dataframes["riesgo_persistente"] = riesgo.vigentes
+        dataframes["riesgo_sin_evaluacion_reciente"] = riesgo.sin_evaluacion_reciente
 
     fijas, dinamicas = _secciones(
         modo, dataframes,
@@ -806,6 +820,7 @@ def _generar_por_modo(
         columna_temporal=columna_temporal,
         etiqueta_actual=preparado["etiqueta_actual"],
         etiqueta_previa=preparado["etiqueta_previa"],
+        riesgo=riesgo,
     )
 
     df_principal = (

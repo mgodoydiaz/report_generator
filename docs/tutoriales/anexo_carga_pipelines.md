@@ -1,15 +1,15 @@
 # Anexo — Carga de datos por evaluación
 
-Este anexo es el detalle del **Paso 1** de la [guía rápida](./guia_rapida_usuario.md), que
-explica el flujo general: entrar a **Ejecución**, apretar **Ejecutar Proceso** y subir los
-archivos cuando la ventana se detenga. Acá va lo específico de cada evaluación: qué
-archivos pide, con qué nombre aparecen en pantalla y qué no hay que tocarles. Busca el
-capítulo de la evaluación que vas a cargar y sigue solo ese.
+El flujo general de carga está en la [guía rápida](./guia_rapida_usuario.md#2-cargar-los-datos).
+Acá va lo específico de cada evaluación: qué archivos pide, con qué nombre aparecen en
+pantalla y qué no hay que tocarles. Busca el capítulo de la evaluación que vas a cargar y
+sigue solo ese.
 
 > **Evaluaciones que todavía no se cargan desde la plataforma.** IDEL, Cálculo Veloz y
 > Fluidez Lectora sí tienen sus resultados y sus informes en el sistema, pero esos datos
 > los cargó el equipo técnico directamente. Aún no existe un proceso de carga en la
-> pantalla de Ejecución para ellas; se irán agregando más adelante.
+> pantalla de Ejecución para ellas: van por el
+> [camino 2.2 de la guía rápida](./guia_rapida_usuario.md#22-la-evaluación-no-tiene-proceso-configurado).
 
 ---
 
@@ -178,6 +178,5 @@ tres veces seguidas y en cada pausa va **un solo archivo**, el del mes que está
 
 ---
 
-Termines la carga que termines, entra a **Valores** y revisa que el total de filas y los
-cursos calcen con lo que subiste, como explica el
-[Paso 2 de la guía rápida](./guia_rapida_usuario.md#paso-2--revisar-los-datos-en-valores).
+Termines la carga que termines, revisa lo que quedó cargado siguiendo
+[la guía rápida](./guia_rapida_usuario.md#revisa-lo-que-quedó-cargado).

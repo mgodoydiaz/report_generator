@@ -19,8 +19,10 @@ Contenido (contrato del motor único, §3 / ítem N6):
     puntos_temporales          cuántos puntos distintos hay en el eje tiempo
     seccion_evolucion          envuelve una sección de evolución y la omite
                                cuando hay un único punto temporal
-    tabla_riesgo_persistente   alumnos en el peor nivel en N evaluaciones
-                               consecutivas
+    riesgo_persistente         cálculo completo: tabla vigente + tabla de
+                               los que no rindieron la última evaluación
+    tabla_riesgo_persistente   azúcar: solo la tabla vigente
+    secciones_riesgo_persistente  las secciones que imprimen ambas tablas
     secciones_por_curso        bloque `secciones_dinamicas` del esquema
 
 **Salvedad vinculante del dueño (OK de fase 2, 2026-07-30)**: NO hay
@@ -34,6 +36,7 @@ NO una lista de secciones con `page_break`.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping, Optional, Sequence
 
 import pandas as pd
@@ -57,7 +60,14 @@ __all__ = [
     "seccion_resumen_comparado",
     "puntos_temporales",
     "seccion_evolucion",
+    "RiesgoPersistente",
+    "riesgo_persistente",
     "tabla_riesgo_persistente",
+    "texto_ultima_evaluacion",
+    "secciones_riesgo_persistente",
+    "TITULO_RIESGO_PERSISTENTE",
+    "TITULO_RIESGO_SIN_EVALUACION_RECIENTE",
+    "COLUMNA_ULTIMA_RENDIDA",
     "secciones_por_curso",
 ]
 
@@ -307,7 +317,42 @@ def _etiquetas_posicionales(n: int) -> list[str]:
     return [f"#{i + 1}" for i in range(n)]
 
 
-def tabla_riesgo_persistente(
+#: Títulos por defecto de las dos tablas. Están acá y no en cada módulo
+#: para que DIA/IDEL/CV hereden la misma nomenclatura en la fase 4.
+TITULO_RIESGO_PERSISTENTE = "Estudiantes en Riesgo Persistente"
+TITULO_RIESGO_SIN_EVALUACION_RECIENTE = (
+    "Estudiantes en Riesgo sin Registro en la Última Evaluación"
+)
+
+#: Columna extra de la tabla secundaria: hasta cuándo hay datos del alumno.
+#: El encabezado es corto a propósito — la tabla principal ya usa el 93% del
+#: ancho útil a 8 pt, y un encabezado largo la manda dos escalones abajo.
+COLUMNA_ULTIMA_RENDIDA = "Última rendida"
+
+
+@dataclass(frozen=True)
+class RiesgoPersistente:
+    """Resultado completo del cálculo de riesgo persistente.
+
+    Attributes:
+        vigentes: alumnos cuyo par de evaluaciones **incluye la última
+            evaluación del período** — la lista de seguimiento de hoy.
+        sin_evaluacion_reciente: alumnos que cumplían el criterio en un par
+            anterior y no tienen registro en la última evaluación.
+        ultima_evaluacion: valor crudo de la última evaluación del período
+            ("NOVIEMBRE").
+        descripcion_ultima_evaluacion: su descripción legible, la misma que
+            produce `periodos` para el encabezado ("NOVIEMBRE 2025
+            (prueba 5)").
+    """
+
+    vigentes: pd.DataFrame = field(default_factory=pd.DataFrame)
+    sin_evaluacion_reciente: pd.DataFrame = field(default_factory=pd.DataFrame)
+    ultima_evaluacion: str = ""
+    descripcion_ultima_evaluacion: str = ""
+
+
+def riesgo_persistente(
     df: pd.DataFrame,
     *,
     columna_nivel: str,
@@ -318,14 +363,27 @@ def tabla_riesgo_persistente(
     columna_curso: str = "Curso",
     columna_nombre: Optional[str] = None,
     formatos: Optional[Mapping[str, str]] = None,
-) -> pd.DataFrame:
-    """Alumnos en el peor nivel en las N evaluaciones consecutivas finales.
+    exigir_ultima_evaluacion: bool = True,
+    incluir_columna_nivel: bool = False,
+    incluir_columna_evaluaciones: Optional[bool] = None,
+    columna_ultima_rendida: str = COLUMNA_ULTIMA_RENDIDA,
+    tipos: Optional[Mapping[str, Any]] = None,
+) -> RiesgoPersistente:
+    """Riesgo persistente calibrado: lista vigente + lista sin registro.
 
-    Criterio inicial acordado en el contrato (§3.3, calibrable en el
-    piloto): un estudiante entra si su `columna_nivel` es `nivel_objetivo`
-    en las `n_evaluaciones` últimas evaluaciones **consecutivas presentes
-    para él**. Un alumno que rindió una sola evaluación NO entra: no hay
-    persistencia que demostrar.
+    Criterio base (contrato §3.3): un estudiante entra si su
+    `columna_nivel` es `nivel_objetivo` en las `n_evaluaciones` últimas
+    evaluaciones **consecutivas presentes para él**. Un alumno que rindió
+    una sola evaluación NO entra: no hay persistencia que demostrar.
+
+    **Calibración del dueño (2026-07-30, tras el QA del piloto SIMCE)**: ese
+    par debe además **incluir la última evaluación del período** — la más
+    reciente presente en los datos ya filtrados. Sin esa exigencia, el 24%
+    de las filas del informe anual 2025 eran alumnos cuyo último par fue en
+    abril–octubre y que no rindieron en noviembre: mezclados con los que
+    están en riesgo *hoy*, sin ninguna marca, mandaban al jefe de UTP a
+    buscar alumnos que ya no rinden. Esos alumnos NO se pierden: salen en
+    `sin_evaluacion_reciente`, con la columna de hasta cuándo hay datos.
 
     La identidad sale de `helpers.serie_identidad_estudiante` (RUT →
     Nombre_Norm → Nombre → Curso+N° Lista), que es lo que hace funcionar
@@ -344,33 +402,56 @@ def tabla_riesgo_persistente(
             primera de nombre que exista en el df.
         formatos: `{columna_puntaje: "percent"|"number"}` para el formato de
             las celdas.
+        exigir_ultima_evaluacion: criterio calibrado. `False` vuelve al
+            criterio inicial (cualquier par consecutivo) y deja
+            `sin_evaluacion_reciente` vacío.
+        incluir_columna_nivel: imprimir la columna `Nivel`. Default `False`:
+            es constante por construcción (es el criterio de entrada, no un
+            dato) y se comía ~8% del ancho (QA P2-2).
+        incluir_columna_evaluaciones: imprimir la columna `Evaluaciones`.
+            `None` (default) = automático: se imprime solo si VARÍA entre
+            filas y la tabla no trae ya la columna de última rendida. Con el
+            criterio calibrado la tabla vigente tiene siempre el mismo par
+            —lo dice la línea "Última evaluación considerada"— y en la
+            secundaria el par queda determinado por la última rendida, que
+            sí se imprime. `True` la fuerza en ambas.
+        columna_ultima_rendida: encabezado de la columna extra de la tabla
+            secundaria.
+        tipos: `{columna: data_type}` del catálogo de dimensiones, para que
+            `periodos` describa bien la última evaluación.
 
     Returns:
-        DataFrame `Curso · Estudiante · Evaluaciones · <puntaje previo> ·
-        <puntaje actual> · … · Nivel`, ordenado por curso (orden natural) y
-        puntaje ascendente. **Vacío** cuando no hay segunda evaluación o
-        nadie cumple el criterio: el módulo omite la sección igual que con
-        la evolución.
+        `RiesgoPersistente`. Las tablas van ordenadas por curso (orden
+        natural) y puntaje ascendente, y salen **vacías** cuando no hay
+        segunda evaluación o nadie cumple el criterio: el módulo omite la
+        sección igual que con la evolución.
 
         Los encabezados de puntaje son POSICIONALES ("Rend previo", "Rend
-        actual") y la columna `Evaluaciones` dice cuáles son para esa fila.
-        Nombrar las columnas con el mes de cada estudiante multiplicaba la
-        tabla: alumnos que rindieron pares distintos (ABRIL-JUNIO vs
-        OCTUBRE-NOVIEMBRE) generaban una columna por par y el 80% de las
-        celdas quedaban en "—".
+        actual"). Nombrar las columnas con el mes de cada estudiante
+        multiplicaba la tabla: alumnos que rindieron pares distintos
+        (ABRIL-JUNIO vs OCTUBRE-NOVIEMBRE) generaban una columna por par y
+        el 80% de las celdas quedaban en "—".
     """
+    vacio = RiesgoPersistente()
     requeridas = {columna_nivel, columna_temporal}
     if df is None or len(df) == 0 or not requeridas.issubset(set(df.columns)):
-        return pd.DataFrame()
+        return vacio
 
     evaluaciones = _orden_evaluaciones(df[columna_temporal].dropna().tolist())
     if len(evaluaciones) < n_evaluaciones:
-        return pd.DataFrame()
+        return vacio
+
+    ultima_evaluacion = evaluaciones[-1]
+    # La descripción se calcula sobre las filas de ESA evaluación, así que
+    # no puede divergir del par que eligió el criterio.
+    descripcion = periodos.describir_ultima_evaluacion(
+        df[df[columna_temporal].astype(str) == ultima_evaluacion], tipos
+    )
 
     trabajo = df.copy()
     identidad = serie_identidad_estudiante(trabajo)
     if identidad is None:
-        return pd.DataFrame()
+        return vacio
     trabajo["__id"] = identidad
     trabajo["__eval"] = trabajo[columna_temporal].astype(str)
 
@@ -380,7 +461,10 @@ def tabla_riesgo_persistente(
         columna_nombre = nombres[0] if nombres else None
 
     posicion = {ev: i for i, ev in enumerate(evaluaciones)}
-    filas: list[dict] = []
+    etiquetas = _etiquetas_posicionales(n_evaluaciones)
+    col_orden = (columnas_puntaje or [None])[0]
+    filas_vigentes: list[dict] = []
+    filas_sin_reciente: list[dict] = []
 
     for ident, grupo in trabajo.groupby("__id", sort=False):
         # Una fila por evaluación (si hay varias, la última gana).
@@ -412,17 +496,52 @@ def tabla_riesgo_persistente(
             ),
             "Evaluaciones": " → ".join(ultimas),
         }
-        etiquetas = _etiquetas_posicionales(n_evaluaciones)
         for col in (columnas_puntaje or []):
             for etiqueta, ev in zip(etiquetas, ultimas):
                 fila[f"{col} {etiqueta}"] = por_eval[ev].get(col)
+        fila[columna_ultima_rendida] = ultimas[-1]
         fila["Nivel"] = ultima.get(columna_nivel)
-        col_orden = (columnas_puntaje or [None])[0]
         fila["__orden"] = (
             _valor_numerico(ultima.get(col_orden)) if col_orden else 0.0
         )
-        filas.append(fila)
 
+        if not exigir_ultima_evaluacion or ultimas[-1] == ultima_evaluacion:
+            filas_vigentes.append(fila)
+        else:
+            filas_sin_reciente.append(fila)
+
+    return RiesgoPersistente(
+        vigentes=_armar_tabla(
+            filas_vigentes,
+            formatos=formatos,
+            incluir_nivel=incluir_columna_nivel,
+            incluir_evaluaciones=incluir_columna_evaluaciones,
+            incluir_ultima_rendida=False,
+            columna_ultima_rendida=columna_ultima_rendida,
+        ),
+        sin_evaluacion_reciente=_armar_tabla(
+            filas_sin_reciente,
+            formatos=formatos,
+            incluir_nivel=incluir_columna_nivel,
+            incluir_evaluaciones=incluir_columna_evaluaciones,
+            incluir_ultima_rendida=True,
+            columna_ultima_rendida=columna_ultima_rendida,
+        ),
+        ultima_evaluacion=ultima_evaluacion,
+        descripcion_ultima_evaluacion=descripcion,
+    )
+
+
+def _armar_tabla(
+    filas: list[dict],
+    *,
+    formatos: Optional[Mapping[str, str]],
+    incluir_nivel: bool,
+    incluir_evaluaciones: Optional[bool],
+    incluir_ultima_rendida: bool,
+    columna_ultima_rendida: str,
+) -> pd.DataFrame:
+    """Filas crudas → tabla ordenada, formateada y sin columnas constantes."""
     if not filas:
         return pd.DataFrame()
 
@@ -436,6 +555,24 @@ def tabla_riesgo_persistente(
     salida = salida.sort_values(by=["__curso_orden", "__orden"], na_position="last")
     salida = salida.drop(columns=["__curso_orden", "__orden"]).reset_index(drop=True)
 
+    descartar: list[str] = []
+    if not incluir_nivel:
+        descartar.append("Nivel")
+    if not incluir_ultima_rendida:
+        descartar.append(columna_ultima_rendida)
+    # Automático: `Evaluaciones` solo aporta cuando varía Y la tabla no trae
+    # ya la columna de la última rendida. Con el par siempre consecutivo, esa
+    # columna determina la anterior, y una columna de más deja la tabla fuera
+    # del margen (el bloque ya usa el 93% del ancho a 8 pt).
+    mostrar_evaluaciones = (
+        (salida["Evaluaciones"].nunique() > 1 and not incluir_ultima_rendida)
+        if incluir_evaluaciones is None
+        else incluir_evaluaciones
+    )
+    if not mostrar_evaluaciones:
+        descartar.append("Evaluaciones")
+    salida = salida.drop(columns=[c for c in descartar if c in salida.columns])
+
     formatos = dict(formatos or {})
     for col in salida.columns:
         base = col.rsplit(" ", 1)[0]
@@ -443,6 +580,143 @@ def tabla_riesgo_persistente(
         if fmt:
             salida[col] = formatear_serie(salida[col], fmt)
     return salida
+
+
+def tabla_riesgo_persistente(df: pd.DataFrame, **kwargs: Any) -> pd.DataFrame:
+    """Solo la tabla vigente de `riesgo_persistente` (azúcar sintáctico).
+
+    Acepta exactamente los mismos keyword-only args. Existe para los
+    llamadores que no necesitan la lista de los que dejaron de rendir.
+    """
+    return riesgo_persistente(df, **kwargs).vigentes
+
+
+def texto_ultima_evaluacion(
+    descripcion: str,
+    *,
+    nivel_objetivo: str = "",
+    n_evaluaciones: int = 2,
+) -> str:
+    """Línea que declara contra qué evaluación se calculó la tabla.
+
+    Decisión 3 del dueño (2026-07-30): la sección **tiene** que decir cuál
+    fue la última evaluación considerada. Esa línea es además la que
+    reemplaza a las columnas `Nivel` y `Evaluaciones`, constantes por
+    construcción con el criterio calibrado.
+
+    Returns:
+        "Última evaluación considerada: NOVIEMBRE 2025 (prueba 5). Entran
+        los estudiantes en nivel Insuficiente en esa evaluación y en la
+        inmediatamente anterior." — `""` si no hay descripción que dar.
+    """
+    if not str(descripcion or "").strip():
+        return ""
+    texto = f"Última evaluación considerada: {descripcion}."
+    nivel = str(nivel_objetivo or "").strip()
+    if nivel:
+        anteriores = (
+            "en la inmediatamente anterior"
+            if n_evaluaciones == 2
+            else f"en las {n_evaluaciones - 1} anteriores"
+        )
+        texto += (
+            f" Entran los estudiantes en nivel {nivel} en esa evaluación y "
+            f"{anteriores}."
+        )
+    return texto
+
+
+def secciones_riesgo_persistente(
+    riesgo: RiesgoPersistente,
+    *,
+    df_key: str = "riesgo_persistente",
+    df_key_sin_reciente: str = "riesgo_sin_evaluacion_reciente",
+    titulo: str = TITULO_RIESGO_PERSISTENTE,
+    titulo_sin_reciente: str = TITULO_RIESGO_SIN_EVALUACION_RECIENTE,
+    texto_sin_datos: str = "",
+    nivel_objetivo: str = "",
+    n_evaluaciones: int = 2,
+    break_before: bool = True,
+) -> list[dict]:
+    """Secciones que imprimen el riesgo persistente: principal + secundaria.
+
+    Estructura (decisiones del dueño, 2026-07-30):
+
+        heading  <titulo>                         ← con salto de página
+        nota     "Última evaluación considerada…" ← decisión 3
+        table    tabla vigente                    ← sin `Nivel` (decisión 4)
+        heading  <titulo_sin_reciente>            ← solo si hay filas
+        nota     por qué están aparte
+        table    tabla de los que dejaron de rendir
+
+    La tabla secundaria **se omite entera cuando está vacía, sin nota**: no
+    hay nada que explicar si todos los alumnos en riesgo rindieron la
+    última evaluación. La principal vacía sí degrada a nota, igual que la
+    evolución (contrato §3.3).
+
+    Args:
+        riesgo: resultado de `riesgo_persistente`.
+        df_key / df_key_sin_reciente: keys con que el módulo publicó las
+            dos tablas en el dict de DataFrames.
+        titulo / titulo_sin_reciente: títulos de las dos secciones.
+        texto_sin_datos: nota que reemplaza a la tabla principal vacía.
+        nivel_objetivo / n_evaluaciones: solo para redactar la línea de la
+            última evaluación considerada.
+        break_before: salto de página antes del bloque.
+    """
+    secciones: list[dict] = []
+
+    if len(riesgo.vigentes) == 0:
+        nota = {"tipo": "nota", "titulo": titulo, "texto": texto_sin_datos}
+        if break_before:
+            nota["break_before"] = True
+        secciones.append(nota)
+    else:
+        encabezado: dict[str, Any] = {"tipo": "heading", "titulo": titulo}
+        if break_before:
+            encabezado["break_before"] = True
+        secciones.append(encabezado)
+        linea = texto_ultima_evaluacion(
+            riesgo.descripcion_ultima_evaluacion,
+            nivel_objetivo=nivel_objetivo,
+            n_evaluaciones=n_evaluaciones,
+        )
+        if linea:
+            secciones.append({"tipo": "nota", "titulo": "", "texto": linea})
+        secciones.append({
+            "tipo": "table",
+            "titulo": "",
+            "fn": "tabla_desde_dataframe",
+            "df_input": df_key,
+            "params": {},
+        })
+
+    if len(riesgo.sin_evaluacion_reciente) > 0:
+        donde = (
+            f"en {riesgo.descripcion_ultima_evaluacion}"
+            if riesgo.descripcion_ultima_evaluacion
+            else "en la última evaluación del período"
+        )
+        secciones.append({"tipo": "heading", "titulo": titulo_sin_reciente})
+        secciones.append({
+            "tipo": "nota",
+            "titulo": "",
+            "texto": (
+                f"Cumplieron el criterio de riesgo en su último par de "
+                f"evaluaciones consecutivas, pero no registran resultados "
+                f"{donde}. Van aparte para no mezclarlos con la lista de "
+                f"seguimiento vigente."
+            ),
+        })
+        secciones.append({
+            "tipo": "table",
+            "titulo": "",
+            "fn": "tabla_desde_dataframe",
+            "df_input": df_key_sin_reciente,
+            "params": {},
+        })
+
+    return secciones
 
 
 def _valor_numerico(valor: Any) -> float:

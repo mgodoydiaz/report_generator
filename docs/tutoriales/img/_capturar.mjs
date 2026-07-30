@@ -24,10 +24,13 @@
  *
  *   Variables opcionales: APP_URL, PLAYWRIGHT_DIR.
  *
- * Genera los 8 PNG de la guia en esta misma carpeta. Los 7 primeros son
+ * Genera los 9 PNG de la guia en esta misma carpeta. Los 8 primeros son
  * capturas del navegador; informe_pdf.png sale de convertir la pagina 1 del
  * PDF descargado (lo hace _pdf_a_png.py dentro del contenedor backend, que es
  * donde esta PyMuPDF).
+ *
+ * SEGURIDAD: el paso del modal "Importar Datos" solo abre la ventana y la
+ * cierra con Cancelar. NUNCA se completa una importacion real.
  */
 import { createRequire } from 'node:module';
 import { execFileSync } from 'node:child_process';
@@ -120,6 +123,17 @@ const run = async () => {
   await page.waitForTimeout(1500);
   await page.locator('text=Resultados SIMCE Demo por Estudiante').first().click();
   await page.waitForTimeout(2500);
+
+  // -- 4b. Modal "Importar Datos" (camino 2.2 de la guia) ------------------
+  // OJO: solo se abre la ventana para la captura y se cierra con Cancelar.
+  // No se selecciona ningun archivo ni se aprieta "Importar".
+  console.log('4b. importar_valores');
+  await page.getByRole('button', { name: /Importar/ }).first().click();
+  await page.waitForTimeout(1500);
+  await shot(page, 'importar_valores.png');
+  await page.getByRole('button', { name: /^Cancelar$/ }).first().click();
+  await page.waitForTimeout(800);
+
   // Ojo: el boton trae un icono delante, asi que su texto es " Filtros".
   // getByRole normaliza el nombre accesible; un regex anclado (/^Filtros/)
   // sobre hasText NO lo encuentra.

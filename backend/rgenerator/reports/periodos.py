@@ -711,6 +711,65 @@ def _describir_evaluacion(valores: dict[str, Any], cols: dict) -> str:
     return base
 
 
+def describir_ultima_evaluacion(
+    df: pd.DataFrame,
+    tipos: Optional[Mapping[str, Any]] = None,
+    columnas: Optional[Mapping[str, Optional[str]]] = None,
+) -> str:
+    """Descripción legible de la evaluación MÁS RECIENTE presente en `df`.
+
+    Misma maquinaria que `_resolver_ultima_prueba` (clave temporal
+    detallada + `_describir_evaluacion`), pero sin construir filtros: solo
+    interesa el texto. La usan las secciones que tienen que declarar contra
+    qué evaluación se calcularon — el riesgo persistente calibrado
+    (contrato §3.3) imprime "Última evaluación considerada: …".
+
+    Es la MISMA fuente que alimenta `ResultadoPeriodo.descripcion`, así que
+    el texto de la sección y el del encabezado no pueden divergir.
+
+    Args:
+        df: DataFrame ya filtrado al período (o a la evaluación concreta).
+        tipos: `{columna: data_type}` del catálogo de dimensiones.
+        columnas: salida de `detectar_columnas_temporales` si ya se calculó.
+
+    Returns:
+        "NOVIEMBRE 2025 (prueba 5)" / "v3 2026" / "Prueba 3", o `""` cuando
+        no hay datos ni dimensión temporal que describir.
+    """
+    if df is None or len(df) == 0:
+        return ""
+
+    cols = dict(columnas or detectar_columnas_temporales_df(df, tipos))
+    if not hay_columna_temporal(cols):
+        return ""
+
+    mejor_clave: tuple[int, int, int, int] | None = None
+    mejor_row: Mapping[str, Any] | None = None
+    for _, row in df.iterrows():
+        k = clave_temporal_detallada(row, cols)
+        if mejor_clave is None or k > mejor_clave:
+            mejor_clave, mejor_row = k, row
+    if mejor_row is None:
+        return ""
+
+    valores: dict[str, Any] = {}
+    for rol in ("anio", "mes_like", "ordinal", "fecha"):
+        col = cols.get(rol)
+        if not col:
+            continue
+        valor = mejor_row.get(col)
+        if valor is None or (isinstance(valor, float) and pd.isna(valor)) or str(valor) == "":
+            continue
+        valores[col] = valor
+    if not valores:
+        return ""
+
+    # Sin mes-like propio la fecha hace de eje visible (Fluidez Lectora).
+    if not cols.get("mes_like") and cols.get("fecha"):
+        cols = {**cols, "mes_like": cols["fecha"]}
+    return _describir_evaluacion(valores, cols)
+
+
 def _describir_semestre(anio: int, semestre: int) -> str:
     """'1er semestre 2026 (enero–julio)'."""
     ini, fin = _meses_del_semestre(semestre)
