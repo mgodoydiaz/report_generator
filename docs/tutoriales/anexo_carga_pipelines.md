@@ -1,14 +1,14 @@
 # Anexo — Carga de datos por evaluación
 
-El flujo general de carga está en la [guía rápida](./guia_rapida_usuario.md#2-cargar-los-datos).
-Acá va lo específico de cada evaluación: qué archivos pide, con qué nombre aparecen en
-pantalla y qué no hay que tocarles. Busca el capítulo de la evaluación que vas a cargar y
-sigue solo ese.
+Los pasos generales de la carga están en la
+[guía rápida](./guia_rapida_usuario.md#2-cargar-los-datos). Acá va lo específico de cada
+evaluación: qué archivos pide, con qué nombre aparecen en pantalla y qué no hay que
+tocarles. Busca el capítulo de la evaluación que vas a cargar y sigue solo ese.
 
 > **Evaluaciones que todavía no se cargan desde la plataforma.** IDEL, Cálculo Veloz y
 > Fluidez Lectora sí tienen sus resultados y sus informes en el sistema, pero esos datos
-> los cargó el equipo técnico directamente. Aún no existe un proceso de carga en la
-> pantalla de Ejecución para ellas: van por el
+> los cargó el equipo técnico directamente. Todavía no tienen su propia tarjeta en la
+> pantalla de **Ejecución**, así que van por el
 > [camino 2.2 de la guía rápida](./guia_rapida_usuario.md#22-la-evaluación-no-tiene-proceso-configurado).
 
 ---
@@ -17,12 +17,13 @@ sigue solo ese.
 
 **Nombre del proceso en Ejecución:** `SIMCE (IA)`
 
-Sirve para Lenguaje y para Matemáticas: la asignatura se elige al principio, así que
-**una ejecución = una asignatura, de un mes, de una prueba**.
+Sirve para Lenguaje y para Matemáticas. La asignatura se elige al principio, así que en
+cada ejecución cargas **una sola asignatura, de un solo mes y de una sola prueba**.
 
 ### Primero te pide unos datos
 
-Antes de los archivos aparece el recuadro **Datos del Run**, que se responde una sola vez:
+Antes de los archivos aparece el recuadro **Datos del Run** (los datos generales de esta
+carga). Se responde una sola vez:
 
 | Campo | Cómo responderlo |
 |---|---|
@@ -62,8 +63,8 @@ El proceso se detiene **tres veces**, una por cada tipo de archivo:
 ### Si algo sale mal
 
 - **Los resultados por pregunta salen sin número de pregunta.** Pasó en la carga de mayo
-  2026: se perdía la columna `Pregunta` al cruzar con el archivo de habilidades. Ya está
-  corregido y los datos se repararon, pero si lo vuelves a ver, avisa antes de cargar de
+  2026: se perdía la columna `Pregunta` al juntarla con el archivo de habilidades. Ya está
+  arreglado y los datos se corrigieron, pero si lo vuelves a ver, avisa antes de cargar de
   nuevo.
 - **Un curso aparece vacío o repetido.** Casi siempre es un `ReportePregunta` renombrado
   o subido dos veces. Revisa la lista de archivos antes de apretar **Continuar**.
@@ -77,7 +78,8 @@ El proceso se detiene **tres veces**, una por cada tipo de archivo:
 
 **Nombre del proceso en Ejecución:** `DIA (IA)`
 
-Una ejecución cubre **un hito y una asignatura** completos (todos los cursos juntos).
+En cada ejecución cargas **un hito y una asignatura** completos, con todos los cursos
+juntos. El hito es el momento del año en que se aplicó la prueba.
 
 ### Primero te pide unos datos
 
@@ -112,7 +114,7 @@ Se detiene **una sola vez**, con dos recuadros en la misma pantalla:
   curso en la celda **B6**. Si esas celdas se mueven, el curso queda mal.
 - **No toques el encabezado de la fila 13**, donde dicen `Número de Lista` y
   `Nombre del Estudiante`. Escribir `Numero de Lista` sin tilde, o cambiar
-  `Nombre del Estudiante` por `Nombre`, deja columnas sin cruzar.
+  `Nombre del Estudiante` por `Nombre`, deja esas columnas sin datos.
 - **No mezcles hitos ni asignaturas en una misma ejecución**, ni renombres los PDF: todo
   queda guardado con el hito que elegiste al principio.
 
@@ -120,14 +122,14 @@ Se detiene **una sola vez**, con dos recuadros en la misma pantalla:
 
 - **El nombre de un estudiante aparece en blanco o duplicado entre hitos.** La
   plataforma DIA a veces entrega el nombre como "Nombre Apellido" y a veces como
-  "Apellido Nombre". El sistema ahora normaliza el nombre para poder seguir al mismo
-  estudiante entre hitos; si aun así ves duplicados, avisa.
+  "Apellido Nombre". El sistema ahora ordena el nombre siempre igual, para reconocer al
+  mismo estudiante en los tres hitos. Si aun así ves duplicados, avisa.
 - **El paso de los PDF se demora.** Es normal: leer cada PDF toma varios segundos. No
   cierres la ventana mientras dice *Ejecutando proceso…*.
-- **Una columna esperada llegó vacía.** Si un encabezado del Excel viene cambiado, la
-  carga igual termina, pero el sistema deja registrado un aviso diciendo que esa columna
-  quedó sin datos. No aparece en pantalla: si los resultados se ven raros, pídele al
-  administrador que revise el registro de la ejecución.
+- **Una columna llegó vacía.** Si un título de columna del Excel viene cambiado, la carga
+  igual termina, pero esa columna queda sin datos. El aviso no sale en pantalla: queda
+  anotado en el historial de la ejecución. Si los resultados se ven raros, pídele al
+  administrador que revise ese historial.
 
 ---
 
@@ -135,8 +137,8 @@ Se detiene **una sola vez**, con dos recuadros en la misma pantalla:
 
 **Nombre del proceso en Ejecución:** `EMN Aptus (IA)`
 
-Son los ensayos SIMCE que aplica Aptus en Panguipulli. **Una ejecución = un mes.** Si
-tienes que cargar abril y mayo, ejecutas el proceso dos veces.
+Son los ensayos SIMCE que aplica Aptus en Panguipulli. **En cada ejecución cargas un solo
+mes.** Si tienes que cargar abril y mayo, ejecutas el proceso dos veces.
 
 ### Te pide tres archivos, de a uno
 
@@ -178,5 +180,5 @@ tres veces seguidas y en cada pausa va **un solo archivo**, el del mes que está
 
 ---
 
-Termines la carga que termines, revisa lo que quedó cargado siguiendo
+Cargues la evaluación que cargues, al terminar revisa lo que quedó guardado siguiendo
 [la guía rápida](./guia_rapida_usuario.md#revisa-lo-que-quedó-cargado).
