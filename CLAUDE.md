@@ -122,6 +122,8 @@ cd frontend && npm install
 
 ## Arquitectura
 
+> Mapa simple de páginas, flujo del dominio y motores de informes: [docs/desarrollo/mapa_aplicacion.md](./docs/desarrollo/mapa_aplicacion.md)
+
 ### Ruta de import canónica del paquete ETL
 
 El paquete `backend/rgenerator/` se importa SIEMPRE como **`backend.rgenerator.*`** (imports relativos dentro del paquete). La ruta corta `rgenerator.*` está bloqueada con ImportError en el `__init__` — creaba una segunda instancia de cada módulo y `isinstance`/`except` entre clases de rutas distintas fallaba silenciosamente. Guardia: `tests/regresion/test_import_canonico.py`.
@@ -155,7 +157,7 @@ backend/
     │   ├── init_steps.py        InitRun, LoadConfigFromSpec (usa ctx.db)
     │   ├── io_steps.py          DiscoverInputs, RequestUserFiles, ExportConsolidatedExcel, DeleteTempFiles
     │   ├── etl_steps.py         RunExcelETL, EnrichWithUserInput, EnrichWithContext, ModifyColumnValues
-    │   ├── report_steps.py      GenerateGraphics, GenerateTables, RenderReport, GenerateDocxReport
+    │   ├── report_steps.py      RenderHtmlReport (motor v1 HTML→WeasyPrint). Los steps LaTeX legacy (GenerateGraphics/GenerateTables/RenderReport/GenerateDocxReport) fueron removidos del STEP_MAPPING en B6b
     │   └── metric_steps.py      SaveToMetric, LoadMetricToDF (usan ctx.db)
     └── tooling/
         ├── pipeline_tools.py    PipelineRunner (recibe db + org_id), STEP_MAPPING, load_pipeline_config

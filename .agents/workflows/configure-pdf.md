@@ -19,7 +19,7 @@ Skill ejecutable autónomamente: Claude configura el `pdf_layout` de un indicado
       "Evaluación Diagnóstica de Lectura",
       "Pullinque — Versión 3 (Noviembre)"
     ],
-    "left_footer": "Miguel Godoy Díaz",
+    "left_footer": "",
     "show_page_number": true
   },
   "sections": [
@@ -55,7 +55,7 @@ Skill ejecutable autónomamente: Claude configura el `pdf_layout` de un indicado
 | `left_image_id`  | `int \| null` | ID del asset (logo izquierdo). Ver `/upload-branding` |
 | `right_image_id` | `int \| null` | ID del asset (logo derecho)                          |
 | `center_header`  | `string[3]`   | Hasta 3 líneas de texto en el encabezado central     |
-| `left_footer`    | `string`      | Texto pie de página izquierdo (autor)                |
+| `left_footer`    | `string`      | Texto pie de página izquierdo. **Dejar vacío**: el backend cae al nombre de la organización. Nunca hardcodear un nombre personal |
 | `show_page_number`| `bool`       | `true` = mostrar "Página N" en el pie derecho        |
 
 Si `branding` es `null` o no está, el PDF se genera sin encabezado de logos (modo degradado).
@@ -88,7 +88,7 @@ pdf_layout = {
             "Fundación PHP — Pullinque",
             "Noviembre 2025"
         ],
-        "left_footer": "Miguel Godoy Díaz",
+        "left_footer": "",
         "show_page_number": True,
     },
     "sections": [
