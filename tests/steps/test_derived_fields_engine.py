@@ -642,6 +642,92 @@ class TestNormalizeName:
         assert out["Mejora"].iloc[1] == pytest.approx(0.20)
 
 
+class TestNormalizeNamePreservaOriginal:
+    """El bug de las cargas DIA 2026: el XLS de la Agencia trae la columna
+    "Nombre del Estudiante", el pipeline derivaba solo `Nombre_Norm` y
+    `SaveToMetric` mapea a dimensiones por nombre EXACTO, así que la
+    dimensión `Nombre` quedaba nula en el 100% de las filas. Ahora
+    `normalize_name` preserva el original en la columna hermana."""
+
+    def test_preserva_original_por_convencion_de_sufijo(self):
+        """Caso DIA real: value_field != 'Nombre' → se crea 'Nombre'."""
+        df = pd.DataFrame({"Nombre del Estudiante": ["José Pérez Núñez"]})
+        out = apply_normalize_name(df, {
+            "name": "Nombre_Norm",
+            "value_field": "Nombre del Estudiante",
+        })
+        # Ambas columnas pobladas: original tal cual + normalizada.
+        assert out.loc[0, "Nombre"] == "José Pérez Núñez"
+        assert out.loc[0, "Nombre_Norm"] == "JOSE NUNEZ PEREZ"
+
+    def test_no_sobrescribe_columna_original_existente(self):
+        """Retrocompat: los pipelines que ya poblaban `Nombre` no se tocan."""
+        df = pd.DataFrame({
+            "Nombre": ["Juan Soto"],
+            "Nombre del Estudiante": ["OTRO VALOR"],
+        })
+        out = apply_normalize_name(df, {
+            "name": "Nombre_Norm",
+            "value_field": "Nombre del Estudiante",
+        })
+        assert out.loc[0, "Nombre"] == "Juan Soto"
+
+    def test_sin_sufijo_norm_no_inventa_columna(self):
+        """`name` sin sufijo `_Norm` → no hay convención que aplicar."""
+        df = pd.DataFrame({"Nombre": ["Juan Soto"]})
+        out = apply_normalize_name(df, {"name": "Clave", "value_field": "Nombre"})
+        assert set(out.columns) == {"Nombre", "Clave"}
+
+    def test_original_name_explicito(self):
+        df = pd.DataFrame({"Alumno": ["Juan Soto"]})
+        out = apply_normalize_name(df, {
+            "name": "Clave", "value_field": "Alumno",
+            "original_name": "Nombre",
+        })
+        assert out.loc[0, "Nombre"] == "Juan Soto"
+
+    def test_original_name_null_desactiva(self):
+        df = pd.DataFrame({"Nombre del Estudiante": ["Juan Soto"]})
+        out = apply_normalize_name(df, {
+            "name": "Nombre_Norm", "value_field": "Nombre del Estudiante",
+            "original_name": None,
+        })
+        assert "Nombre" not in out.columns
+
+    def test_pipeline_dia_deja_ambas_columnas(self):
+        """Flujo del pipeline DIA tal como está guardado en la DB: el
+        config NO trae `original_name` y aun así debe poblar ambas."""
+        df = pd.DataFrame([
+            {"Curso": "I A", "Nombre del Estudiante": "MARIANO ALARCÓN"},
+            {"Curso": "I A", "Nombre del Estudiante": "ALARCÓN MARIANO"},
+        ])
+        out = apply_derived_fields(df, [
+            {"kind": "normalize_name", "name": "Nombre_Norm",
+             "value_field": "Nombre del Estudiante"},
+        ])
+        assert out["Nombre"].tolist() == ["MARIANO ALARCÓN", "ALARCÓN MARIANO"]
+        # La clave normalizada sigue colapsando ambas variantes.
+        assert out["Nombre_Norm"].nunique() == 1
+
+
+class TestNormalizarNombreCanonica:
+    """`normalizar_nombre` es la única implementación; la comparten el
+    kind normalize_name, SaveToMetric y el script de backfill."""
+
+    def test_equivalente_al_kind(self):
+        from backend.rgenerator.core.derived_fields_engine import normalizar_nombre
+        df = pd.DataFrame({"Nombre": ["José Pérez Núñez"]})
+        out = apply_normalize_name(df, {"name": "N", "value_field": "Nombre"})
+        assert normalizar_nombre("José Pérez Núñez") == out.loc[0, "N"]
+
+    def test_nulos_y_vacios(self):
+        from backend.rgenerator.core.derived_fields_engine import normalizar_nombre
+        assert normalizar_nombre(None) is None
+        assert normalizar_nombre(float("nan")) is None
+        assert normalizar_nombre("") == ""
+        assert normalizar_nombre("   ") == ""
+
+
 class TestLookupRange:
     """BUSCARV con tramos (rango verdadero Excel)."""
 

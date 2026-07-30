@@ -562,6 +562,57 @@ def _strip_accents(s: str) -> str:
     )
 
 
+def normalizar_nombre(valor, case: str = "upper", strip_accents: bool = True):
+    """Normalización canónica de un nombre (escalar).
+
+    Función ÚNICA de normalización de nombres del sistema: la usan el
+    kind `normalize_name`, el step `SaveToMetric` (para completar la
+    columna par que falte) y `scripts/backfill_nombre_columnas.py`.
+    Cualquier otro punto que necesite normalizar debe importarla en vez
+    de reimplementar la lógica — si las implementaciones divergen, las
+    claves de join entre hitos dejan de coincidir.
+
+    Ordena alfabéticamente las palabras del nombre para que
+    "Nombre Apellido" y "Apellido Nombre" colapsen a la misma clave.
+
+    Devuelve None si el valor es nulo, y "" si es una cadena vacía.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, float) and np.isnan(valor):
+        return None
+    try:
+        if pd.isna(valor):
+            return None
+    except (TypeError, ValueError):
+        pass
+    s = str(valor).strip()
+    if not s:
+        return s
+    if strip_accents:
+        s = _strip_accents(s)
+    words = sorted((w for w in s.split() if w), key=str.lower)
+    out = " ".join(words)
+    if case == "upper":
+        return out.upper()
+    if case == "lower":
+        return out.lower()
+    return out
+
+
+def _columna_original_por_convencion(name: str):
+    """'Nombre_Norm' → 'Nombre'. Devuelve None si no aplica la convención.
+
+    Convención del sistema: la columna normalizada se llama igual que la
+    original más el sufijo `_Norm` (o `_norm`). Sirve para deducir dónde
+    preservar el valor original sin tocar los pipelines ya guardados.
+    """
+    for sufijo in ("_Norm", "_norm", "_NORM"):
+        if name.endswith(sufijo) and len(name) > len(sufijo):
+            return name[: -len(sufijo)]
+    return None
+
+
 def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Ordena alfabéticamente las palabras de un campo nombre.
 
@@ -571,14 +622,27 @@ def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     Pierde la separación nombre/apellido pero permite el join entre
     hitos cuando no hay RUT.
 
+    Además PRESERVA el nombre original en una columna hermana. El bug de
+    las cargas DIA 2026 fue que el XLS de la Agencia trae la columna
+    "Nombre del Estudiante", el pipeline normalizaba a "Nombre_Norm" y
+    `SaveToMetric` mapea columnas a dimensiones por nombre EXACTO: como
+    ninguna columna se llamaba "Nombre", esa dimensión quedaba nula en el
+    100% de las filas. Ahora `normalize_name` deja el valor original en
+    la columna hermana (por convención, `name` sin el sufijo `_Norm`),
+    de modo que toda carga puebla AMBAS columnas.
+
     Config esperado:
         name: columna nueva con la versión normalizada.
         value_field: columna fuente con el nombre original.
         case: 'upper' (default) | 'lower' | 'preserve'.
         strip_accents: bool (default True). Quita tildes para
             comparación y output.
+        original_name: columna donde preservar el valor original. Por
+            defecto se deduce quitando el sufijo `_Norm` de `name`
+            (`Nombre_Norm` → `Nombre`). `null` desactiva la preservación.
+            Nunca sobrescribe una columna que ya exista en el DataFrame.
 
-    Retorna df con la columna `name` agregada.
+    Retorna df con la columna `name` agregada (y la original preservada).
     """
     name = config["name"]
     value_field = config["value_field"]
@@ -590,24 +654,24 @@ def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             f"normalize_name '{name}': value_field '{value_field}' no existe en el DataFrame"
         )
 
-    def _normalize(v):
-        if v is None or (isinstance(v, float) and np.isnan(v)):
-            return None
-        s = str(v).strip()
-        if not s:
-            return s
-        if strip_accents:
-            s = _strip_accents(s)
-        words = sorted((w for w in s.split() if w), key=str.lower)
-        out = " ".join(words)
-        if case == "upper":
-            return out.upper()
-        if case == "lower":
-            return out.lower()
-        return out
-
     df = df.copy()
-    df[name] = df[value_field].map(_normalize)
+    df[name] = df[value_field].map(
+        lambda v: normalizar_nombre(v, case=case, strip_accents=strip_accents)
+    )
+
+    # Preservar el nombre original tal como viene del archivo.
+    if "original_name" in config:
+        original_name = config["original_name"]
+    else:
+        original_name = _columna_original_por_convencion(name)
+
+    if (
+        original_name
+        and original_name != name
+        and original_name not in df.columns
+    ):
+        df[original_name] = df[value_field]
+
     return df
 
 
