@@ -158,6 +158,76 @@ def _resolve_field(field, column_roles: dict):
     return field
 
 
+# Clave técnica que `_build_records` inyecta en cada record con la métrica de
+# origen. NO es un campo de negocio: los consumidores que renderizan columnas
+# dinámicamente (ej tabla plana sin flatTableConfig) deben excluirla.
+METRIC_ID_KEY = '_metric_id'
+
+
+def metric_id_del_rol(column_roles: dict, rol: str) -> Optional[int]:
+    """Métrica de origen de un rol: `entries[0].metric_id` de `column_roles`.
+
+    Misma convención que `_resolve_field`, que ya privilegia la primera entrada
+    del rol para resolver el nombre de columna. Devuelve None si el rol no
+    existe, está vacío o su primera entrada no declara `metric_id`.
+    """
+    entries = (column_roles or {}).get(rol)
+    if not isinstance(entries, list) or not entries:
+        return None
+    first = entries[0]
+    if not isinstance(first, dict):
+        return None
+    mid = first.get('metric_id')
+    if mid is None:
+        return None
+    try:
+        return int(mid)
+    except (TypeError, ValueError):
+        return None
+
+
+def rol_de_campo(column_roles: dict, field) -> Optional[str]:
+    """Rol cuya primera columna se mapea al field dado (ej `_nivel_logro` →
+    `'nivel_de_logro'`). Devuelve None si ningún rol conocido lo produce.
+
+    Se usa para saber de qué métrica proviene el campo que un gráfico está
+    contando: el levelField/categoryField puede apuntar a un rol distinto de
+    `nivel_de_logro` (ej `_habilidad` en Fluidez Lectora).
+    """
+    if not isinstance(field, str) or not field.startswith('_'):
+        return None
+    for rol, entries in (column_roles or {}).items():
+        if not isinstance(entries, list) or not entries:
+            continue
+        first = entries[0]
+        if isinstance(first, dict):
+            col = first.get('column', '')
+            if col and _to_field_name(col) == field:
+                return rol
+    return None
+
+
+def filtrar_records_por_metrica(records: list, metric_id: Optional[int]) -> list:
+    """Deja solo los records provenientes de `metric_id`.
+
+    Un indicador puede vincular varias métricas cuya misma columna se proyecta
+    al mismo field (ej DIA: metric 6 "por estudiante" y metric 7 "por Pregunta"
+    ambas con "Nivel Logro"). Contar sin distinguir la métrica de origen suma
+    preguntas como si fueran alumnos.
+
+    Degrada a los records tal cual (fail-open) cuando `metric_id` es None,
+    cuando ningún record trae la clave `_metric_id` (compat con tests/configs
+    viejos que construyen records a mano) o cuando el filtro dejaría el
+    conjunto vacío — preferimos el conteo inflado a un gráfico en blanco.
+    """
+    if metric_id is None or not records:
+        return records
+    if not any(METRIC_ID_KEY in r for r in records):
+        return records
+    filtrados = [r for r in records if r.get(METRIC_ID_KEY) == metric_id]
+    return filtrados or records
+
+
 def _build_records(
     db,
     indicator,
@@ -166,6 +236,10 @@ def _build_records(
 ) -> list[dict]:
     """
     Construye lista plana de registros desde MetricData para un indicador.
+
+    Cada record se etiqueta con `_metric_id` (la métrica de origen) para que
+    los componentes de conteo puedan distinguir filas de métricas distintas
+    que comparten nombre de columna. Ver `filtrar_records_por_metrica`.
 
     filters: dict opcional {id_dimension_str: valor} — se aplica sobre
         dimensions_json de cada MetricData antes de proyectar el record.
@@ -255,6 +329,9 @@ def _build_records(
                 if dim:
                     dkey = _to_field_name(dim.name)
                     rec[dkey] = dims_json.get(str(did))
+
+            # Métrica de origen (clave técnica, no de negocio).
+            rec[METRIC_ID_KEY] = mid
 
             records.append(rec)
 
@@ -365,6 +442,20 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             if not lf:
                 lf = '_categoria'  # último fallback
 
+            # Contar SOLO los records de la métrica que aporta el campo `lf`.
+            # Un indicador puede vincular dos métricas con la misma columna
+            # (DIA: metric 6 "por estudiante" + metric 7 "por Pregunta", ambas
+            # con "Nivel Logro" → mismo field `_nivel_logro`): sin filtrar, la
+            # barra sumaba preguntas como alumnos (demo: 25 con 15 alumnos).
+            # El rol se deriva del campo realmente usado, no siempre
+            # nivel_de_logro (ej Fluidez Lectora cuenta `_calidad_lectora`,
+            # rol habilidad). Si el campo no corresponde a ningún rol conocido,
+            # no se filtra.
+            rol_lf = rol_de_campo(column_roles, lf)
+            records_metrica = filtrar_records_por_metrica(
+                records, metric_id_del_rol(column_roles, rol_lf) if rol_lf else None
+            )
+
             # Filtro al último periodo si hay múltiples y groupField no es el
             # periodField (modo "snapshot" por evaluación). En histórico,
             # groupField suele ser el periodo (_mes, _hito), entonces NO
@@ -377,16 +468,16 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     if col:
                         period_field_local = _to_field_name(col)
 
-            records_filtered = records
+            records_filtered = records_metrica
             if period_field_local and gf != period_field_local:
                 periods_present = sorted(
-                    {str(r.get(period_field_local, '')) for r in records
+                    {str(r.get(period_field_local, '')) for r in records_metrica
                      if r.get(period_field_local) is not None and str(r.get(period_field_local, '')) != ''},
                     key=_natural_sort_key,
                 )
                 if len(periods_present) >= 2:
                     last = periods_present[-1]
-                    records_filtered = [r for r in records
+                    records_filtered = [r for r in records_metrica
                                         if str(r.get(period_field_local, '')) == last]
 
             levels_cfg = _achievement_levels(indicator)
@@ -810,6 +901,16 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
             col = role_entries[0].get('column', '')
             if col: level_field = _to_field_name(col)
 
+        # Records de la métrica que aporta el nivel de logro. Las columnas de
+        # conteo por nivel y la columna "Alumnos" se calculan SOLO sobre ella:
+        # con dos métricas vinculadas que comparten la columna (DIA metric 6
+        # estudiantes + metric 7 preguntas) el conteo sumaba preguntas como
+        # alumnos. Los promedios/mín/máx siguen sobre todos los records
+        # (ver `buckets` abajo) — son campos de valor, no de conteo.
+        records_nivel = filtrar_records_por_metrica(
+            records, metric_id_del_rol(column_roles, 'nivel_de_logro')
+        )
+
         levels_cfg = _achievement_levels(indicator)
         level_names = [l.get('name', '') for l in levels_cfg] if levels_cfg else []
 
@@ -883,14 +984,27 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
 
         rows_out = []
         for g in groups:
-            # Records del periodo actual (filtra siempre que period_actual exista)
+            # Records del periodo actual (filtra siempre que period_actual exista),
+            # ya restringidos a la métrica dueña del nivel de logro.
             if period_actual:
-                actual_records = [r for r in records
+                actual_records = [r for r in records_nivel
                                   if str(r.get(gf, '')) == g
                                   and str(r.get(period_field, '')) == period_actual]
             else:
-                actual_records = [r for r in records if str(r.get(gf, '')) == g]
-            n_alumnos = len({r.get('_rut') or r.get('_nombre') for r in actual_records}) or len(actual_records)
+                actual_records = [r for r in records_nivel if str(r.get(gf, '')) == g]
+            # Identidades distintas descartando vacíos: un `None` (fila sin
+            # ninguna clave de identidad) sumaba un alumno fantasma al set.
+            # `_nombre_norm` cierra la cadena porque es la clave estable de
+            # identidad del estudiante (DIA trae filas con `Nombre` nulo y
+            # `Nombre_Norm` poblado; los derived_fields ya la usan como
+            # entity_field).
+            identidades = {
+                r.get('_rut') or r.get('_nombre') or r.get('_nombre_norm')
+                for r in actual_records
+            }
+            identidades.discard(None)
+            identidades.discard('')
+            n_alumnos = len(identidades) or len(actual_records)
             row = [g, str(n_alumnos)]
             for vf, vf_orig in zip(vfs_resolved, vfs):
                 fmt = _role_format_for_field(vf, column_roles, role_formats)
@@ -943,7 +1057,10 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
         cfg = item.get('flatTableConfig', {})
         col_cfgs = cfg.get('columns', [])
         if not col_cfgs and records:
-            col_cfgs = [{'field': k, 'label': k} for k in list(records[0].keys())[:8]]
+            # `_metric_id` es una clave técnica de _build_records: nunca debe
+            # aparecer como columna en la tabla plana auto-generada.
+            claves = [k for k in records[0].keys() if k != METRIC_ID_KEY]
+            col_cfgs = [{'field': k, 'label': k} for k in claves[:8]]
         columns = [c.get('label', c.get('field', '')) for c in col_cfgs]
         fields = [c.get('field', '') for c in col_cfgs]
         sort_by = cfg.get('sortBy')
