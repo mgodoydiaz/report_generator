@@ -2,6 +2,8 @@
 
 Guía paso a paso para el personal de Fundación PHP que usa la aplicación web de Report Generator: subir los resultados de una evaluación, revisar el dashboard y descargar el informe final.
 
+> ¿Buscas algo más breve? La [**guía rápida en 4 pasos**](./guia_rapida_usuario.md) cubre lo esencial con pantallazos reales. Este documento es la versión extendida.
+
 ## A quién está dirigido
 
 A cualquier persona de la fundación que necesite cargar datos de una evaluación (SIMCE, DIA, IDEL, u otra), revisar los resultados en pantalla y descargar el informe en PDF. No se requieren conocimientos técnicos.

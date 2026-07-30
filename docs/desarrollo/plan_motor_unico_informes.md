@@ -63,9 +63,10 @@ Total estimado: ~1.8-2.2M tokens de agentes, repartido en 4-6 sesiones de trabaj
 - **Datos faltantes ≠ bugs del motor**: los huecos (CV 2026, metric 25, FL Año) deben resolverse como datos/config o el QA visual los reportará eternamente.
 - **Alcance de "información suficiente"**: la fase 1 es el contrato de contenido — sin OK explícito de las fichas, no se programa (regla del plan).
 
-## Decisiones pendientes de Miguel
+## Decisiones tomadas (Miguel, 2026-07-30)
 
-1. OK a la arquitectura (motor = capa v2 + períodos, un módulo por indicador, v1 a fallback→deprecación).
-2. OK al orden de fases y al piloto SIMCE.
-3. Métrica 25 huérfana de Panguipulli: ¿asociar o ignorar?
-4. ¿Habrá cargas 2026 de CV y Panguipulli? (condiciona la utilidad de semestral/anual para ellos).
+1. ✅ **OK a la arquitectura** (motor = capa v2 + períodos, un módulo por indicador, v1 a fallback→deprecación).
+2. ✅ **OK al orden de fases y al piloto SIMCE**.
+3. **Métrica 25 huérfana de Panguipulli: IGNORAR** (no asociar).
+4. **CV y Panguipulli sin cargas 2026 por el momento** (sí en el futuro) → semestral/anual no-disponibles con motivo es el comportamiento correcto para ellos.
+5. **FL: derivar el año desde la columna Fecha**, con selector más inteligente — se crea un **tipo de dato de dimensión "fecha"** (migración) para poder construir buenos filtros. Esta mejora se adelanta de la fase 2 y se ejecuta ya.
