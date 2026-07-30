@@ -42,6 +42,8 @@ export default function GenerateReportModal({
     onSaved,             // callback opcional, invocado si se persiste pdf_layout
     initialTipo,         // opcional: 'evaluacion' | 'historico' (preselección del selector unificado)
     initialEngine,       // opcional: 'weasyprint' | 'pdl_idel' (preselección del selector unificado)
+    initialPeriodo,      // opcional: {tipo, fecha_inicio?, fecha_fin?, filtros?} — informes del período
+    periodoLabel,        // opcional: etiqueta legible del período elegido
 }) {
     const { fetchAuth, user } = useAuth();
     const orgId = user?.org_id;
@@ -69,6 +71,25 @@ export default function GenerateReportModal({
         const secs = activeLayout?.sections;
         return Array.isArray(secs) && secs.length > 0;
     }, [activeLayout]);
+
+    // Cuando el informe viene del grupo "Informes del período", el layout lo
+    // resuelve el backend a partir de `periodo`: el toggle evaluación/histórico
+    // no aplica y no exigimos secciones en el layout local del indicador.
+    const periodoActivo = initialPeriodo && typeof initialPeriodo === 'object' ? initialPeriodo : null;
+
+    const periodoResumen = useMemo(() => {
+        if (!periodoActivo) return null;
+        const partes = [];
+        if (periodoActivo.fecha_inicio || periodoActivo.fecha_fin) {
+            partes.push(`${periodoActivo.fecha_inicio || '…'} → ${periodoActivo.fecha_fin || '…'}`);
+        }
+        const filtros = periodoActivo.filtros || {};
+        Object.entries(filtros).forEach(([k, v]) => {
+            const vals = Array.isArray(v) ? v : [v];
+            if (vals.length) partes.push(`${k}: ${vals.join(', ')}`);
+        });
+        return partes.length ? partes.join(' · ') : 'Sin restricciones adicionales';
+    }, [periodoActivo]);
 
     // Reset al abrir
     useEffect(() => {
@@ -149,7 +170,8 @@ export default function GenerateReportModal({
                         engine: selectedEngine,
                         branding_override: branding,
                         save_as_default: saveAsDefault,
-                        tipo, // 'evaluacion' | 'historico'
+                        tipo, // 'evaluacion' | 'historico' — ignorado si va `periodo`
+                        ...(periodoActivo ? { periodo: periodoActivo } : {}),
                     }),
                 }
             );
@@ -168,7 +190,9 @@ export default function GenerateReportModal({
             const safeName = (indicator.name || 'informe')
                 .replace(/\s+/g, '_')
                 .replace(/\//g, '-');
-            const tipoSuffix = tipo === 'historico' ? '_historico' : '';
+            const tipoSuffix = periodoActivo
+                ? `_${periodoActivo.tipo || 'periodo'}`
+                : (tipo === 'historico' ? '_historico' : '');
             a.download = `informe_${safeName}${tipoSuffix}.pdf`;
             document.body.appendChild(a);
             a.click();
@@ -216,7 +240,29 @@ export default function GenerateReportModal({
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
 
+                    {/* Informe del período — el layout lo resuelve el backend */}
+                    {periodoActivo && (
+                        <section>
+                            <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
+                                Período del informe
+                            </label>
+                            <div className="px-4 py-3 rounded-2xl bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-100 dark:border-indigo-900/40">
+                                <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                                    <Calendar size={14} />
+                                    {periodoLabel || `Período: ${periodoActivo.tipo}`}
+                                </p>
+                                <p className="text-[11px] text-indigo-600/80 dark:text-indigo-300/70 mt-1">
+                                    {periodoResumen}
+                                </p>
+                            </div>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                El diseño del informe se determina automáticamente según el período elegido.
+                            </p>
+                        </section>
+                    )}
+
                     {/* Tipo de informe — toggle segmentado */}
+                    {!periodoActivo && (
                     <section>
                         <label className="block text-[11px] font-bold uppercase tracking-widest text-slate-500 dark:text-slate-400 mb-2">
                             Tipo de informe
@@ -262,6 +308,7 @@ export default function GenerateReportModal({
                             </div>
                         )}
                     </section>
+                    )}
 
                     {/* Motor del informe */}
                     <section>
@@ -390,7 +437,7 @@ export default function GenerateReportModal({
                     </button>
                     <button
                         onClick={handleGenerate}
-                        disabled={generating || !currentEngineMeta?.available || !layoutHasSections}
+                        disabled={generating || !currentEngineMeta?.available || (!layoutHasSections && !periodoActivo)}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm"
                     >
                         {generating ? (

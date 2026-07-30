@@ -5,6 +5,47 @@ import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 
 /**
+ * Valores de autor heredados de versiones anteriores del software, cuando el
+ * pie del informe venía hardcodeado. Se tratan como "no seteado" para que el
+ * branding caiga al nombre de la organización del usuario.
+ */
+export const AUTORES_LEGACY = ['Miguel Godoy Díaz'];
+
+export function esAutorLegacy(valor) {
+    if (valor === null || valor === undefined) return false;
+    return AUTORES_LEGACY.includes(String(valor).trim());
+}
+
+/**
+ * Resuelve el autor a usar: descarta valores legacy y cae al nombre de la
+ * organización. Un string vacío guardado a propósito se respeta (significa
+ * "sin pie": el backend pondrá el nombre de la organización).
+ */
+export function resolverAutorGuardado(autorGuardado, autorFallback = '') {
+    if (autorGuardado === undefined || autorGuardado === null || esAutorLegacy(autorGuardado)) {
+        return autorFallback || '';
+    }
+    return String(autorGuardado);
+}
+
+/**
+ * Convierte el branding persistido en localStorage al `overrides` del POST.
+ * Devuelve undefined si no hay nada guardado. Cuando el autor queda vacío se
+ * OMITE `left_footer` para que el backend use el nombre de la organización.
+ */
+export function brandingGuardadoToOverrides(saved, autorFallback = '') {
+    if (!saved || typeof saved !== 'object') return undefined;
+    const center_header = [saved.line1, saved.line2, saved.line3].filter(Boolean);
+    const autor = resolverAutorGuardado(saved.autor, autorFallback).trim();
+    return {
+        branding: {
+            center_header,
+            ...(autor ? { left_footer: autor } : {}),
+        },
+    };
+}
+
+/**
  * Modal compacto para generar el informe PDF v2 (motor paridad LaTeX).
  *
  * Permite editar antes de descargar:
@@ -70,7 +111,9 @@ export default function GenerateReportV2Modal({
                 setHeaderLine1(parsed.line1 ?? defaults.line1);
                 setHeaderLine2(parsed.line2 ?? defaults.line2);
                 setHeaderLine3(parsed.line3 ?? defaults.line3);
-                setAutor(parsed.autor ?? defaults.autor);
+                // Branding legacy: si el autor guardado es un nombre propio
+                // heredado, se ignora y se usa el de la organización.
+                setAutor(resolverAutorGuardado(parsed.autor, defaults.autor));
             } catch {
                 setHeaderLine1(defaults.line1);
                 setHeaderLine2(defaults.line2);
@@ -89,18 +132,22 @@ export default function GenerateReportV2Modal({
     if (!open) return null;
 
     const handleGenerar = async () => {
+        const autorLimpio = (autor || '').trim();
+
         // Persistir branding para próxima vez
         localStorage.setItem(storageKey, JSON.stringify({
             line1: headerLine1,
             line2: headerLine2,
             line3: headerLine3,
-            autor,
+            autor: autorLimpio,
         }));
 
+        // Si el autor queda vacío, se omite `left_footer`: el backend pone el
+        // nombre de la organización.
         const overrides = {
             branding: {
                 center_header: [headerLine1, headerLine2, headerLine3].filter(Boolean),
-                left_footer: autor,
+                ...(autorLimpio ? { left_footer: autorLimpio } : {}),
             },
         };
 

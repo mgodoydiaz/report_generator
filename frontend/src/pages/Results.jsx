@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { ChartColumn, Download, RefreshCcw } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
@@ -7,12 +7,12 @@ import { processDataForDashboard, computeDashboardKPIs } from '../tooling/dataPr
 import { DashboardRenderer } from '../tooling/dashboardRenderer';
 import GenerateReportModal from '../components/GenerateReportModal';
 import ReportSelectorModal from '../components/ReportSelectorModal';
-import GenerateReportV2Modal from '../components/GenerateReportV2Modal';
+import GenerateReportV2Modal, { brandingGuardadoToOverrides } from '../components/GenerateReportV2Modal';
 import GenerateWordReportModal from '../components/GenerateWordReportModal';
 import MultiSelectFilters from '../components/MultiSelectFilters';
 
 export default function Results() {
-    const { fetchAuth } = useAuth();
+    const { fetchAuth, user } = useAuth();
     // ── Estado: datos del backend ──
     const [indicators, setIndicators] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -234,7 +234,7 @@ export default function Results() {
 
     // ── Despacho del selector unificado de informes (Fase 1) ──
     // Mapea filtros UI {dimId: [vals]} → {nombre_humano: val|[vals]} (contrato v2/Word)
-    const mapFiltersToNames = () => {
+    const mapFiltersToNames = useCallback(() => {
         const params = {};
         Object.entries(selectedFilters || {}).forEach(([dimId, vals]) => {
             const dimName = indicatorDims[dimId]?.name;
@@ -243,7 +243,12 @@ export default function Results() {
             params[dimName] = arr.length === 1 ? arr[0] : arr;
         });
         return params;
-    };
+    }, [selectedFilters, indicatorDims]);
+
+    // Referencia estable para prefillear el panel del informe personalizado
+    // (el selector la usa como `initialFilters`; si cambiara en cada render
+    // dispararía re-seteos innecesarios dentro del modal).
+    const filtrosPorNombre = useMemo(() => mapFiltersToNames(), [mapFiltersToNames]);
 
     // Descarga un Response como archivo, respetando Content-Disposition.
     const descargarRespuesta = async (resp, fallbackName) => {
@@ -260,9 +265,19 @@ export default function Results() {
         URL.revokeObjectURL(url);
     };
 
+    // Nombre de archivo por defecto según el tipo de período solicitado.
+    const NOMBRE_POR_PERIODO = {
+        ultima_prueba: 'informe_ultima_prueba.pdf',
+        semestral: 'informe_semestral.pdf',
+        anual: 'informe_anual.pdf',
+        personalizado: 'informe_personalizado.pdf',
+    };
+
     // Descarga directa (modo 'quick') sin pasar por el modal de la opción:
     // usa la configuración guardada (branding del último uso o defaults).
-    const descargaRapida = async (op) => {
+    // `periodo` (opcional) proviene de las cards de "Informes del período":
+    // cuando viaja en el body, el backend resuelve el layout por sí solo.
+    const descargaRapida = async (op, periodo = null) => {
         const tid = toast.loading('Generando informe…');
         try {
             let resp;
@@ -272,14 +287,7 @@ export default function Results() {
                 let overrides;
                 try {
                     const saved = JSON.parse(localStorage.getItem(`report_v2_branding_${op.tipo_v2}`) || 'null');
-                    if (saved) {
-                        overrides = {
-                            branding: {
-                                center_header: [saved.line1, saved.line2, saved.line3].filter(Boolean),
-                                left_footer: saved.autor || '',
-                            },
-                        };
-                    }
+                    overrides = brandingGuardadoToOverrides(saved, user?.org_name);
                 } catch { /* sin branding guardado: usa defaults del esquema */ }
                 resp = await fetchAuth(`${API_BASE_URL}/reports/${op.tipo_v2}`, {
                     method: 'POST',
@@ -291,6 +299,33 @@ export default function Results() {
                     }),
                 });
                 fallbackName = `informe_${op.tipo_v2}.pdf`;
+            } else if (periodo) {
+                // Informes del período — motor único (weasyprint). `tipo` va como
+                // placeholder por retrocompatibilidad del contrato: el backend lo
+                // ignora cuando `periodo` está presente.
+                resp = await fetchAuth(`${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        filters: selectedFilters,
+                        tipo: 'evaluacion',
+                        engine: 'weasyprint',
+                        periodo,
+                    }),
+                });
+                fallbackName = NOMBRE_POR_PERIODO[periodo.tipo] || 'informe.pdf';
+            } else if (op.motor === 'custom') {
+                // Registry de informes especializados con motor propio.
+                const nombreCustom = op.nombre || String(op.id || '').replace(/^custom_/, '');
+                resp = await fetchAuth(`${API_BASE_URL}/reports/custom/${nombreCustom}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        indicator_id: parseInt(selectedIndicator, 10),
+                        filtros: mapFiltersToNames(),
+                    }),
+                });
+                fallbackName = `informe_${nombreCustom}.${op.formato === 'word' ? 'docx' : 'pdf'}`;
             } else if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
                 resp = await fetchAuth(`${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`, {
                     method: 'POST',
@@ -314,6 +349,9 @@ export default function Results() {
                 });
                 fallbackName = `${nombreInforme}.docx`;
             }
+            if (!resp) {
+                throw new Error(`Tipo de informe no soportado por esta interfaz (motor: ${op.motor || 'desconocido'})`);
+            }
             if (!resp.ok) {
                 let detail = 'Error generando el informe';
                 try { detail = (await resp.json()).detail || detail; } catch { /* binario o vacío */ }
@@ -326,30 +364,55 @@ export default function Results() {
         }
     };
 
-    const handleReportOptionSelect = (op, mode = 'custom') => {
-        // Validación temporal del motor v2 aplica en ambos modos
-        if (op.motor === 'v2') {
-            const params = mapFiltersToNames();
-            const temporales = op.requiere_filtro_temporal || [];
-            const tiene = temporales.some(k => k in params);
-            const multi = temporales.some(k => Array.isArray(params[k]) && params[k].length > 1);
-            if (!tiene) {
-                toast.error(`Aplica un filtro de ${temporales.slice(0, 2).join(' o ')} en el dashboard antes de generar este informe (un punto en el tiempo).`);
-                return;
-            }
-            if (multi) {
-                toast.error(`Este informe requiere UN solo punto temporal. Selecciona un único valor en ${temporales.slice(0, 2).join(' o ')}.`);
-                return;
-            }
+    // Valida que los filtros del dashboard acoten UN solo punto temporal.
+    // Aplica a los motores que lo declaran (`requiere_filtro_temporal`).
+    // Devuelve true si se puede continuar.
+    const validarFiltroTemporal = (op) => {
+        const temporales = op.requiere_filtro_temporal || [];
+        if (temporales.length === 0) return true;
+        const params = mapFiltersToNames();
+        const tiene = temporales.some(k => k in params);
+        const multi = temporales.some(k => Array.isArray(params[k]) && params[k].length > 1);
+        if (!tiene) {
+            toast.error(`Aplica un filtro de ${temporales.slice(0, 2).join(' o ')} en el dashboard antes de generar este informe (un punto en el tiempo).`);
+            return false;
+        }
+        if (multi) {
+            toast.error(`Este informe requiere UN solo punto temporal. Selecciona un único valor en ${temporales.slice(0, 2).join(' o ')}.`);
+            return false;
+        }
+        return true;
+    };
+
+    const handleReportOptionSelect = (op, mode = 'custom', extras = {}) => {
+        // Período solicitado: viene del selector (cards de período / panel
+        // personalizado) o del propio catálogo de la opción.
+        const periodo = extras?.periodo || op?.periodo || null;
+
+        // Validación temporal — motores que declaran dimensiones temporales
+        if (op.motor === 'v2' || op.motor === 'custom') {
+            if (!validarFiltroTemporal(op)) return;
         }
 
         if (mode === 'quick') {
             setShowReportSelector(false);
-            descargaRapida(op);
+            descargaRapida(op, periodo);
             return;
         }
 
         // Modo 'custom': abrir el modal específico para personalizar
+        // Informes del período → modal V1 con el `periodo` ya resuelto.
+        if (periodo) {
+            setReportV1Context({
+                tipo: 'evaluacion',
+                engine: 'weasyprint',
+                periodo,
+                periodoLabel: op.label,
+            });
+            setShowReportSelector(false);
+            setShowReportModal(true);
+            return;
+        }
         if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
             setReportV1Context({
                 tipo: op.invocacion?.params?.tipo || 'evaluacion',
@@ -376,6 +439,14 @@ export default function Results() {
             });
             setShowReportSelector(false);
             setShowWordModal(true);
+            return;
+        }
+        // Motores del registry `custom`: no tienen modal de encabezados propio,
+        // así que "personalizar" degrada a descarga directa con los filtros
+        // activos del dashboard.
+        if (op.motor === 'custom') {
+            setShowReportSelector(false);
+            descargaRapida(op, null);
         }
     };
 
@@ -537,6 +608,7 @@ export default function Results() {
                 onClose={() => setShowReportSelector(false)}
                 indicatorId={selectedIndicator ? parseInt(selectedIndicator, 10) : null}
                 onSelect={handleReportOptionSelect}
+                initialFilters={filtrosPorNombre}
             />
 
             {/* Modal de generación de informe PDF */}
@@ -550,6 +622,8 @@ export default function Results() {
                 onSaved={fetchInitialData}
                 initialTipo={reportV1Context?.tipo}
                 initialEngine={reportV1Context?.engine}
+                initialPeriodo={reportV1Context?.periodo}
+                periodoLabel={reportV1Context?.periodoLabel}
             />
             {reportV2Context && (
                 <GenerateReportV2Modal
