@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     X, FileText, FileType, Loader2, Download, SlidersHorizontal,
-    CalendarClock, CalendarDays, CalendarRange, CalendarCog,
+    CalendarClock, CalendarDays, CalendarRange, CalendarCog, BookOpen,
 } from 'lucide-react';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +31,23 @@ import MultiSelectFilters from './MultiSelectFilters';
  *   - cards de período   → `op.periodo` tal cual
  *   - "Informe Personalizado" → {tipo:'personalizado', fecha_inicio?, fecha_fin?, filtros?}
  *     armado en el panel inline (filtros por NOMBRE de dimensión).
+ *
+ * ── Asignatura obligatoria ─────────────────────────────────────────────
+ * Una card puede declarar:
+ *     "asignatura": {requerida: true, dimension: "Asignatura",
+ *                    valores: ["LECTURA", "MATEMATICA"]}
+ * El backend exige que esa dimensión quede fijada a EXACTAMENTE 1 valor en
+ * los filtros efectivos (responde 400 en caso contrario). Aquí:
+ *   - Si los filtros del dashboard (`initialFilters`) ya la fijan a 1 valor,
+ *     se hereda y se muestra como chip informativo ("Asignatura: LECTURA")
+ *     con opción de cambiarla.
+ *   - Si hay 0 o ≥2 valores, la card muestra un selector obligatorio y las
+ *     acciones de descarga quedan deshabilitadas hasta que haya selección.
+ * La selección es única por modal (mismo indicador → misma dimensión) y viaja
+ * en `extras.periodo.filtros[dimension] = [valor]` (cards de período) o en
+ * `extras.filtrosExtra = {dimension: valor}` (cards sin período).
+ *
+ * Fallback: cards sin `asignatura` → cero cambios de UI ni de payload.
  */
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -60,13 +77,32 @@ function normalizeFiltrosPorNombre(raw, allowedNames = null) {
     return out;
 }
 
+/** Devuelve el spec de asignatura de una card sólo si es exigible. */
+function specAsignatura(op) {
+    const spec = op?.asignatura;
+    if (!spec || typeof spec !== 'object') return null;
+    if (!spec.requerida) return null;
+    if (!spec.dimension) return null;
+    return spec;
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // Card de opción de informe
 // ─────────────────────────────────────────────────────────────────────────
 
-function ReportOptionCard({ op, onMainClick, onCustomize, expanded = false, children }) {
+function ReportOptionCard({
+    op,
+    onMainClick,
+    onCustomize,
+    expanded = false,
+    blocked = false,          // acciones deshabilitadas por requisito pendiente
+    blockedTooltip = '',
+    footer = null,            // bloque siempre visible bajo la fila (ej. asignatura)
+    children,
+}) {
     const Icon = iconFor(op);
     const disponible = op.disponible !== false;
+    const bloqueado = disponible && blocked;
     const esWord = op.formato === 'word';
 
     return (
@@ -83,17 +119,23 @@ function ReportOptionCard({ op, onMainClick, onCustomize, expanded = false, chil
                 {/* Zona principal: descarga en un clic (o expande, en Personalizado) */}
                 <button
                     type="button"
-                    disabled={!disponible}
+                    disabled={!disponible || (bloqueado && !op.requiere_configuracion)}
                     aria-expanded={op.requiere_configuracion ? expanded : undefined}
                     onClick={onMainClick}
                     title={
                         !disponible
                             ? (op.motivo_no_disponible || 'No disponible')
-                            : op.requiere_configuracion
-                                ? 'Configurar el período y los filtros del informe'
-                                : 'Descargar con la configuración guardada'
+                            : bloqueado && !op.requiere_configuracion
+                                ? (blockedTooltip || 'Falta completar un dato obligatorio')
+                                : op.requiere_configuracion
+                                    ? 'Configurar el período y los filtros del informe'
+                                    : 'Descargar con la configuración guardada'
                     }
-                    className={`flex-1 flex items-center gap-4 text-left min-w-0 ${disponible ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                    className={`flex-1 flex items-center gap-4 text-left min-w-0 ${
+                        !disponible || (bloqueado && !op.requiere_configuracion)
+                            ? 'cursor-not-allowed'
+                            : 'cursor-pointer'
+                    }`}
                 >
                     <div className={`p-2.5 rounded-xl shrink-0 ${esWord ? 'bg-emerald-50 dark:bg-emerald-900/20' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
                         <Icon size={18} className={esWord ? 'text-emerald-600 dark:text-emerald-400' : 'text-indigo-600 dark:text-indigo-400'} />
@@ -109,7 +151,7 @@ function ReportOptionCard({ op, onMainClick, onCustomize, expanded = false, chil
                         </p>
                     </div>
                     {disponible && !op.requiere_configuracion && (
-                        <Download size={16} className="text-indigo-400 shrink-0" />
+                        <Download size={16} className={`shrink-0 ${bloqueado ? 'text-slate-300 dark:text-slate-600' : 'text-indigo-400'}`} />
                     )}
                     {disponible && op.requiere_configuracion && (
                         <SlidersHorizontal size={16} className={`shrink-0 ${expanded ? 'text-indigo-600' : 'text-indigo-400'}`} />
@@ -120,15 +162,23 @@ function ReportOptionCard({ op, onMainClick, onCustomize, expanded = false, chil
                 {disponible && !op.requiere_configuracion && onCustomize && (
                     <button
                         type="button"
+                        disabled={bloqueado}
                         onClick={onCustomize}
                         aria-label={`Personalizar ${op.label}`}
-                        title="Personalizar encabezados y nombre de archivo antes de descargar"
-                        className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/60 dark:hover:bg-slate-700 transition-all shrink-0"
+                        title={bloqueado
+                            ? (blockedTooltip || 'Falta completar un dato obligatorio')
+                            : 'Personalizar encabezados y nombre de archivo antes de descargar'}
+                        className="p-2.5 rounded-xl text-slate-400 hover:text-indigo-600 hover:bg-indigo-100/60 dark:hover:bg-slate-700 disabled:text-slate-300 dark:disabled:text-slate-600 disabled:hover:bg-transparent disabled:cursor-not-allowed transition-all shrink-0"
                     >
                         <SlidersHorizontal size={16} />
                     </button>
                 )}
             </div>
+
+            {/* Requisitos siempre visibles (ej. selector de asignatura) */}
+            {disponible && footer && (
+                <div className="px-4 pb-4 -mt-1">{footer}</div>
+            )}
 
             {/* Panel inline (Informe Personalizado) */}
             {expanded && children && (
@@ -159,6 +209,10 @@ export default function ReportSelectorModal({
     const [fechaInicio, setFechaInicio] = useState('');
     const [fechaFin, setFechaFin] = useState('');
 
+    // Asignatura obligatoria — selección única para todo el modal
+    const [asignatura, setAsignatura] = useState(null);
+    const [cambiandoAsignatura, setCambiandoAsignatura] = useState(false);
+
     // Ref para no meter `initialFilters` (objeto nuevo en cada render del padre)
     // en las dependencias de los efectos.
     const initialFiltersRef = useRef(initialFilters);
@@ -172,6 +226,8 @@ export default function ReportSelectorModal({
         setCustomOpen(false);
         setFechaInicio('');
         setFechaFin('');
+        setAsignatura(null);
+        setCambiandoAsignatura(false);
         let active = true;
         (async () => {
             try {
@@ -230,6 +286,80 @@ export default function ReportSelectorModal({
         [customFilters]
     );
 
+    // ── Asignatura obligatoria ──
+    // Todas las cards que la exigen comparten dimensión (mismo indicador), así
+    // que basta el primer spec encontrado para derivar el valor heredado y el
+    // catálogo de valores.
+    const asignaturaSpec = useMemo(() => {
+        if (!data) return null;
+        const listas = [
+            Array.isArray(data?.grupos?.periodo) ? data.grupos.periodo : [],
+            Array.isArray(data?.grupos?.especializados) ? data.grupos.especializados : [],
+            Array.isArray(data?.opciones) ? data.opciones : [],
+        ];
+        for (const lista of listas) {
+            for (const op of lista) {
+                const spec = specAsignatura(op);
+                if (spec) return spec;
+            }
+        }
+        return null;
+    }, [data]);
+
+    // Valores ofrecibles: los del contrato; si el backend no los manda, se
+    // recuperan del catálogo de dimensiones filtrables.
+    const asignaturaValores = useMemo(() => {
+        if (!asignaturaSpec) return [];
+        const declarados = (Array.isArray(asignaturaSpec.valores) ? asignaturaSpec.valores : [])
+            .filter((v) => v !== null && v !== undefined && v !== '')
+            .map(String);
+        if (declarados.length) return declarados;
+        return dimsFiltrables.dimensions[asignaturaSpec.dimension]?.values || [];
+    }, [asignaturaSpec, dimsFiltrables]);
+
+    // Valor heredado del dashboard: sólo cuenta si acota a EXACTAMENTE 1 valor.
+    const asignaturaHeredada = useMemo(() => {
+        if (!open || !asignaturaSpec) return null;
+        const vals = normalizeFiltrosPorNombre(initialFiltersRef.current)[asignaturaSpec.dimension];
+        return Array.isArray(vals) && vals.length === 1 ? vals[0] : null;
+    }, [open, asignaturaSpec]);
+
+    // Prefill con el valor heredado.
+    useEffect(() => {
+        if (!open) return;
+        setAsignatura(asignaturaHeredada || null);
+        setCambiandoAsignatura(false);
+    }, [open, asignaturaHeredada]);
+
+    // El panel del informe personalizado manda: si fija la dimensión a 1 valor,
+    // el selector se sincroniza con él.
+    useEffect(() => {
+        const dim = asignaturaSpec?.dimension;
+        if (!dim) return;
+        const vals = filtrosPersonalizados[dim];
+        if (Array.isArray(vals) && vals.length === 1 && vals[0] !== asignatura) {
+            setAsignatura(vals[0]);
+            setCambiandoAsignatura(false);
+        }
+    }, [filtrosPersonalizados, asignaturaSpec, asignatura]);
+
+    // Elegir asignatura: se refleja también en el panel personalizado cuando esa
+    // dimensión es filtrable, para que ambos controles digan lo mismo.
+    const elegirAsignatura = (valor) => {
+        setAsignatura(valor);
+        setCambiandoAsignatura(false);
+        const dim = asignaturaSpec?.dimension;
+        if (dim && dimsFiltrables.dimensions[dim]) {
+            setCustomFilters((prev) => ({ ...prev, [dim]: [valor] }));
+        }
+    };
+
+    // Una card está bloqueada si exige asignatura, no hay valor elegido y
+    // tenemos valores que ofrecer. Sin catálogo de valores no bloqueamos: el
+    // backend responderá 400 con un detalle accionable.
+    const asignaturaPendiente = (op) =>
+        !!specAsignatura(op) && !asignatura && asignaturaValores.length > 0;
+
     const rangoInvalido = !!(fechaInicio && fechaFin && fechaInicio > fechaFin);
 
     const buildPeriodoPersonalizado = () => ({
@@ -241,9 +371,33 @@ export default function ReportSelectorModal({
 
     // ── Despacho al padre ──
     const emit = (op, mode) => {
+        const spec = specAsignatura(op);
+        // Guardia: no emitir sin asignatura cuando la card la exige y hay
+        // valores disponibles (los botones ya están deshabilitados en ese caso).
+        if (spec && !asignatura && asignaturaValores.length > 0) return;
+
         const extras = {};
-        if (op?.requiere_configuracion) extras.periodo = buildPeriodoPersonalizado();
-        else if (op?.periodo) extras.periodo = op.periodo;
+        let periodo = null;
+        if (op?.requiere_configuracion) periodo = buildPeriodoPersonalizado();
+        else if (op?.periodo) periodo = op.periodo;
+
+        if (spec && asignatura) {
+            const dim = spec.dimension;
+            // Filtros extra por NOMBRE de dimensión: Results los fusiona sobre los
+            // del dashboard. Van SIEMPRE para que la dimensión quede acotada a un
+            // solo valor también en `filters`, y no sólo en `periodo.filtros`
+            // (los filtros efectivos del backend son la unión de ambos).
+            extras.filtrosExtra = { [dim]: asignatura };
+            if (periodo) {
+                // Cards de período: además viaja dentro de periodo.filtros.
+                periodo = {
+                    ...periodo,
+                    filtros: { ...(periodo.filtros || {}), [dim]: [asignatura] },
+                };
+            }
+        }
+
+        if (periodo) extras.periodo = periodo;
         onSelect?.(op, mode, extras);
     };
 
@@ -253,6 +407,81 @@ export default function ReportSelectorModal({
             return;
         }
         emit(op, 'quick');
+    };
+
+    // Bloque de asignatura de una card: chip informativo o selector obligatorio.
+    const renderAsignatura = (op) => {
+        const spec = specAsignatura(op);
+        if (!spec) return null;
+        if (op.disponible === false) return null;
+
+        const etiqueta = spec.dimension || 'Asignatura';
+        const mostrarSelector = !asignatura || cambiandoAsignatura;
+
+        if (!asignaturaValores.length) {
+            return (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    Este informe requiere fijar <strong>{etiqueta}</strong> a un solo valor en los filtros del dashboard.
+                </p>
+            );
+        }
+
+        if (!mostrarSelector) {
+            return (
+                <div className="flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-100 dark:border-indigo-900/50 text-[11px] font-semibold text-indigo-700 dark:text-indigo-300">
+                        <BookOpen size={11} />
+                        {etiqueta}: {asignatura}
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setCambiandoAsignatura(true)}
+                        className="text-[11px] font-semibold text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400"
+                    >
+                        Cambiar
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1.5">
+                    {etiqueta} del informe <span className="text-rose-500">*</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                    {asignaturaValores.map((v) => (
+                        <button
+                            key={v}
+                            type="button"
+                            aria-pressed={asignatura === v}
+                            onClick={() => elegirAsignatura(v)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold border transition-all ${
+                                asignatura === v
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-indigo-400 hover:text-indigo-600 dark:hover:text-indigo-400'
+                            }`}
+                        >
+                            {v}
+                        </button>
+                    ))}
+                    {asignatura && cambiandoAsignatura && (
+                        <button
+                            type="button"
+                            onClick={() => setCambiandoAsignatura(false)}
+                            className="px-2 py-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                        >
+                            Cancelar
+                        </button>
+                    )}
+                </div>
+                {!asignatura && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5">
+                        Elige una asignatura para poder descargar este informe.
+                    </p>
+                )}
+            </div>
+        );
     };
 
     if (!open) return null;
@@ -265,11 +494,16 @@ export default function ReportSelectorModal({
     const flatOps = Array.isArray(data?.opciones) ? data.opciones : [];
     const totalOps = usarGrupos ? periodoOps.length + especialOps.length : flatOps.length;
 
-    const renderCard = (op) => (
+    const renderCard = (op) => {
+        const bloqueado = asignaturaPendiente(op);
+        return (
         <ReportOptionCard
             key={op.id}
             op={op}
             expanded={!!op.requiere_configuracion && customOpen}
+            blocked={bloqueado}
+            blockedTooltip="Elige una asignatura"
+            footer={renderAsignatura(op)}
             onMainClick={() => handleMainClick(op)}
             // Los motores del registry `custom` no tienen modal de encabezados
             // propio: esas cards sólo descargan.
@@ -349,7 +583,8 @@ export default function ReportSelectorModal({
                     <div className="flex flex-wrap items-center gap-2 pt-1">
                         <button
                             type="button"
-                            disabled={rangoInvalido}
+                            disabled={rangoInvalido || bloqueado}
+                            title={bloqueado ? 'Elige una asignatura' : undefined}
                             onClick={() => emit(op, 'quick')}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-700 disabled:cursor-not-allowed shadow-sm transition-all"
                         >
@@ -358,7 +593,8 @@ export default function ReportSelectorModal({
                         </button>
                         <button
                             type="button"
-                            disabled={rangoInvalido}
+                            disabled={rangoInvalido || bloqueado}
+                            title={bloqueado ? 'Elige una asignatura' : undefined}
                             onClick={() => emit(op, 'custom')}
                             className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                         >
@@ -369,7 +605,8 @@ export default function ReportSelectorModal({
                 </div>
             )}
         </ReportOptionCard>
-    );
+        );
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

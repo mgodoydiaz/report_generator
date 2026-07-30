@@ -13,6 +13,7 @@ routers lo traduzcan a un HTTP consistente:
 
     TipoNoSoportado                 → 404
     DatosInsuficientes / ValueError → 400
+    AsignaturaRequerida             → 400 (subclase de DatosInsuficientes)
     cualquier otra                  → 500
 
 `dispatch_v2` re-exporta ambas clases para no romper los imports
@@ -31,6 +32,16 @@ class DatosInsuficientes(ValueError):
     Se usa tanto para "falta un filtro temporal" como para "los filtros
     seleccionados dejaron el dataset sin filas". El mensaje SIEMPRE debe
     ser accionable para el usuario final: qué filtro sobra o falta.
+    """
+
+
+class AsignaturaRequerida(DatosInsuficientes):
+    """El indicador mezcla asignaturas y los filtros no fijan UNA → 400.
+
+    Los datos de un indicador pueden traer varias asignaturas (el DIA carga
+    LECTURA y MATEMATICA del mismo alumno). Un informe que las mezcla
+    cuenta pares alumno×asignatura como si fueran alumnos distintos, así
+    que se corta antes de generar. Ver `reports/asignatura.py`.
     """
 
 

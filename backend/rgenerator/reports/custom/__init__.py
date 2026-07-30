@@ -18,6 +18,7 @@ Contrato del módulo (ver `_ejemplo.py` para la plantilla comentada):
     FORMATO = "pdf"                          # "pdf" | "word"
     ENGINE_TYPES = ["pdl_idel"]              # None → aplica a todos
     REQUIERE_FILTRO_TEMPORAL = []            # ej ["Mes", "N Prueba"]
+    REQUIERE_ASIGNATURA = False              # True → el informe es por asignatura
     FILENAME = "informe_pdl_idel.pdf"        # opcional
 
     def generar(db, *, indicator_id, org_id, filtros=None, params=None,
@@ -28,6 +29,7 @@ API pública:
     obtener_modulo(nombre)       → módulo o KeyError
     listar_informes()            → metadata para el frontend
     aplica_a(modulo, engine_type)→ bool (filtro por ENGINE_TYPES)
+    requiere_asignatura(modulo)  → bool (lee REQUIERE_ASIGNATURA)
     metadata(nombre|modulo)      → dict de UN informe
 """
 from __future__ import annotations
@@ -106,8 +108,20 @@ def metadata(nombre: str, mod: ModuleType | None = None) -> dict:
         "mime": MIME_POR_FORMATO.get(formato, "application/octet-stream"),
         "engine_types": getattr(mod, "ENGINE_TYPES", None),
         "requiere_filtro_temporal": list(getattr(mod, "REQUIERE_FILTRO_TEMPORAL", []) or []),
+        "requiere_asignatura": requiere_asignatura(mod),
         "filename": nombre_archivo(nombre, mod),
     }
+
+
+def requiere_asignatura(mod: ModuleType) -> bool:
+    """True si el informe declara `REQUIERE_ASIGNATURA` (ausente → False).
+
+    El módulo solo DECLARA que su informe es por asignatura; quién decide
+    si hay que pedirla es el dato (report-options la publica cuando el
+    indicador trae ≥2 asignaturas) y quién la exige es el motor
+    (`dispatch_v2`, igual que con `REQUIERE_FILTRO_TEMPORAL`).
+    """
+    return bool(getattr(mod, "REQUIERE_ASIGNATURA", False))
 
 
 def listar_informes() -> list[dict]:

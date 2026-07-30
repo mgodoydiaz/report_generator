@@ -20,6 +20,9 @@ DESCRIPCION = (
 FORMATO = "pdf"
 ENGINE_TYPES = ["simce"]
 REQUIERE_FILTRO_TEMPORAL = ["Mes", "N Prueba", "Numero_Prueba"]
+# El SIMCE se genera por asignatura: mezclarlas contaría pares
+# alumno×asignatura como alumnos distintos.
+REQUIERE_ASIGNATURA = True
 FILENAME = "informe_simce.pdf"
 
 

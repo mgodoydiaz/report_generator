@@ -13,6 +13,11 @@ Elección de filtros: para informes v2 (que exigen UN punto temporal) se
 escanean los datos del indicador y se elige automáticamente el primer
 valor disponible del filtro temporal requerido (Hito+Año para DIA).
 El resto de informes se genera sin filtros (dataset completo).
+
+Asignatura: cuando la card declara `asignatura.requerida` (el indicador
+trae ≥2 asignaturas), se elige UNA automáticamente y el archivo lleva su
+sufijo. Sin eso, el backend responde 400 — que es justo lo que el usuario
+vería si el frontend no ofreciera el selector.
 """
 from __future__ import annotations
 
@@ -28,6 +33,9 @@ OUT_DIR = Path(__file__).resolve().parent.parent / "data" / "tmp" / "ejemplos_in
 
 # Preferencias al elegir el punto temporal (si existen en los datos)
 PREFERENCIA_HITO = ["INTERMEDIO", "DIAGNOSTICO", "CIERRE"]
+
+# Preferencias al elegir la asignatura del informe (si existen en los datos)
+PREFERENCIA_ASIGNATURA = ["LENGUAJE", "LECTURA"]
 
 
 def _slug(text: str) -> str:
@@ -109,6 +117,27 @@ def _filtro_temporal(
     return None
 
 
+def _asignatura_de(op: dict) -> tuple[str | None, str | None]:
+    """(dimension, valor) de la asignatura a fijar, o (None, None).
+
+    La card trae `asignatura` solo cuando el indicador mezcla asignaturas
+    (contrato de GET /report-options). Se elige LENGUAJE/LECTURA si están,
+    si no la primera de la lista.
+    """
+    meta = op.get("asignatura") or {}
+    if not meta.get("requerida"):
+        return None, None
+    valores = [str(v) for v in (meta.get("valores") or []) if str(v).strip()]
+    if not valores:
+        return None, None
+    por_nombre = {v.upper(): v for v in valores}
+    elegido = next(
+        (por_nombre[p] for p in PREFERENCIA_ASIGNATURA if p in por_nombre),
+        valores[0],
+    )
+    return meta.get("dimension") or "Asignatura", elegido
+
+
 def main() -> int:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     hdr = {"Authorization": f"Bearer {_token()}"}
@@ -123,7 +152,12 @@ def main() -> int:
         valores = filas = None  # lazy: solo escanear datos si alguna opción lo necesita
 
         for op in opciones:
-            archivo = f"{_slug(nombre)}__{_slug(op['id'])}.{'docx' if op['formato'] == 'word' else 'pdf'}"
+            dim_asig, val_asig = _asignatura_de(op)
+            sufijo = f"__{_slug(val_asig)}" if val_asig else ""
+            archivo = (
+                f"{_slug(nombre)}__{_slug(op['id'])}{sufijo}."
+                f"{'docx' if op['formato'] == 'word' else 'pdf'}"
+            )
             if not op["disponible"]:
                 resumen.append((archivo, "OMITIDO", op.get("motivo_no_disponible") or "no disponible"))
                 continue
@@ -142,6 +176,8 @@ def main() -> int:
                         if not filtros:
                             resumen.append((archivo, "OMITIDO", "sin valores temporales en los datos"))
                             continue
+                    if val_asig:
+                        filtros = {**filtros, dim_asig: val_asig}
                     resp = requests.post(
                         f"{BASE}/api/reports/custom/{op['nombre']}", headers=hdr, timeout=300,
                         json={"indicator_id": iid, "filtros": filtros},
@@ -165,7 +201,13 @@ def main() -> int:
                     params = op.get("invocacion", {}).get("params") or {}
                     if op["motor"] == "weasyprint":
                         if params.get("periodo"):
-                            body["periodo"] = params["periodo"]
+                            periodo_body = dict(params["periodo"])
+                            if val_asig:
+                                periodo_body["filtros"] = {
+                                    **(periodo_body.get("filtros") or {}),
+                                    dim_asig: [val_asig],
+                                }
+                            body["periodo"] = periodo_body
                         else:
                             body["tipo"] = params.get("tipo", "evaluacion")
                     resp = requests.post(

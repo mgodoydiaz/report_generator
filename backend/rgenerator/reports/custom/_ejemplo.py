@@ -36,6 +36,13 @@ ENGINE_TYPES: list[str] | None = None
 # habilitar el botón. Lista vacía = el informe se arregla solo.
 REQUIERE_FILTRO_TEMPORAL: list[str] = []
 
+# True si el informe cubre UNA sola asignatura. Cuando los datos del
+# indicador traen ≥2 asignaturas distintas, report-options publica el campo
+# `asignatura` en la card (para que la UI muestre el selector) y el informe
+# no se puede generar sin fijarla: mezclar asignaturas hace que cada alumno
+# se cuente una vez por prueba rendida. Ver `reports/asignatura.py`.
+REQUIERE_ASIGNATURA = False
+
 # Nombre del archivo descargado. Opcional: default `informe_<nombre>.pdf`.
 FILENAME = "informe_ejemplo.pdf"
 
@@ -55,7 +62,8 @@ def generar(
         db: sesión SQLAlchemy — SIEMPRE filtrar por `org_id` en las queries.
         indicator_id: indicador desde el que se pidió el informe.
         org_id: organización del usuario autenticado (multi-tenancy).
-        filtros: {nombre_columna: valor | [valores]} elegidos en la UI.
+        filtros: {nombre_columna: valor | [valores]} elegidos en la UI —
+            incluye la asignatura cuando `REQUIERE_ASIGNATURA` es True.
         params: parámetros libres del informe (los define cada informe).
         overrides: overrides de esquema/branding. El pie izquierdo se
             rellena con el nombre de la organización si no viene definido

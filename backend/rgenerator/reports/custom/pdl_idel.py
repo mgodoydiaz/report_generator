@@ -22,6 +22,8 @@ DESCRIPCION = (
 FORMATO = "pdf"
 ENGINE_TYPES = ["pdl_idel"]
 REQUIERE_FILTRO_TEMPORAL: list[str] = []
+# IDEL es una sola asignatura (lectura): no hay nada que elegir.
+REQUIERE_ASIGNATURA = False
 FILENAME = "informe_pdl_idel.pdf"
 
 

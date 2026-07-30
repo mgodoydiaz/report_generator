@@ -250,6 +250,36 @@ export default function Results() {
     // dispararía re-seteos innecesarios dentro del modal).
     const filtrosPorNombre = useMemo(() => mapFiltersToNames(), [mapFiltersToNames]);
 
+    // ── Filtros extra que llegan del selector (ej. asignatura obligatoria) ──
+    // Vienen por NOMBRE de dimensión: {"Asignatura": "LECTURA"}.
+
+    /** Fusiona filtros extra sobre un dict por nombre (los extra mandan). */
+    const mergeFiltrosExtra = useCallback((base, extra) => {
+        if (!extra || typeof extra !== 'object') return base;
+        const out = { ...(base || {}) };
+        Object.entries(extra).forEach(([name, val]) => {
+            if (val === null || val === undefined || val === '') return;
+            out[name] = val;
+        });
+        return out;
+    }, []);
+
+    /**
+     * Traduce filtros extra por NOMBRE a la forma {dimId: [vals]} que usa
+     * `selectedFilters`, sobre una copia de los filtros activos. Los nombres
+     * que no existen en el indicador se ignoran.
+     */
+    const filtrosPorIdConExtra = useCallback((extra) => {
+        if (!extra || !Object.keys(extra).length) return selectedFilters;
+        const out = { ...selectedFilters };
+        Object.entries(extra).forEach(([name, val]) => {
+            const hit = Object.entries(indicatorDims).find(([, d]) => d?.name === name);
+            if (!hit) return;
+            out[hit[0]] = Array.isArray(val) ? val.map(String) : [String(val)];
+        });
+        return out;
+    }, [selectedFilters, indicatorDims]);
+
     // Descarga un Response como archivo, respetando Content-Disposition.
     const descargarRespuesta = async (resp, fallbackName) => {
         const blob = await resp.blob();
@@ -277,11 +307,16 @@ export default function Results() {
     // usa la configuración guardada (branding del último uso o defaults).
     // `periodo` (opcional) proviene de las cards de "Informes del período":
     // cuando viaja en el body, el backend resuelve el layout por sí solo.
-    const descargaRapida = async (op, periodo = null) => {
+    // `filtrosExtra` (opcional) son filtros por NOMBRE que el selector fija
+    // explícitamente (ej. la asignatura obligatoria) y que deben pisar los del
+    // dashboard.
+    const descargaRapida = async (op, periodo = null, filtrosExtra = null) => {
         const tid = toast.loading('Generando informe…');
         try {
             let resp;
             let fallbackName = 'informe.pdf';
+            const filtrosNombre = mergeFiltrosExtra(mapFiltersToNames(), filtrosExtra);
+            const filtrosId = filtrosPorIdConExtra(filtrosExtra);
             if (op.motor === 'v2') {
                 // Branding: último usado para este tipo (mismo storage que el modal v2)
                 let overrides;
@@ -294,7 +329,7 @@ export default function Results() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         indicator_id: parseInt(selectedIndicator, 10),
-                        filtros: mapFiltersToNames(),
+                        filtros: filtrosNombre,
                         ...(overrides ? { overrides } : {}),
                     }),
                 });
@@ -307,7 +342,7 @@ export default function Results() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        filters: selectedFilters,
+                        filters: filtrosId,
                         tipo: 'evaluacion',
                         engine: 'weasyprint',
                         periodo,
@@ -322,7 +357,7 @@ export default function Results() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         indicator_id: parseInt(selectedIndicator, 10),
-                        filtros: mapFiltersToNames(),
+                        filtros: filtrosNombre,
                     }),
                 });
                 fallbackName = `informe_${nombreCustom}.${op.formato === 'word' ? 'docx' : 'pdf'}`;
@@ -331,7 +366,7 @@ export default function Results() {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        filters: selectedFilters,
+                        filters: filtrosId,
                         tipo: op.invocacion?.params?.tipo || 'evaluacion',
                         engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
                     }),
@@ -344,7 +379,7 @@ export default function Results() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         indicator_id: parseInt(selectedIndicator, 10),
-                        filtros: mapFiltersToNames(),
+                        filtros: filtrosNombre,
                     }),
                 });
                 fallbackName = `${nombreInforme}.docx`;
@@ -388,6 +423,10 @@ export default function Results() {
         // Período solicitado: viene del selector (cards de período / panel
         // personalizado) o del propio catálogo de la opción.
         const periodo = extras?.periodo || op?.periodo || null;
+        // Filtros por NOMBRE que el selector fija de forma explícita (asignatura
+        // obligatoria). En las cards de período la asignatura viaja además dentro
+        // de `periodo.filtros`; aquí sirve para acotar también `filters`.
+        const filtrosExtra = extras?.filtrosExtra || null;
 
         // Validación temporal — motores que declaran dimensiones temporales
         if (op.motor === 'v2' || op.motor === 'custom') {
@@ -396,18 +435,20 @@ export default function Results() {
 
         if (mode === 'quick') {
             setShowReportSelector(false);
-            descargaRapida(op, periodo);
+            descargaRapida(op, periodo, filtrosExtra);
             return;
         }
 
         // Modo 'custom': abrir el modal específico para personalizar
-        // Informes del período → modal V1 con el `periodo` ya resuelto.
+        // Informes del período → modal V1 con el `periodo` ya resuelto
+        // (incluye `periodo.filtros` con la asignatura si la card la exigía).
         if (periodo) {
             setReportV1Context({
                 tipo: 'evaluacion',
                 engine: 'weasyprint',
                 periodo,
                 periodoLabel: op.label,
+                filters: filtrosExtra ? filtrosPorIdConExtra(filtrosExtra) : null,
             });
             setShowReportSelector(false);
             setShowReportModal(true);
@@ -417,6 +458,7 @@ export default function Results() {
             setReportV1Context({
                 tipo: op.invocacion?.params?.tipo || 'evaluacion',
                 engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+                filters: filtrosExtra ? filtrosPorIdConExtra(filtrosExtra) : null,
             });
             setShowReportSelector(false);
             setShowReportModal(true);
@@ -426,7 +468,7 @@ export default function Results() {
             setReportV2Context({
                 tipoV2: op.tipo_v2,
                 indicatorId: parseInt(selectedIndicator, 10),
-                filtros: mapFiltersToNames(),
+                filtros: mergeFiltrosExtra(mapFiltersToNames(), filtrosExtra),
             });
             setShowReportSelector(false);
             setShowReportV2Modal(true);
@@ -435,7 +477,7 @@ export default function Results() {
         if (op.motor === 'docxtpl') {
             setWordContext({
                 indicatorId: parseInt(selectedIndicator, 10),
-                filtros: mapFiltersToNames(),
+                filtros: mergeFiltrosExtra(mapFiltersToNames(), filtrosExtra),
             });
             setShowReportSelector(false);
             setShowWordModal(true);
@@ -446,7 +488,7 @@ export default function Results() {
         // activos del dashboard.
         if (op.motor === 'custom') {
             setShowReportSelector(false);
-            descargaRapida(op, null);
+            descargaRapida(op, null, filtrosExtra);
         }
     };
 
@@ -617,7 +659,9 @@ export default function Results() {
                 onClose={() => setShowReportModal(false)}
                 indicator={currentIndicator}
                 indicatorDims={indicatorDims}
-                initialFilters={selectedFilters}
+                // Si el selector fijó filtros explícitos (asignatura obligatoria)
+                // el modal arranca con ellos ya aplicados.
+                initialFilters={reportV1Context?.filters || selectedFilters}
                 sortedDimKeys={sortedDimKeys}
                 onSaved={fetchInitialData}
                 initialTipo={reportV1Context?.tipo}

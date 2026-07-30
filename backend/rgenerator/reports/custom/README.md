@@ -38,6 +38,7 @@ DESCRIPCION = "..."                       # obligatorio — subtítulo de la car
 FORMATO = "pdf"                           # "pdf" | "word"
 ENGINE_TYPES = ["pdl_idel"]               # None → aplica a TODOS los indicadores
 REQUIERE_FILTRO_TEMPORAL = []             # ej ["Mes", "N Prueba"] — la UI lo exige
+REQUIERE_ASIGNATURA = False               # True → el informe es de UNA asignatura
 FILENAME = "informe_pdl_idel.pdf"         # opcional; default informe_<nombre>.pdf
 
 def generar(db, *, indicator_id: int, org_id: int,
@@ -52,8 +53,34 @@ def generar(db, *, indicator_id: int, org_id: int,
 | `FORMATO` | no (`"pdf"`) | Define el `Content-Type` y la extensión por defecto. |
 | `ENGINE_TYPES` | no (`None`) | Lista de `Indicator.report_engine_type` a los que aplica. `None` = todos. |
 | `REQUIERE_FILTRO_TEMPORAL` | no (`[]`) | Dimensiones temporales que el informe necesita; el frontend obliga a elegir una antes de habilitar la descarga. |
+| `REQUIERE_ASIGNATURA` | no (`False`) | `True` si el informe cubre UNA sola asignatura. Ver más abajo. |
 | `FILENAME` | no | Nombre del archivo descargado. |
 | `generar` | sí | Devuelve los bytes. Sin esta función el módulo se ignora con warning. |
+
+### `REQUIERE_ASIGNATURA`
+
+Los datos de un indicador pueden traer **varias asignaturas** (el DIA de la
+fundación carga LECTURA y MATEMATICA del mismo alumno en las mismas metrics). Un
+informe que las mezcla cuenta cada alumno una vez por prueba rendida: los "42
+alumnos" del encabezado son en realidad 21 alumnos × 2 asignaturas.
+
+El flag funciona igual que `REQUIERE_FILTRO_TEMPORAL` — **declarativo en el
+módulo, obligatorio en el motor**:
+
+| Capa | Qué hace |
+|---|---|
+| El módulo | Declara `REQUIERE_ASIGNATURA = True`. |
+| `GET /api/indicators/{id}/report-options` | Publica el campo `asignatura` en la card **solo si** el módulo lo declara **y** los datos del indicador traen ≥2 asignaturas distintas. |
+| `reports/asignatura.py` | Detecta la dimensión (nombre normalizado que contenga "asignatura") y sus valores reales. |
+| `dispatch_v2.generar_pdf_v2` | Exige que los filtros la fijen a **exactamente un** valor; 0 ó >1 → `AsignaturaRequerida` → HTTP 400. |
+
+Con 0 ó 1 asignatura en los datos no hay nada que preguntar: el campo se omite,
+no hay 400 y el motor usa la única asignatura presente (nunca un literal por
+defecto). Los informes de IDEL, Fluidez Lectora y Cálculo Veloz no se ven
+afectados.
+
+Un informe custom que **no** pase por `dispatch_v2` y sea por asignatura debe
+llamar a `asignatura.resolver_seleccion` en su propio `generar`.
 
 **Reglas duras**
 
@@ -87,6 +114,9 @@ siempre que `ENGINE_TYPES` incluya el `engine_type` del indicador:
   "nombre": "pdl_idel",
   "requiere_filtro_temporal": [],
   "disponible": true,
+  // Solo presente si REQUIERE_ASIGNATURA y los datos traen ≥2 asignaturas:
+  // "asignatura": {"requerida": true, "dimension": "Asignatura",
+  //                "valores": ["LECTURA", "MATEMATICA"]},
   "motivo_no_disponible": null,
   "invocacion": {
     "endpoint": "/api/reports/custom/pdl_idel",
@@ -116,7 +146,7 @@ POST /api/reports/custom/{nombre}
 |---|---|
 | `200` | Binario del informe con `Content-Disposition: attachment`. |
 | `404` | `nombre` no está en el registro. |
-| `400` | El informe no aplica al `engine_type` del indicador, o `generar` levantó `ValueError`. |
+| `400` | El informe no aplica al `engine_type` del indicador, `generar` levantó `ValueError`, o falta fijar la asignatura (`REQUIERE_ASIGNATURA`). |
 | `500` | Cualquier otro error (se loguea con stacktrace, no se filtra al cliente). |
 
 ---

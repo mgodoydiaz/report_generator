@@ -19,6 +19,9 @@ DESCRIPCION = (
 FORMATO = "pdf"
 ENGINE_TYPES = ["dia"]
 REQUIERE_FILTRO_TEMPORAL = ["Hito", "Año"]
+# Los datos DIA de la fundación traen LECTURA y MATEMATICA del mismo
+# alumno: sin fijar la asignatura, todos los conteos se duplican.
+REQUIERE_ASIGNATURA = True
 FILENAME = "informe_dia.pdf"
 
 

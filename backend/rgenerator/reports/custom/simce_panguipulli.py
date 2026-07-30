@@ -19,6 +19,7 @@ DESCRIPCION = (
 FORMATO = "pdf"
 ENGINE_TYPES = ["simce_panguipulli"]
 REQUIERE_FILTRO_TEMPORAL = ["Mes", "N Prueba", "Numero_Prueba"]
+REQUIERE_ASIGNATURA = True
 FILENAME = "informe_simce_panguipulli.pdf"
 
 

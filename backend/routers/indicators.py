@@ -284,6 +284,43 @@ def _dimensiones_filtrables(db: Session, indicator_id: int, org_id: int,
     return out
 
 
+def _tiene_dimension_asignatura(db: Session, indicator_id: int, org_id: int) -> bool:
+    """True si alguna dimensión del indicador se llama "asignatura".
+
+    Chequeo BARATO (solo el catálogo de dimensiones) para decidir si vale
+    la pena cargar los datos y contar cuántas asignaturas hay de verdad.
+    """
+    from backend.rgenerator.reports import asignatura as asignaturas
+
+    try:
+        dims = _dimensiones_del_indicador(db, indicator_id, org_id)
+    except Exception:  # pragma: no cover — defensivo
+        logger.error("No se pudieron listar dimensiones del indicador", exc_info=True)
+        return False
+    return any(
+        asignaturas.es_nombre_asignatura(_columna_de_dimension(d.name))
+        or asignaturas.es_nombre_asignatura(d.name)
+        for d in dims
+    )
+
+
+def _descriptor_asignatura(dataframes: dict) -> Optional[dict]:
+    """Campo `asignatura` de las cards, o None si no hay que elegir.
+
+    Ver `backend/rgenerator/reports/asignatura.py`: solo se emite cuando el
+    indicador trae ≥2 asignaturas distintas en sus datos, porque solo
+    entonces mezclarlas falsea los conteos (un alumno con LECTURA y
+    MATEMATICA se contaría dos veces).
+    """
+    from backend.rgenerator.reports import asignatura as asignaturas
+
+    try:
+        return asignaturas.descriptor(dataframes)
+    except Exception:  # pragma: no cover — nunca debe tumbar report-options
+        logger.error("No se pudo detectar la dimensión asignatura", exc_info=True)
+        return None
+
+
 def _orden_natural(valor: str):
     """Clave de orden alfanumérico natural ('1 A' < '2 A' < '10 A')."""
     import re
@@ -325,6 +362,20 @@ def report_options(
 
     El `engine_type` sale de `report_engine_type` (fallback a heurística por
     nombre solo para retrocompatibilidad).
+
+    Campo `asignatura` (opcional, solo en cards PDF): aparece cuando los
+    datos del indicador traen ≥2 asignaturas distintas y el informe cubre
+    una sola. El frontend debe mostrar un selector obligatorio; sin él,
+    `export-pdf` / `reports/custom` responden 400.
+
+        "asignatura": {
+            "requerida": true,
+            "dimension": "Asignatura",
+            "valores": ["LECTURA", "MATEMATICA"]
+        }
+
+    Con 0 ó 1 asignatura el campo se OMITE (IDEL, Fluidez Lectora y
+    Cálculo Veloz no se ven afectados).
     """
     from backend.rgenerator.reports.engine_types import resolver_engine_type
     from backend.rgenerator.reports.periodos import resolver_periodo_multi
@@ -350,6 +401,10 @@ def report_options(
         db, indicator_id, user.org_id
     )
     hoy = date.today()
+
+    # Los datos del indicador pueden traer varias asignaturas: en ese caso
+    # todas las cards PDF exigen elegir una (ver `_descriptor_asignatura`).
+    descriptor_asignatura = _descriptor_asignatura(dataframes)
 
     # ── Grupo "periodo" ──
     grupo_periodo: list[dict] = []
@@ -400,6 +455,8 @@ def report_options(
         }
         if requiere_config:
             opcion["requiere_configuracion"] = True
+        if descriptor_asignatura:
+            opcion["asignatura"] = dict(descriptor_asignatura)
         grupo_periodo.append(opcion)
 
     # ── Grupo "especializados": registro custom + informes Word ──
@@ -407,7 +464,7 @@ def report_options(
     try:
         from backend.rgenerator.reports import custom as custom_reports
         for inf in custom_reports.informes_para(engine_type):
-            especializados.append({
+            opcion_custom = {
                 "id": f"custom_{inf['nombre']}",
                 "label": inf["label"],
                 "descripcion": inf["descripcion"],
@@ -421,7 +478,17 @@ def report_options(
                     "endpoint": f"/api/reports/custom/{inf['nombre']}",
                     "params": {"indicator_id": indicator_id},
                 },
-            })
+            }
+            # El módulo DECLARA que su informe es por asignatura; los datos
+            # deciden si de verdad hay que elegir una. Los informes Word no
+            # participan (están fuera del alcance de esta versión).
+            if (
+                inf.get("requiere_asignatura")
+                and inf["formato"] == "pdf"
+                and descriptor_asignatura
+            ):
+                opcion_custom["asignatura"] = dict(descriptor_asignatura)
+            especializados.append(opcion_custom)
     except Exception:
         logger.error("No se pudieron listar informes custom para report-options", exc_info=True)
 
@@ -664,7 +731,11 @@ def _mapa_columna_a_dimension(db: Session, indicator_id: int, org_id: int) -> Di
 
 
 def _resolver_periodo_a_filtros(
-    db: Session, record: Indicator, org_id: int, periodo: Dict[str, Any]
+    db: Session,
+    record: Indicator,
+    org_id: int,
+    periodo: Dict[str, Any],
+    datos: Optional[tuple] = None,
 ) -> tuple:
     """(tipo_layout, {id_dimension: valores}, descripcion) para el `periodo`.
 
@@ -673,18 +744,34 @@ def _resolver_periodo_a_filtros(
     la última línea del encabezado del PDF, que en el layout persistido
     queda stale (QA 2026-07-30, P0-10).
 
+    `periodo.filtros` (ej `{"Asignatura": ["LECTURA"]}`) se aplica ANTES de
+    resolver — la última prueba de LECTURA no tiene por qué ser la última
+    del indicador — y viaja en los filtros de salida. `resolver_periodo`
+    solo los honraba en el tipo "personalizado".
+
+    Args:
+        datos: `(dataframes, error)` ya cargados por el caller. Sin esto
+            los carga por su cuenta.
+
     Raises:
         HTTPException 400: si el período no es resoluble (sin datos, sin
             dimensión temporal, sin datos del año/semestre) o si alguna
             columna resuelta no corresponde a una dimensión del indicador.
     """
-    from backend.rgenerator.reports.periodos import resolver_periodo_multi
-
-    dataframes, error_datos = _cargar_dataframes_best_effort(
-        db, record.id_indicator, org_id
+    from backend.rgenerator.reports.periodos import (
+        aplicar_filtros_a_dataframes,
+        resolver_periodo_multi,
     )
+
+    if datos is None:
+        datos = _cargar_dataframes_best_effort(db, record.id_indicator, org_id)
+    dataframes, error_datos = datos
     if error_datos:
         raise HTTPException(status_code=400, detail=error_datos)
+
+    filtros_usuario = dict((periodo or {}).get("filtros") or {})
+    if filtros_usuario:
+        dataframes = aplicar_filtros_a_dataframes(dataframes, filtros_usuario)
 
     resultado = resolver_periodo_multi(dataframes, periodo, date.today())
     if not resultado.disponible:
@@ -694,7 +781,18 @@ def _resolver_periodo_a_filtros(
         )
 
     mapa = _mapa_columna_a_dimension(db, record.id_indicator, org_id)
-    faltantes = [c for c in resultado.filtros if c not in mapa]
+    ids_validos = {str(i) for i in mapa.values()}
+    # Los filtros del usuario pueden venir por nombre de columna o ya como
+    # id_dimension (según de dónde salga el selector del frontend).
+    combinados = {
+        **{k: v for k, v in filtros_usuario.items() if str(k) not in ids_validos},
+        **resultado.filtros,
+    }
+    ya_traducidos = {
+        str(k): v for k, v in filtros_usuario.items() if str(k) in ids_validos
+    }
+
+    faltantes = [c for c in combinados if c not in mapa]
     if faltantes:
         raise HTTPException(
             status_code=400,
@@ -705,8 +803,73 @@ def _resolver_periodo_a_filtros(
             ),
         )
 
-    filtros = {str(mapa[col]): valor for col, valor in resultado.filtros.items()}
+    filtros = {str(mapa[col]): valor for col, valor in combinados.items()}
+    filtros.update(ya_traducidos)
     return resultado.tipo_layout, filtros, resultado.descripcion
+
+
+def _normalizar_filtros_a_dimensiones(
+    db: Session,
+    indicator_id: int,
+    org_id: int,
+    filters: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Traduce las claves que son NOMBRES de dimensión a su `id_dimension`.
+
+    `build_pdf_bytes` compara contra `dimensions_json`, cuyas claves son
+    ids: un filtro por nombre no matchea ninguna fila y el informe sale
+    "sin datos". El selector de asignatura del frontend trabaja con el
+    NOMBRE (`asignatura.dimension` de report-options), así que se acepta y
+    se traduce acá. Las claves que ya son ids, o que no se reconocen, pasan
+    tal cual.
+    """
+    if not filters:
+        return filters
+    mapa = _mapa_columna_a_dimension(db, indicator_id, org_id)
+    ids = {str(i) for i in mapa.values()}
+    out: Dict[str, Any] = {}
+    for clave, valor in filters.items():
+        if str(clave) not in ids and clave in mapa:
+            out[str(mapa[clave])] = valor
+        else:
+            out[str(clave)] = valor
+    return out
+
+
+def _validar_asignatura(
+    db: Session,
+    indicator_id: int,
+    org_id: int,
+    dataframes: dict,
+    filters: Optional[Dict[str, Any]],
+) -> None:
+    """400 si el indicador mezcla asignaturas y los filtros no fijan UNA.
+
+    Los datos de un indicador pueden traer varias asignaturas (el DIA carga
+    LECTURA y MATEMATICA del mismo alumno): un informe que las mezcla
+    cuenta a cada alumno una vez por prueba rendida. Los filtros efectivos
+    son los del body más los que aportó el `periodo` — el caller ya los
+    combinó — y llegan como `{id_dimension: valor}`, por eso hay que
+    traducir el nombre de la columna a su id.
+    """
+    from backend.rgenerator.reports import asignatura as asignaturas
+
+    columna, valores = asignaturas.dimension_asignatura(dataframes)
+    if not columna or not asignaturas.requiere_seleccion(valores):
+        return
+
+    mapa = _mapa_columna_a_dimension(db, indicator_id, org_id)
+    claves = {columna}
+    id_dimension = mapa.get(columna)
+    if id_dimension is not None:
+        claves.add(str(id_dimension))
+
+    elegidas = asignaturas.valores_en_filtros(filters, claves)
+    if len(elegidas) != 1:
+        raise HTTPException(
+            status_code=400,
+            detail=asignaturas.mensaje_seleccion_requerida(valores, elegidas),
+        )
 
 
 @router.post("/{indicator_id}/export-pdf")
@@ -730,7 +893,12 @@ def export_pdf(
     Body opcional `periodo`: cuando viene, el backend resuelve el período
     contra los datos reales (ver `rgenerator/reports/periodos.py`), IGNORA
     `tipo` (usa el `tipo_layout` resuelto) y aplica los filtros resueltos
-    ADEMÁS de los de `filters`.
+    ADEMÁS de los de `filters`. `periodo.filtros` acepta tanto nombres de
+    columna ("Asignatura") como ids de dimensión.
+
+    Si el indicador trae ≥2 asignaturas, los filtros EFECTIVOS (`filters`
+    ∪ `periodo.filtros`) deben fijarla a exactamente una; si no, 400 (ver
+    `_validar_asignatura`).
     """
     try:
         record = db.query(Indicator).filter(
@@ -743,16 +911,32 @@ def export_pdf(
         # Tipo de informe (default "evaluacion" para retrocompat)
         tipo = (body.tipo if body else "evaluacion") or "evaluacion"
         filters = dict(body.filters) if (body and body.filters) else {}
+        periodo = body.periodo if body else None
+
+        # Los datos del indicador se necesitan para resolver el período y
+        # para saber si mezcla asignaturas. Se cargan UNA sola vez, y solo
+        # cuando hacen falta: un indicador sin dimensión de asignatura y
+        # sin `periodo` sigue exportando sin tocar `metric_data` acá.
+        datos = None
+        if periodo or _tiene_dimension_asignatura(db, indicator_id, user.org_id):
+            datos = _cargar_dataframes_best_effort(db, indicator_id, user.org_id)
 
         # ── Período declarativo: manda sobre `tipo` y agrega filtros ──
-        periodo = body.periodo if body else None
         descripcion_periodo = ""
         if periodo:
             resuelto_tipo, filtros_periodo, descripcion_periodo = _resolver_periodo_a_filtros(
-                db, record, user.org_id, periodo
+                db, record, user.org_id, periodo, datos
             )
             tipo = resuelto_tipo
             filters.update(filtros_periodo)
+
+        filters = _normalizar_filtros_a_dimensiones(
+            db, indicator_id, user.org_id, filters
+        ) or {}
+
+        # ── Asignatura: el informe cubre UNA sola ──
+        if datos and not datos[1]:
+            _validar_asignatura(db, indicator_id, user.org_id, datos[0], filters)
 
         if tipo not in ("evaluacion", "historico"):
             raise HTTPException(

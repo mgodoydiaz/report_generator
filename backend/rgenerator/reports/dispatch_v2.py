@@ -17,9 +17,15 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from . import asignatura as asignaturas
 from .branding import formatear_filtros, pie_saneado
 from .data import cargar_dataframes_indicator
-from .errores import DatosInsuficientes, TipoNoSoportado, mensaje_sin_datos
+from .errores import (
+    AsignaturaRequerida,
+    DatosInsuficientes,
+    TipoNoSoportado,
+    mensaje_sin_datos,
+)
 
 
 __all__ = [
@@ -27,6 +33,7 @@ __all__ = [
     "FILTROS_TEMPORALES_V2",
     "TipoNoSoportado",
     "DatosInsuficientes",
+    "AsignaturaRequerida",
     "validar_tipo",
     "separar_filtros",
     "aplicar_pie_organizacion",
@@ -133,7 +140,9 @@ def generar_pdf_v2(
         indicator_id: indicador con las metrics asociadas.
         org_id: multi-tenancy.
         filtros: {nombre_columna: valor | [valores]} — debe incluir al
-            menos un filtro temporal del tipo (ver `FILTROS_TEMPORALES_V2`).
+            menos un filtro temporal del tipo (ver `FILTROS_TEMPORALES_V2`)
+            y, si el indicador trae varias asignaturas, fijar la asignatura
+            a un solo valor.
         overrides: overrides del esquema (ej `{"branding": {...}}`).
 
     Returns:
@@ -143,6 +152,8 @@ def generar_pdf_v2(
         TipoNoSoportado: tipo desconocido.
         DatosInsuficientes: falta filtro temporal, faltan metrics
             requeridas, o la combinación de filtros no tiene datos.
+        AsignaturaRequerida: el indicador tiene ≥2 asignaturas y los
+            filtros no fijan exactamente una.
         ValueError: el indicador no existe / no tiene metrics (del loader).
     """
     from .dia import crear_informe as dia_informe
@@ -152,12 +163,29 @@ def generar_pdf_v2(
     validar_tipo(tipo)
     estructurales, temporales = separar_filtros(tipo, filtros)
 
+    # ── Asignatura ──
+    # El filtro de asignatura NO se aplica en el loader: si se aplicara, la
+    # detección vería siempre UNA sola y jamás pediría elegir. Se carga sin
+    # él, se decide, y se recorta en memoria (`filtrar_dataframes`).
+    resto, elegidas = asignaturas.partir_filtros(estructurales)
+
     dataframes = cargar_dataframes_indicator(
         db,
         indicator_id=indicator_id,
         org_id=org_id,
-        filtros=estructurales,
+        filtros=resto,
     )
+
+    col_asignatura, valores_asignatura = asignaturas.dimension_asignatura(dataframes)
+    # Levanta AsignaturaRequerida (→ 400) si hay ≥2 y no se fijó una sola.
+    asignatura = asignaturas.resolver_seleccion(valores_asignatura, elegidas)
+    if col_asignatura and asignatura:
+        dataframes = asignaturas.filtrar_dataframes(
+            dataframes, col_asignatura, asignatura
+        )
+        estructurales = {**resto, col_asignatura: asignatura}
+    else:
+        estructurales = resto
 
     overrides = aplicar_pie_organizacion(db, org_id, overrides)
 
@@ -200,7 +228,7 @@ def generar_pdf_v2(
         return simce_informe.construir(
             df_estudiantes,
             df_preguntas,
-            asignatura=estructurales.get("Asignatura", "LENGUAJE"),
+            asignatura=asignatura or "",
             numero_prueba=_entero_o(n_prueba_raw, 5),
             mes=temporales.get("Mes"),
             overrides=overrides,
@@ -229,7 +257,7 @@ def generar_pdf_v2(
         return simce_panguipulli_informe.construir(
             df_estudiantes,
             df_habilidad,
-            asignatura=estructurales.get("Asignatura", "LENGUAJE"),
+            asignatura=asignatura or "",
             numero_prueba=_entero_o(n_prueba_raw, 4),
             mes=temporales.get("Mes"),
             overrides=overrides,

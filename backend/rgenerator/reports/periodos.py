@@ -531,6 +531,24 @@ def _filtrar_por_dict(df: pd.DataFrame, filtros: Mapping[str, Any]) -> pd.DataFr
     return out
 
 
+def aplicar_filtros_a_dataframes(
+    dataframes: Mapping[str, pd.DataFrame],
+    filtros: Mapping[str, Any],
+) -> dict[str, pd.DataFrame]:
+    """Aplica `{columna: valor | [valores]}` a cada df del dict.
+
+    Se usa para acotar los datos ANTES de resolver el período: la "última
+    prueba" de LECTURA no tiene por qué ser la última del indicador cuando
+    hay varias asignaturas. Las columnas que un df no tenga se ignoran.
+    """
+    if not filtros:
+        return dict(dataframes or {})
+    return {
+        rol: _filtrar_por_dict(df, filtros)
+        for rol, df in (dataframes or {}).items()
+    }
+
+
 def _claves_distintas(df: pd.DataFrame, cols: dict) -> set[tuple[int, int, int]]:
     """Set de claves temporales distintas presentes en `df`."""
     return {clave_temporal(row, cols) for _, row in df.iterrows()}
