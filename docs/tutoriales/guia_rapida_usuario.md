@@ -38,7 +38,8 @@ Cuando termine verás el mensaje **¡Proceso Completado!**. Ahí tus datos ya qu
 guardados: cierra la ventana con **Finalizar**.
 
 > 💡 Sube el archivo original de la agencia, sin cambiar el orden de las columnas
-> ni agregar filas arriba del encabezado.
+> ni agregar filas arriba del encabezado. El [anexo de carga por evaluación](./anexo_carga_pipelines.md)
+> detalla, para SIMCE, DIA y los ensayos Aptus, qué archivo va en cada recuadro.
 
 ---
 

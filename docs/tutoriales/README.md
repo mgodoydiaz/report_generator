@@ -5,6 +5,7 @@ Guías paso a paso dirigidas al personal no técnico de la fundación que usa la
 ## Contenido
 
 - [`guia_rapida_usuario.md`](./guia_rapida_usuario.md) — versión corta en 4 pasos, con pantallazos reales de la organización de demostración. Es la que se entrega a usuarios nuevos.
+- [`anexo_carga_pipelines.md`](./anexo_carga_pipelines.md) — anexo del Paso 1 de la guía rápida: un capítulo por proceso de carga real (SIMCE, DIA, EMN Aptus) con los archivos que pide cada uno, los datos extra y los errores frecuentes.
 - [`tutorial_usuario.md`](./tutorial_usuario.md) — flujo completo: subir datos de una evaluación, revisar el dashboard de Resultados y descargar el informe (PDF/Word).
 
 ## Cómo mantenerlo al día
