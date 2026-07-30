@@ -350,6 +350,32 @@ def columnas_snapshot_temporal(period_field: Optional[str], column_roles: dict,
     return cols
 
 
+def _periodo_presente_en_records(period_field: Optional[str], records: list,
+                                 column_roles: dict,
+                                 rol: str = 'evaluacion_num') -> Optional[str]:
+    """`period_field` si existe en los records; si no, el del rol temporal.
+
+    Un `periodField` que ningún record trae deja el eje X sin categorías y el
+    gráfico de tendencia sale COMPLETAMENTE en blanco, sin error ni pista. Pasa
+    con cualquier alias que no sea un rol de `_KNOWN_ROLES`: `_resolve_field`
+    lo devuelve tal cual (el caso real fue `'_evaluacion'` en el layout
+    histórico de Fluidez Lectora, cuyo rol es `evaluacion_num`).
+
+    El fallback es la primera columna del rol temporal que sí esté poblada en
+    los records. Si tampoco hay, se devuelve el campo original: no hay nada
+    mejor que ofrecer y el llamador mantiene su comportamiento previo.
+    """
+    if not records:
+        return period_field
+    if period_field and any(r.get(period_field) not in (None, '') for r in records):
+        return period_field
+    for columna in columnas_temporales_del_rol(column_roles, rol):
+        campo = _to_field_name(columna)
+        if any(r.get(campo) not in (None, '') for r in records):
+            return campo
+    return period_field
+
+
 def _temporal_config_de_indicador(indicator) -> dict:
     """`indicator.temporal_config` parseado (patrón defensivo del archivo)."""
     raw = getattr(indicator, 'temporal_config', None)
@@ -836,6 +862,16 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             records_vf = records_para_campo_de_valor(
                 records, column_roles, vf_orig, vf, group_field=gf
             )
+
+            # El periodField declarado puede no existir en los datos: basta un
+            # alias que no sea rol conocido (`'_evaluacion'` en el layout
+            # histórico de Fluidez Lectora — el rol es `evaluacion_num`) para
+            # que `_resolve_field` lo devuelva tal cual, el eje X quede sin
+            # categorías y el gráfico salga en blanco sin ningún error.
+            # Caer a la primera columna del rol temporal que sí esté en los
+            # records, misma convención que el fallback de `levelField` en
+            # StackedCountByGroup: mejor el eje del rol que un gráfico vacío.
+            pf = _periodo_presente_en_records(pf, records_vf, column_roles)
 
             groups = sorted({str(r.get(gf, '')) for r in records_vf if r.get(gf) is not None},
                             key=_natural_sort_key)

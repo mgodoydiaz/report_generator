@@ -264,7 +264,7 @@ def fl_evaluacion() -> dict:
             {"type": "table", "heading": "Cuadro Resumen PPM por Curso",
              "item": {"component": "SummaryTable",
                       "valueField": "_logro_1", "groupField": "_curso",
-                      "comparePrevious": True, "periodField": "_evaluacion"}},
+                      "comparePrevious": True, "periodField": "_evaluacion_num"}},
             {"type": "chart", "heading": "PPM Promedio por Curso",
              "item": {"component": "BarByGroup",
                       "valueField": "_logro_1", "groupField": "_curso",
@@ -284,6 +284,10 @@ def fl_evaluacion() -> dict:
     }
 
 
+# El alias del eje temporal es `_evaluacion_num` (el rol declarado en
+# `column_roles`), NO `_evaluacion`: ese último no está en `_KNOWN_ROLES`, así
+# que `_resolve_field` lo devuelve tal cual, ningún record lo trae y los
+# gráficos salían en blanco. Ver `scripts/fix_layout_historico_fl.py`.
 def fl_historico() -> dict:
     return {
         "engine": "weasyprint",
@@ -295,10 +299,10 @@ def fl_historico() -> dict:
             {"type": "chart", "heading": "Evolución PPM Promedio por Curso y Evaluación",
              "item": {"component": "GroupedBarByPeriod",
                       "valueField": "_logro_1", "groupField": "_curso",
-                      "periodField": "_evaluacion"}},
+                      "periodField": "_evaluacion_num"}},
             {"type": "chart", "heading": "Evolución de Categoría por Evaluación",
              "item": {"component": "StackedCountByGroup",
-                      "groupField": "_evaluacion",
+                      "groupField": "_evaluacion_num",
                       "levelField": "_nivel_de_logro"}},
         ],
     }
