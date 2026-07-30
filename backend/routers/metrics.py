@@ -1,12 +1,14 @@
 import json
 import io
+import re
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 
 import pandas as pd
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Request, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import func, or_, cast, literal
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
@@ -87,6 +89,103 @@ def _parse_dims_json(raw) -> dict:
     if isinstance(raw, dict):
         return raw
     return {}
+
+
+# ── Filtrado server-side de metric_data ──────────────────────────────────
+#
+# `MetricData.dimensions_json` es una columna Text con un JSON plano
+# {"<id_dimension>": "valor"}. Para poder filtrar DENTRO de la query
+# paginada (la tabla de /values llega a ~25k filas por métrica, así que
+# filtrar en Python después de paginar daría totales incorrectos) hace
+# falta extraer la clave del JSON en SQL.
+#
+# No existe un dialecto común: PostgreSQL (prod/dev) usa `::jsonb ->> 'k'`
+# y SQLite (tests) usa `json_extract(col, '$."k"')`. `_dim_value_expr`
+# encapsula esa bifurcación; el resto del router no debería volver a
+# escribir SQL sobre dimensions_json.
+#
+# Precondición: `dimensions_json` siempre contiene JSON válido — todas las
+# escrituras pasan por `json.dumps` (ver `backend/auditing.make_metric_data`
+# y los endpoints de este router). Un valor corrupto haría fallar el
+# extractor en ambos dialectos.
+
+_DIM_ID_RE = re.compile(r"^\d+$")
+
+
+def _dim_value_expr(db: Session, dim_id: str):
+    """Expresión SQL portable: valor de la dimensión `dim_id` como texto.
+
+    `dim_id` se valida contra `_DIM_ID_RE` antes de llegar aquí (solo
+    dígitos), porque en ambos dialectos la clave viaja embebida en un
+    literal de path/JSON y no como bind param.
+    """
+    key = str(dim_id)
+    if not _DIM_ID_RE.match(key):
+        raise HTTPException(status_code=400, detail=f"id de dimensión inválido: {key}")
+
+    dialect = db.bind.dialect.name if db.bind is not None else "sqlite"
+    if dialect == "postgresql":
+        from sqlalchemy.dialects.postgresql import JSONB
+        return cast(MetricData.dimensions_json, JSONB).op("->>")(literal(key))
+    # SQLite (tests) y cualquier otro dialecto con json1
+    return func.json_extract(MetricData.dimensions_json, literal(f'$."{key}"'))
+
+
+def _parse_filters_param(raw: Optional[str]) -> Dict[str, List[str]]:
+    """Parsea el query param `filters` (JSON) a {dim_id: [valores]}.
+
+    Tolera valor escalar en lugar de lista. Descarta entradas vacías.
+    """
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="El parámetro 'filters' no es JSON válido")
+    if not isinstance(parsed, dict):
+        raise HTTPException(status_code=400, detail="El parámetro 'filters' debe ser un objeto JSON")
+
+    out: Dict[str, List[str]] = {}
+    for dim_id, vals in parsed.items():
+        key = str(dim_id)
+        if not _DIM_ID_RE.match(key):
+            raise HTTPException(status_code=400, detail=f"id de dimensión inválido: {key}")
+        if vals is None:
+            continue
+        if not isinstance(vals, list):
+            vals = [vals]
+        limpios = [str(v) for v in vals if v is not None and str(v) != ""]
+        if limpios:
+            out[key] = limpios
+    return out
+
+
+def _aplicar_filtros(query, db: Session, filtros: Dict[str, List[str]], q: Optional[str]):
+    """Aplica filtros por dimensión (AND entre dims, IN dentro de cada una) y
+    búsqueda libre `q` sobre `value` + el texto de `dimensions_json`.
+
+    `q` es difusa a propósito: hace LIKE sobre el JSON crudo, así que también
+    matchea las claves numéricas. Los filtros exactos, en cambio, van por
+    extracción de clave.
+    """
+    for dim_id, valores in (filtros or {}).items():
+        query = query.filter(_dim_value_expr(db, dim_id).in_(valores))
+
+    if q and q.strip():
+        patron = f"%{q.strip().lower()}%"
+        query = query.filter(
+            or_(
+                func.lower(func.coalesce(MetricData.value, "")).like(patron),
+                func.lower(func.coalesce(MetricData.dimensions_json, "")).like(patron),
+            )
+        )
+    return query
+
+
+def _orden_natural(valor: str):
+    """Clave de orden alfanumérico natural ('1 A' < '2 A' < '10 A')."""
+    partes = re.split(r"(\d+)", str(valor))
+    return [(1, int(p), "") if p.isdigit() else (0, 0, p.lower()) for p in partes]
 
 
 def _metric_to_dict(m: Metric) -> dict:
@@ -222,9 +321,23 @@ def get_metric_data(
     page: int = 1,
     page_size: int = 50,
     include_audit: bool = False,
+    filters: Optional[str] = Query(
+        None,
+        description='JSON {"<id_dimension>": ["valor", ...]} — AND entre dimensiones, IN dentro de cada una',
+    ),
+    q: Optional[str] = Query(
+        None,
+        description="Búsqueda libre (case-insensitive) sobre el valor y las dimensiones",
+    ),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Datos paginados de una métrica, opcionalmente filtrados.
+
+    Sin `filters` ni `q` el comportamiento es idéntico al histórico. Con
+    ellos, `total` e `items` reflejan el filtro (el filtrado ocurre dentro
+    de la query paginada, no sobre la página ya traída).
+    """
     try:
         # Verify ownership via metric
         metric = db.query(Metric).filter(
@@ -234,12 +347,17 @@ def get_metric_data(
         if not metric:
             raise HTTPException(status_code=404, detail="Métrica no encontrada")
 
-        total = db.query(MetricData).filter(MetricData.id_metric == metric_id).count()
+        filtros = _parse_filters_param(filters)
+
+        base = db.query(MetricData).filter(MetricData.id_metric == metric_id)
+        base = _aplicar_filtros(base, db, filtros, q)
+
+        total = base.count()
 
         offset = (page - 1) * page_size
         rows = (
-            db.query(MetricData)
-            .filter(MetricData.id_metric == metric_id)
+            base
+            .order_by(MetricData.id_data)
             .offset(offset)
             .limit(page_size)
             .all()
@@ -277,6 +395,75 @@ def get_metric_data(
     except HTTPException:
         raise
     except Exception as e:
+        logger.error("Error interno no controlado en router de metrics", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
+
+
+@router.get("/{metric_id}/data/facets")
+def get_metric_data_facets(
+    metric_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Valores distintos REALES por dimensión — alimenta los dropdowns de /values.
+
+    Devuelve `{"<id_dimension>": {"name": "Curso", "values": [...]}}`.
+
+    Se computa en Python sobre una única query que trae solo la columna
+    `dimensions_json` (no las filas completas). Con ~25k filas por métrica el
+    costo es despreciable y evita depender de funciones de expansión de JSON
+    que no existen en SQLite (`jsonb_each` vs `json_each` tienen semánticas
+    distintas), manteniendo un solo camino de código para ambos dialectos.
+    """
+    try:
+        metric = db.query(Metric).filter(
+            Metric.id_metric == metric_id,
+            Metric.org_id == user.org_id,
+        ).first()
+        if not metric:
+            raise HTTPException(status_code=404, detail="Métrica no encontrada")
+
+        # Nombres de las dimensiones declaradas en la métrica (de la org)
+        dim_ids = [lnk.id_dimension for lnk in metric.dimension_links]
+        dims_map: Dict[int, str] = {}
+        if dim_ids:
+            for d in db.query(Dimension).filter(
+                Dimension.id_dimension.in_(dim_ids),
+                Dimension.org_id == user.org_id,
+            ).all():
+                dims_map[d.id_dimension] = d.name
+
+        valores: Dict[str, set] = {}
+        for (raw,) in db.query(MetricData.dimensions_json).filter(
+            MetricData.id_metric == metric_id
+        ).all():
+            for dim_id_str, val in _parse_dims_json(raw).items():
+                if val is None:
+                    continue
+                texto = str(val).strip()
+                if not texto or texto.lower() in ("nan", "nat", "none", "null"):
+                    continue
+                valores.setdefault(str(dim_id_str), set()).add(texto)
+
+        # Orden de las dimensiones: primero las declaradas por la métrica (en
+        # su orden), después las que solo aparecen en los datos.
+        orden = [str(d) for d in dim_ids if str(d) in valores]
+        orden += sorted(k for k in valores if k not in orden)
+
+        out: Dict[str, Any] = {}
+        for key in orden:
+            try:
+                nombre = dims_map.get(int(key), f"Dim_{key}")
+            except ValueError:
+                nombre = f"Dim_{key}"
+            out[key] = {
+                "name": nombre,
+                "values": sorted(valores[key], key=_orden_natural),
+            }
+        return out
+    except HTTPException:
+        raise
+    except Exception:
         logger.error("Error interno no controlado en router de metrics", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor")
 

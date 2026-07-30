@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Search, Plus, Upload, Download, Trash2, Filter, Layers, Database, AlertCircle, SquarePen, ShieldCheck, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
@@ -7,7 +7,17 @@ import NewValueDrawer from '../components/NewValueDrawer';
 import ExportModal from '../components/ExportModal';
 import ImportModal from '../components/ImportModal';
 import ConfirmModal from '../components/ConfirmModal';
+import MultiSelectFilters from '../components/MultiSelectFilters';
 import { sanitizeDisplayValue } from '../tooling/dataProcessing';
+import {
+    FILTROS_VACIOS,
+    construirParamsDatos,
+    contarFiltros,
+    facetsADimensiones,
+    hayFiltroActivo,
+    ordenarDimIds,
+    textoContador,
+} from '../tooling/valuesFilters';
 
 export default function Values() {
     const { fetchAuth } = useAuth();
@@ -24,7 +34,20 @@ export default function Values() {
     // Paginación
     const [currentPage, setCurrentPage] = useState(1);
     const [totalRecords, setTotalRecords] = useState(0);
+    const [totalSinFiltro, setTotalSinFiltro] = useState(null);
     const PAGE_SIZE = 50;
+
+    // Filtros server-side (ver frontend/src/tooling/valuesFilters.js).
+    // La tabla pagina en el servidor, así que filtros y búsqueda viajan en la
+    // misma query paginada — nunca se filtra la página ya traída.
+    const [showFilters, setShowFilters] = useState(false);
+    const [dataFilters, setDataFilters] = useState(FILTROS_VACIOS);
+    const [facets, setFacets] = useState({});
+    const [loadingFacets, setLoadingFacets] = useState(false);
+    const [dataSearch, setDataSearch] = useState('');          // lo que se tipea
+    const [dataSearchApplied, setDataSearchApplied] = useState(''); // debounced → backend
+    const facetsReqRef = useRef(0);
+    const dataReqRef = useRef(0);
 
     // Auditoría
     const [showAudit, setShowAudit] = useState(false);
@@ -48,6 +71,8 @@ export default function Values() {
             setMetricData([]);
             setSelectedIds(new Set());
             setTotalRecords(0);
+            setTotalSinFiltro(null);
+            setFacets({});
         }
     }, [selectedMetric]);
 
@@ -56,7 +81,23 @@ export default function Values() {
             loadMetricData(selectedMetric.id_metric, currentPage);
             setSelectedIds(new Set());
         }
-    }, [selectedMetric, currentPage, showAudit]);
+    }, [selectedMetric, currentPage, showAudit, dataFilters, dataSearchApplied]);
+
+    // Facetas (valores reales por dimensión) — carga independiente de la tabla:
+    // si falla, la tabla sigue funcionando, solo se queda sin dropdowns.
+    useEffect(() => {
+        if (!selectedMetric) return;
+        loadFacets(selectedMetric.id_metric);
+    }, [selectedMetric]);
+
+    // Debounce de la búsqueda libre: 300 ms sin tipear → refetch en página 1.
+    useEffect(() => {
+        const t = setTimeout(() => {
+            setDataSearchApplied(dataSearch);
+            setCurrentPage(1);
+        }, 300);
+        return () => clearTimeout(t);
+    }, [dataSearch]);
 
     const loadInitialData = async () => {
         setLoadingMetrics(true);
@@ -103,19 +144,79 @@ export default function Values() {
     };
 
     const loadMetricData = async (metricId, page = 1) => {
+        // Con filtrado server-side las peticiones se encadenan rápido (tipeo,
+        // dropdowns): se descarta toda respuesta que no sea la última pedida.
+        const reqId = ++dataReqRef.current;
         setLoadingData(true);
         try {
-            const auditParam = showAudit ? '&include_audit=true' : '';
-            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?page=${page}&page_size=${PAGE_SIZE}${auditParam}`);
+            const params = construirParamsDatos({
+                page,
+                pageSize: PAGE_SIZE,
+                includeAudit: showAudit,
+                filtros: dataFilters,
+                q: dataSearchApplied,
+            });
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?${params}`);
             const data = await res.json();
             if (data.error) throw new Error(data.error);
+            if (reqId !== dataReqRef.current) return; // respuesta obsoleta
             setMetricData(data.items);
             setTotalRecords(data.total);
+            // El total "sin filtrar" solo se puede conocer en una carga sin
+            // filtros; se memoriza para poder mostrar "N de M registros".
+            if (!filtroActivo) setTotalSinFiltro(data.total);
         } catch (error) {
-            toast.error("Error cargando valores: " + error.message);
+            if (reqId === dataReqRef.current) toast.error("Error cargando valores: " + error.message);
         } finally {
-            setLoadingData(false);
+            if (reqId === dataReqRef.current) setLoadingData(false);
         }
+    };
+
+    const loadFacets = async (metricId) => {
+        const reqId = ++facetsReqRef.current;
+        setLoadingFacets(true);
+        setFacets({});
+        try {
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data/facets`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            if (reqId !== facetsReqRef.current) return; // respuesta obsoleta
+            setFacets(facetsADimensiones(data));
+        } catch (error) {
+            // Degradación silenciosa: sin facetas no hay dropdowns, pero la
+            // tabla y la búsqueda libre siguen operativas.
+            if (reqId === facetsReqRef.current) setFacets({});
+            console.warn("No se pudieron cargar los filtros de la métrica:", error);
+        } finally {
+            if (reqId === facetsReqRef.current) setLoadingFacets(false);
+        }
+    };
+
+    const handleSelectMetric = (metric) => {
+        if (metric?.id_metric === selectedMetric?.id_metric) return;
+        // Los ids de dimensión no son comparables entre métricas: se limpia
+        // todo el estado de filtrado en el mismo batch que el cambio.
+        setDataFilters(FILTROS_VACIOS);
+        setDataSearch('');
+        setDataSearchApplied('');
+        setCurrentPage(1);
+        setTotalSinFiltro(null);
+        setSelectedIds(new Set());
+        setSelectedMetric(metric);
+    };
+
+    const handleFiltersChange = (next) => {
+        setDataFilters(next);
+        setCurrentPage(1);
+        setSelectedIds(new Set());
+    };
+
+    const handleClearFilters = () => {
+        setDataFilters(FILTROS_VACIOS);
+        setDataSearch('');
+        setDataSearchApplied('');
+        setCurrentPage(1);
+        setSelectedIds(new Set());
     };
 
     const handleDeleteValue = async (dataId) => {
@@ -184,6 +285,7 @@ export default function Values() {
 
             toast.success(`Eliminados ${data.deleted_count} registros`);
             loadMetricData(selectedMetric.id_metric, currentPage);
+            loadFacets(selectedMetric.id_metric); // los valores disponibles pudieron cambiar
             setSelectedIds(new Set());
             setIsDeleteModalOpen(false);
         } catch (error) {
@@ -204,7 +306,9 @@ export default function Values() {
             if (data.error) throw new Error(data.error);
 
             toast.success("Métrica vaciada correctamente");
+            handleClearFilters();
             loadMetricData(selectedMetric.id_metric, 1);
+            loadFacets(selectedMetric.id_metric);
             setCurrentPage(1);
             setSelectedIds(new Set());
             setIsClearModalOpen(false);
@@ -267,6 +371,7 @@ export default function Values() {
             toast.success(`Importados ${data.imported} registros correctamente`);
             setCurrentPage(1);
             loadMetricData(selectedMetric.id_metric, 1); // Recargar tabla desde página 1
+            loadFacets(selectedMetric.id_metric);        // nuevos valores en los dropdowns
         } catch (error) {
             console.error(error);
             toast.error("Error al importar: " + error.message);
@@ -295,6 +400,15 @@ export default function Values() {
     const filteredMetrics = useMemo(() => {
         return metrics.filter(m => m.name.toLowerCase().includes(searchTerm.toLowerCase()));
     }, [metrics, searchTerm]);
+
+    // Filtros: derivados del estado + facetas del backend
+    const filtroActivo = hayFiltroActivo(dataFilters, dataSearchApplied);
+    const filtrosCount = contarFiltros(dataFilters);
+    const sortedDimIds = useMemo(
+        () => ordenarDimIds(selectedMetric, facets),
+        [selectedMetric, facets]
+    );
+    const hayFacetas = sortedDimIds.length > 0;
 
     // Columnas Dinámicas
     const dynamicColumns = useMemo(() => {
@@ -377,7 +491,7 @@ export default function Values() {
                     ) : filteredMetrics.map(metric => (
                         <button
                             key={metric.id_metric}
-                            onClick={() => setSelectedMetric(metric)}
+                            onClick={() => handleSelectMetric(metric)}
                             className={`w-full text-left p-3 rounded-xl transition-all border ${selectedMetric?.id_metric === metric.id_metric
                                 ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 shadow-sm'
                                 : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-500'
@@ -418,13 +532,44 @@ export default function Values() {
 
                             {/* Fila 2: Filtros y Botones */}
                             <div className="flex flex-wrap justify-between items-center gap-4">
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap gap-2 items-center">
                                     <button
-                                        onClick={() => toast("Filtros próximamente", { icon: '🚧' })}
-                                        className="flex items-center gap-2 px-4 py-2.5 text-slate-500 hover:text-indigo-600 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold transition-all"
+                                        onClick={() => setShowFilters(s => !s)}
+                                        className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
+                                            showFilters || filtrosCount > 0
+                                                ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300'
+                                                : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-700'
+                                        }`}
+                                        title="Filtrar los datos por dimensión"
                                     >
                                         <Filter size={18} /> Filtros
+                                        {filtrosCount > 0 && (
+                                            <span className="bg-indigo-600 text-white rounded-full px-1.5 text-[10px] font-bold leading-tight">
+                                                {filtrosCount}
+                                            </span>
+                                        )}
                                     </button>
+
+                                    {/* Búsqueda libre server-side (debounce 300 ms) */}
+                                    <div className="relative">
+                                        <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input
+                                            type="text"
+                                            placeholder="Buscar en los datos..."
+                                            value={dataSearch}
+                                            onChange={(e) => setDataSearch(e.target.value)}
+                                            className="w-56 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-2.5 pl-9 pr-8 text-sm focus:ring-2 focus:ring-indigo-500/20 text-slate-600 dark:text-slate-300"
+                                        />
+                                        {dataSearch && (
+                                            <button
+                                                onClick={() => setDataSearch('')}
+                                                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-rose-500"
+                                                title="Limpiar búsqueda"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        )}
+                                    </div>
                                     <button
                                         onClick={() => setShowAudit(s => !s)}
                                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all border ${
@@ -471,14 +616,50 @@ export default function Values() {
                                 </div>
                             </div>
 
+                            {/* Fila 2b: Panel de filtros por dimensión */}
+                            {showFilters && (
+                                <div className="rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-4 animate-in fade-in slide-in-from-top-1 duration-200">
+                                    {loadingFacets ? (
+                                        <div className="text-sm text-slate-400">Cargando filtros...</div>
+                                    ) : !hayFacetas ? (
+                                        <div className="text-sm text-slate-400">
+                                            Esta métrica no tiene dimensiones con valores para filtrar.
+                                            Puedes usar la búsqueda libre.
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <MultiSelectFilters
+                                                dimensions={facets}
+                                                sortedDimIds={sortedDimIds}
+                                                value={dataFilters}
+                                                onChange={handleFiltersChange}
+                                                compact
+                                            />
+                                            {filtroActivo && (
+                                                <button
+                                                    onClick={handleClearFilters}
+                                                    className="mt-3 text-xs font-semibold text-slate-500 hover:text-rose-600 inline-flex items-center gap-1"
+                                                    title="Limpiar filtros y búsqueda"
+                                                >
+                                                    <X size={12} /> Limpiar todo
+                                                </button>
+                                            )}
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
                             {/* Fila 3: Indicador de valores y paginación */}
                             <div className="flex items-center justify-end gap-4 pt-2 border-t border-slate-100 dark:border-slate-800/50">
                                 <div className="flex items-center gap-2 text-sm font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg">
                                     <Database size={14} className="text-indigo-500" />
-                                    {totalRecords === 0
-                                        ? '0 registros'
-                                        : `${rangeStart}–${rangeEnd} de ${totalRecords}`
-                                    }
+                                    {textoContador({
+                                        total: totalRecords,
+                                        totalSinFiltro,
+                                        rangeStart,
+                                        rangeEnd,
+                                        filtroActivo,
+                                    })}
                                 </div>
                                 <div className="flex gap-1">
                                     <button
@@ -530,8 +711,17 @@ export default function Values() {
                                             <td colSpan={dynamicColumns.length + 1} className="p-12 text-center">
                                                 <div className="flex flex-col items-center gap-3 text-slate-300">
                                                     <AlertCircle size={32} />
-                                                    <p className="font-medium">No hay datos registrados aún.</p>
-                                                    <button onClick={handleAddValue} className="text-indigo-500 hover:underline text-sm">Agregar el primer valor</button>
+                                                    {filtroActivo ? (
+                                                        <>
+                                                            <p className="font-medium">Ningún registro coincide con el filtro.</p>
+                                                            <button onClick={handleClearFilters} className="text-indigo-500 hover:underline text-sm">Limpiar filtros</button>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <p className="font-medium">No hay datos registrados aún.</p>
+                                                            <button onClick={handleAddValue} className="text-indigo-500 hover:underline text-sm">Agregar el primer valor</button>
+                                                        </>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>
