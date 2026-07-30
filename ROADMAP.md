@@ -74,6 +74,7 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 - [ ] Panel de notificaciones con historial de acciones
 
 ### Funcionalidades
+- [ ] **Comparativa de establecimientos (DIA)** — gráfico/vista aparte, NO va en el informe PDF por colegio (decisión de producto 2026-07-30, fase 1 del motor único).
 - [x] Implementar generación de gráficos, tablas, reportes y dashboards desde el frontend (dashboards en `Results`; descarga de PDF vía modal con motor `weasyprint` o `pdl_idel`)
 - [x] **Motor PDF v2 con paridad LaTeX** (`backend/rgenerator/reports/`) — paquete independiente: charts.py + tables.py + runtime.py + templates HTML que replican el formato LaTeX referencia. Endpoint `POST /api/reports/{tipo}` (simce | dia). Botón "Generar v2" en `/results` con modal de branding editable. Validación de filtro temporal requerido. Detalle: `docs/usuario/motor_pdf_v2.md`.
 - [x] **Campos derivados (`derived_fields`)** — engine que aplica funciones a columnas: `agg` (groupby + agregación), `slope` (regresión lineal expansiva), `delta` (último menos primero). Soporta `entity_field` compuesto (ej `["Curso", "Nombre"]`), `value_type=ordinal` con `ordinal_levels`, `time_type=ordinal` con `time_ordinal_levels`. Step `ApplyDerivedFields` para usar en pipelines ETL. Aplicado al pipeline SIMCE Lenguaje (id=14) y a esquemas v2 SIMCE/DIA.
