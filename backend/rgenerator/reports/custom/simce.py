@@ -116,7 +116,11 @@ def generar(
         modo: uno de `MODOS`, o None para el informe "formato oficial".
         filtros: `{nombre_columna: valor | [valores]}` — nombres humanos
             ("Asignatura", "Mes", "Año"), nunca ids de dimensión.
-        params: libres; el motor único no los necesita para los 4 modos.
+        params: `{"periodo_desc": str}` — la descripción del período que
+            ya resolvió `periodos.py` y que el despacho inyecta. Es la
+            FUENTE ÚNICA del período: alimenta el bloque de título y el
+            encabezado corrido. Sin ella el módulo la recalcula (fallback
+            para invocación directa, ver `_descripcion_periodo`).
         overrides: overrides de esquema/branding.
 
     Returns:
@@ -149,6 +153,7 @@ def generar(
         org_id=org_id,
         modo=modo,
         filtros=filtros,
+        params=params,
         overrides=overrides,
     )
 
@@ -746,6 +751,7 @@ def _generar_por_modo(
     org_id: int,
     modo: str,
     filtros: dict[str, Any] | None,
+    params: dict[str, Any] | None,
     overrides: dict[str, Any] | None,
 ) -> bytes:
     from backend.models import Indicator
@@ -805,7 +811,13 @@ def _generar_por_modo(
     df_principal = (
         "estudiantes_prueba" if modo == "ultima_prueba" else "estudiantes_periodo"
     )
-    periodo_desc = _descripcion_periodo(preparado, modo)
+    # FUENTE ÚNICA del período (QA 2026-07-30, P1-1): manda la descripción
+    # que resolvió `periodos.py` y que inyecta el despacho. El cálculo
+    # propio queda de FALLBACK para la invocación directa del módulo (sin
+    # router), donde nadie la provee.
+    periodo_desc = str((params or {}).get("periodo_desc") or "").strip()
+    if not periodo_desc:
+        periodo_desc = _descripcion_periodo(preparado, modo)
 
     esquema = {
         **sec.bloque_titulo(
@@ -826,11 +838,7 @@ def _generar_por_modo(
     overrides = aplicar_center_header(
         overrides,
         base=(esquema.get("branding") or {}).get("center_header") or [TITULO],
-        lineas=lineas_encabezado_prueba(
-            dataframes[df_principal], preparado["asignatura"], None, None
-        ) if modo == "ultima_prueba" else [
-            f"{preparado['asignatura']}".strip(), periodo_desc,
-        ],
+        lineas=_lineas_encabezado(preparado, dataframes[df_principal], modo, periodo_desc),
     )
 
     return runtime.construir_pdf(
@@ -843,8 +851,38 @@ def _generar_por_modo(
     )
 
 
+def _lineas_encabezado(
+    preparado: dict, df_principal: pd.DataFrame, modo: str, periodo_desc: str
+) -> list[str]:
+    """Líneas 2 y 3 del encabezado corrido.
+
+    La ÚLTIMA línea es siempre `periodo_desc` — la misma cadena que va al
+    bloque de título. Es lo que garantiza que la primera página y el
+    encabezado de las páginas siguientes no puedan contradecirse (QA
+    2026-07-30, P1-1).
+    """
+    if modo == "ultima_prueba":
+        lineas = list(
+            lineas_encabezado_prueba(df_principal, preparado["asignatura"], None, None)
+        )
+    else:
+        lineas = [str(preparado["asignatura"] or "").strip(), periodo_desc]
+
+    if periodo_desc:
+        lineas = (lineas[:-1] if lineas else []) + [periodo_desc]
+    return lineas
+
+
 def _descripcion_periodo(preparado: dict, modo: str) -> str:
-    """Texto del período para el bloque de título ('MAYO 2026', '2025')."""
+    """FALLBACK del texto del período ('MAYO 2026', '2025').
+
+    Solo se usa cuando el llamador NO inyectó `params["periodo_desc"]`, es
+    decir en la invocación directa del módulo. Por el despacho normal manda
+    siempre la descripción de `periodos.ResultadoPeriodo`, que es la misma
+    que va al encabezado corrido: tener dos fuentes hacía que en
+    `personalizado` el título dijera "2025" y el encabezado
+    "ENERO 2025 – JULIO 2025" (QA 2026-07-30, P1-1).
+    """
     if modo == "ultima_prueba":
         cols = preparado["columnas_temporales"]
         df = preparado["dataframes"]["estudiantes_prueba"]

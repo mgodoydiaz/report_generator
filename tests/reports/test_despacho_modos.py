@@ -271,6 +271,129 @@ class TestExportPDFDelegaAlModulo:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# `personalizado`: un rango que no se puede honrar NUNCA entrega un PDF
+# (QA piloto SIMCE 2026-07-30, P0-2)
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestPersonalizadoRangoAdversarial:
+    """Los 3 casos del QA, esta vez atravesando el módulo del motor único.
+
+    El QA vio que el módulo recibía los filtros SIN recorte temporal y
+    devolvía 200 con el dataset entero: un informe con aspecto legítimo
+    lleno de datos de otro año.
+    """
+
+    def _exportar(self, client_auth, ind, periodo):
+        with patch(
+            "backend.rgenerator.reports.custom.simce.generar",
+            return_value=FAKE_PDF,
+        ) as mock:
+            resp = client_auth.post(
+                f"/api/indicators/{ind.id_indicator}/export-pdf",
+                json={"periodo": periodo},
+            )
+        return resp, mock
+
+    def test_rango_sin_datos_da_400_y_no_llega_al_modulo(
+        self, client_auth, simce_indicator_historico
+    ):
+        resp, mock = self._exportar(client_auth, simce_indicator_historico, {
+            "tipo": "personalizado",
+            "fecha_inicio": "2019-01-01", "fecha_fin": "2019-12-31",
+            "filtros": {"Asignatura": ["Lenguaje"]},
+        })
+        assert resp.status_code == 400, resp.text
+        assert "No hay datos en el período seleccionado" in resp.json()["detail"]
+        assert not mock.called
+
+    def test_rango_invertido_da_400_y_no_llega_al_modulo(
+        self, client_auth, simce_indicator_historico
+    ):
+        from datetime import date
+        anio = date.today().year
+        resp, mock = self._exportar(client_auth, simce_indicator_historico, {
+            "tipo": "personalizado",
+            "fecha_inicio": f"{anio}-12-01", "fecha_fin": f"{anio}-01-01",
+            "filtros": {"Asignatura": ["Lenguaje"]},
+        })
+        assert resp.status_code == 400, resp.text
+        assert "invertido" in resp.json()["detail"]
+        assert not mock.called
+
+    def test_rango_valido_sigue_generando_con_recorte_temporal(
+        self, client_auth, simce_indicator_historico
+    ):
+        from datetime import date
+        anio = date.today().year
+        resp, mock = self._exportar(client_auth, simce_indicator_historico, {
+            "tipo": "personalizado",
+            "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-07-31",
+            "filtros": {"Asignatura": ["Lenguaje"]},
+        })
+        assert resp.status_code == 200, resp.text
+        filtros = mock.call_args.kwargs["filtros"]
+        # El recorte temporal SÍ llega al módulo: sin esto cargaría todo.
+        assert filtros["Año"] == [str(anio)]
+        assert sorted(filtros["Mes"]) == ["ABRIL", "MAYO"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Fuente única del período: título y encabezado no pueden contradecirse
+# (QA piloto SIMCE 2026-07-30, P1-1)
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestPeriodoDescEsFuenteUnica:
+    def test_el_despacho_inyecta_periodo_desc(
+        self, client_auth, simce_indicator_historico
+    ):
+        from datetime import date
+        anio = date.today().year
+        with patch(
+            "backend.rgenerator.reports.custom.simce.generar",
+            return_value=FAKE_PDF,
+        ) as mock:
+            client_auth.post(
+                f"/api/indicators/{simce_indicator_historico.id_indicator}/export-pdf",
+                json={"periodo": {
+                    "tipo": "personalizado",
+                    "fecha_inicio": f"{anio}-01", "fecha_fin": f"{anio}-07",
+                    "filtros": {"Asignatura": ["Lenguaje"]},
+                }},
+            )
+        params = mock.call_args.kwargs["params"] or {}
+        assert params["periodo_desc"] == f"ENERO {anio} – JULIO {anio}"
+
+    def test_titulo_y_encabezado_dicen_lo_mismo_en_personalizado(
+        self, client_auth, simce_indicator_historico, db_session
+    ):
+        """El defecto exacto de `05_personalizado`: título "2025" vs
+        encabezado "ENERO 2025 – JULIO 2025"."""
+        from datetime import date
+        anio = date.today().year
+        simce_indicator_historico.pdf_layout_historico = LAYOUT
+        db_session.commit()
+        with patch(
+            "backend.rgenerator.reports.runtime.construir_pdf",
+            return_value=FAKE_PDF,
+        ) as mock:
+            resp = client_auth.post(
+                f"/api/indicators/{simce_indicator_historico.id_indicator}/export-pdf",
+                json={"periodo": {
+                    "tipo": "personalizado",
+                    "fecha_inicio": f"{anio}-01", "fecha_fin": f"{anio}-07",
+                    "filtros": {"Asignatura": ["Lenguaje"]},
+                }},
+            )
+        assert resp.status_code == 200, resp.text
+        esquema = mock.call_args.kwargs["esquema"]
+        header = mock.call_args.kwargs["overrides"]["branding"]["center_header"]
+        assert esquema["filters_label"] == f"ENERO {anio} – JULIO {anio}"
+        assert header[-1] == esquema["filters_label"]
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Fallback v1 intacto
 # ─────────────────────────────────────────────────────────────────────────
 

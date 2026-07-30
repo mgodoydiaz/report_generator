@@ -21,6 +21,8 @@ Convenciones (heredadas de SIMCE/funciones.py):
 """
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import matplotlib
@@ -28,6 +30,7 @@ import matplotlib
 matplotlib.use("Agg")  # backend sin GUI; obligatorio en server
 import matplotlib.pyplot as plt
 import matplotlib.transforms as mtransforms
+from matplotlib.colors import to_rgb
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 
 from .helpers import (
@@ -77,6 +80,76 @@ def _aplicar_etiquetas_x(ax, posiciones, etiquetas) -> None:
         ha="right" if rot else "center",
         fontsize=8 if len(list(etiquetas)) > 12 else None,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Contraste de las etiquetas que van ENCIMA de un color (WCAG 2.1)
+# ─────────────────────────────────────────────────────────────────────────
+
+#: Color de texto para fondos claros. Gris muy oscuro en vez de negro puro:
+#: mantiene el aire del resto del documento sin perder contraste.
+TEXTO_SOBRE_CLARO = "#1f2937"
+#: Color de texto para fondos oscuros.
+TEXTO_SOBRE_OSCURO = "#ffffff"
+
+#: Mínimo AA de WCAG 2.1 para texto normal. Solo se usa para documentar y
+#: para que los tests puedan afirmar sobre el mismo número.
+CONTRASTE_MINIMO_WCAG = 4.5
+
+
+def _a_rgb(color: Any) -> tuple[float, float, float]:
+    """Cualquier color de matplotlib → (r, g, b) en 0.0–1.0."""
+    return to_rgb(color)
+
+
+def luminancia_relativa(color: Any) -> float:
+    """Luminancia relativa WCAG 2.1 de un color (0.0 negro → 1.0 blanco)."""
+    def _canal(c: float) -> float:
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (_canal(c) for c in _a_rgb(color))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def contraste_wcag(color_a: Any, color_b: Any) -> float:
+    """Razón de contraste WCAG 2.1 entre dos colores (1.0 a 21.0)."""
+    l1, l2 = luminancia_relativa(color_a), luminancia_relativa(color_b)
+    claro, oscuro = max(l1, l2), min(l1, l2)
+    return (claro + 0.05) / (oscuro + 0.05)
+
+
+def color_texto_sobre(fondo: Any) -> str:
+    """Color de texto legible sobre `fondo`: el de MAYOR contraste WCAG.
+
+    Las etiquetas de los segmentos (conteos, porcentajes) se dibujaban
+    siempre en blanco. Sobre los colores claros de `achievement_levels` eso
+    daba 1.92:1 en Elemental (`#eab308`) y 2.28:1 en Adecuado (`#22c55e`),
+    muy por debajo del mínimo AA de 4.5:1 — texto ilegible impreso (QA
+    piloto SIMCE 2026-07-30, P2-1). Con texto oscuro esos mismos fondos dan
+    10.9:1 y 9.2:1.
+
+    La decisión se toma por LUMINANCIA del fondo, no por una lista de
+    colores: así vale para los niveles de SIMCE, de DIA, de IDEL y para
+    cualquier paleta que configure el usuario en la página de Indicadores.
+
+    Args:
+        fondo: color del segmento (hex "#eab308", nombre, tupla RGB…).
+
+    Returns:
+        `TEXTO_SOBRE_CLARO` o `TEXTO_SOBRE_OSCURO`.
+
+    Ejemplo:
+        >>> color_texto_sobre("#eab308")     # amarillo Elemental
+        '#1f2937'
+        >>> color_texto_sobre("#dc2626")     # rojo Insuficiente
+        '#ffffff'
+    """
+    try:
+        sobre_claro = contraste_wcag(fondo, TEXTO_SOBRE_CLARO)
+        sobre_oscuro = contraste_wcag(fondo, TEXTO_SOBRE_OSCURO)
+    except (ValueError, TypeError):  # color no interpretable
+        return TEXTO_SOBRE_OSCURO
+    return TEXTO_SOBRE_CLARO if sobre_claro >= sobre_oscuro else TEXTO_SOBRE_OSCURO
 
 
 def _placeholder_sin_datos(nombre_grafico: str, mensaje: str) -> None:
@@ -550,7 +623,9 @@ def alumnos_por_nivel_cualitativo(
         bars = ax.bar(cursos, vals, label=nivel, color=colores[nivel], bottom=bottom, zorder=2)
         bottom = vals if bottom is None else bottom + vals
 
-        # Etiquetas centradas blancas y bold
+        # Etiquetas centradas y bold. El color lo decide la luminancia del
+        # segmento: blanco sobre los niveles claros daba 1.92:1 (QA P2-1).
+        color_etiqueta = color_texto_sobre(colores[nivel])
         for bar, val in zip(bars, vals):
             if val > 0:
                 ax.text(
@@ -560,7 +635,7 @@ def alumnos_por_nivel_cualitativo(
                     ha="center",
                     va="center",
                     fontsize=9,
-                    color="white",
+                    color=color_etiqueta,
                     zorder=3,
                     fontweight="bold",
                 )
@@ -695,7 +770,8 @@ def composicion_por_nivel(
                 izquierda + fraccion / 2, 0,
                 f"{fraccion:.0%}\n({int(round(cantidad))})",
                 ha="center", va="center", fontsize=9,
-                color="white", fontweight="bold", zorder=3,
+                color=color_texto_sobre(colores[nivel]),
+                fontweight="bold", zorder=3,
             )
         izquierda += fraccion
 
@@ -850,7 +926,8 @@ def alumnos_por_nivel_curso_y_mes(
         vals = pivot[nivel].values if nivel in pivot.columns else np.zeros(len(pivot))
         bars = ax.bar(x_positions, vals, label=nivel, color=colores[nivel], bottom=bottom, zorder=2)
 
-        # Etiquetas internas
+        # Etiquetas internas: color por luminancia del segmento (QA P2-1).
+        color_etiqueta = color_texto_sobre(colores[nivel])
         for bar, val in zip(bars, vals):
             if val > 0:
                 ax.text(
@@ -860,7 +937,7 @@ def alumnos_por_nivel_curso_y_mes(
                     ha="center",
                     va="center",
                     fontsize=9,
-                    color="white",
+                    color=color_etiqueta,
                     fontweight="bold",
                     zorder=3,
                 )

@@ -312,3 +312,115 @@ def test_stacked_curso_mes_no_descarta_meses_fuera_del_orden(png, espia_figuras)
         nombre_grafico=png,
     )
     assert "MAYO" in _etiquetas_x(espia_figuras[-1])
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Contraste de las etiquetas sobre los segmentos de color
+# (QA piloto SIMCE 2026-07-30, P2-1)
+# ─────────────────────────────────────────────────────────────────────────
+
+#: Colores reales de `Indicator.achievement_levels` en producción.
+NIVELES_SIMCE = {
+    "Insuficiente": "#dc2626",
+    "Elemental": "#eab308",
+    "Adecuado": "#22c55e",
+}
+NIVELES_DIA = {
+    "Crítico": "#dc2626",
+    "Alto Riesgo": "#ea580c",
+    "Cierto Riesgo": "#eab308",
+    "Bajo Riesgo": "#22c55e",
+}
+
+
+class TestContrasteDeEtiquetas:
+    @pytest.mark.parametrize("nivel,color", sorted(
+        {**NIVELES_SIMCE, **NIVELES_DIA}.items()
+    ))
+    def test_siempre_elige_el_color_de_mayor_contraste(self, nivel, color):
+        """La garantía dura del helper: nunca deja el peor de los dos."""
+        elegido = charts.color_texto_sobre(color)
+        otro = (
+            charts.TEXTO_SOBRE_OSCURO if elegido == charts.TEXTO_SOBRE_CLARO
+            else charts.TEXTO_SOBRE_CLARO
+        )
+        assert charts.contraste_wcag(color, elegido) >= charts.contraste_wcag(color, otro), (
+            f"{nivel} ({color})"
+        )
+
+    @pytest.mark.parametrize("nivel,color", [
+        ("Elemental / Cierto Riesgo", "#eab308"),   # antes 1.92:1
+        ("Adecuado / Bajo Riesgo", "#22c55e"),      # antes 2.28:1
+        ("Insuficiente / Crítico", "#dc2626"),
+    ])
+    def test_los_niveles_que_marco_el_qa_ya_cumplen_aa(self, nivel, color):
+        elegido = charts.color_texto_sobre(color)
+        assert charts.contraste_wcag(color, elegido) >= charts.CONTRASTE_MINIMO_WCAG, (
+            f"{nivel} ({color}) con {elegido}"
+        )
+        # ...y con el blanco fijo de antes NO cumplían.
+        if color != "#dc2626":
+            assert charts.contraste_wcag(color, "#ffffff") < charts.CONTRASTE_MINIMO_WCAG
+
+    def test_naranja_alto_riesgo_mejora_aunque_no_llegue_a_aa(self):
+        """`#ea580c` (Alto Riesgo, DIA) no alcanza 4.5:1 con NINGÚN texto.
+
+        Es un límite de la paleta, no del helper: la decisión sobre el matiz
+        de los niveles es del dueño y quedó fuera de alcance. Lo que sí
+        garantizamos es que pasa de 3.2:1 (blanco) a 4.1:1 (oscuro).
+        """
+        elegido = charts.color_texto_sobre("#ea580c")
+        assert elegido == charts.TEXTO_SOBRE_CLARO
+        assert (
+            charts.contraste_wcag("#ea580c", elegido)
+            > charts.contraste_wcag("#ea580c", "#ffffff")
+        )
+
+    @pytest.mark.parametrize("color,esperado", [
+        ("#eab308", charts.TEXTO_SOBRE_CLARO),    # Elemental / Cierto Riesgo
+        ("#22c55e", charts.TEXTO_SOBRE_CLARO),    # Adecuado / Bajo Riesgo
+        ("#dc2626", charts.TEXTO_SOBRE_OSCURO),   # Insuficiente / Crítico
+        ("#e64b35", charts.TEXTO_SOBRE_OSCURO),   # tomate de la referencia
+        ("#1f9e89", charts.TEXTO_SOBRE_CLARO),    # teal de la referencia
+        ("#ffffff", charts.TEXTO_SOBRE_CLARO),
+        ("#000000", charts.TEXTO_SOBRE_OSCURO),
+    ])
+    def test_eleccion_por_luminancia(self, color, esperado):
+        assert charts.color_texto_sobre(color) == esperado
+
+    def test_color_ilegible_no_revienta(self):
+        assert charts.color_texto_sobre("no-es-un-color") == charts.TEXTO_SOBRE_OSCURO
+
+    def test_las_etiquetas_del_stacked_usan_el_color_elegido(
+        self, png, espia_figuras
+    ):
+        filas = (
+            [{"Curso": "II A", "Nombre": f"a{i}", "Logro": "Adecuado"} for i in range(3)]
+            + [{"Curso": "II A", "Nombre": f"b{i}", "Logro": "Insuficiente"} for i in range(2)]
+        )
+        charts.alumnos_por_nivel_cualitativo(
+            pd.DataFrame(filas), columna_nivel="Logro", agrupar_por="Curso",
+            lista_niveles=["Adecuado", "Elemental", "Insuficiente"],
+            color_overrides=NIVELES_SIMCE, nombre_grafico=png,
+        )
+        ax = espia_figuras[-1].axes[0]
+        por_texto = {t.get_text(): t.get_color() for t in ax.texts}
+        assert por_texto["3"] == charts.TEXTO_SOBRE_CLARO   # verde Adecuado
+        assert por_texto["2"] == charts.TEXTO_SOBRE_OSCURO  # rojo Insuficiente
+
+    def test_las_etiquetas_de_composicion_usan_el_color_elegido(
+        self, png, espia_figuras
+    ):
+        filas = (
+            [{"Nombre": f"a{i}", "Logro": "Adecuado"} for i in range(6)]
+            + [{"Nombre": f"b{i}", "Logro": "Insuficiente"} for i in range(4)]
+        )
+        charts.composicion_por_nivel(
+            pd.DataFrame(filas), columna_nivel="Logro",
+            lista_niveles=["Adecuado", "Elemental", "Insuficiente"],
+            color_overrides=NIVELES_SIMCE, nombre_grafico=png,
+        )
+        ax = espia_figuras[-1].axes[0]
+        colores = {t.get_text(): t.get_color() for t in ax.texts}
+        assert colores["60%\n(6)"] == charts.TEXTO_SOBRE_CLARO
+        assert colores["40%\n(4)"] == charts.TEXTO_SOBRE_OSCURO

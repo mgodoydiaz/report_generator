@@ -61,6 +61,12 @@ class TestMapeos:
     @pytest.mark.parametrize("texto,esperado", [
         ("2026-03", (2026, 3)), ("2026-3", (2026, 3)), ("2026/11", (2026, 11)),
         ("2026", (2026, 0)), ("2026-13", None), ("marzo", None), (None, None),
+        # Fechas completas: es lo que manda el frontend y lo que usó el QA
+        # adversarial. Antes devolvían None y el rango se descartaba EN
+        # SILENCIO (P0-2 del piloto SIMCE).
+        ("2019-01-01", (2019, 1)), ("2019-12-31", (2019, 12)),
+        ("07-04-2026", (2026, 4)), ("2026/03/15", (2026, 3)),
+        ("", None), ("   ", None),
     ])
     def test_parsear_ym(self, texto, esperado):
         assert parsear_ym(texto) == esperado
@@ -341,7 +347,83 @@ class TestPersonalizado:
             date(2026, 7, 29),
         )
         assert res.disponible is False
-        assert "Sin datos" in res.motivo
+        assert "No hay datos en el período seleccionado" in res.motivo
+        # El motivo nombra el rango pedido: sin eso el usuario no sabe qué
+        # corregir.
+        assert "ENERO 2019" in res.motivo and "DICIEMBRE 2019" in res.motivo
+        assert res.filtros == {}
+
+    @pytest.mark.parametrize("inicio,fin", [
+        ("2019-01-01", "2019-12-31"),   # el formato que manda el frontend
+        ("2019-01", "2019-12"),
+        ("2019", "2019"),
+    ])
+    def test_rango_vacio_nunca_degrada_a_todos_los_datos(self, df_simce, inicio, fin):
+        """P0-2: un rango sin datos NO puede devolver el dataset entero.
+
+        Antes, "2019-01-01" no parseaba como YYYY-MM, el rango se
+        descartaba y el informe salía con TODOS los datos del indicador —
+        con aspecto legítimo y sin ninguna marca.
+        """
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado", "fecha_inicio": inicio, "fecha_fin": fin},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is False
+        assert res.filtros == {}
+
+    def test_rango_invertido_no_disponible(self, df_simce):
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado",
+             "fecha_inicio": "2025-12-01", "fecha_fin": "2025-01-01"},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is False
+        assert "invertido" in res.motivo
+        assert res.filtros == {}
+
+    def test_rango_invertido_por_anio(self, df_simce):
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado", "fecha_inicio": "2026-01", "fecha_fin": "2025-12"},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is False
+        assert "invertido" in res.motivo
+
+    def test_rango_valido_con_datos_sigue_disponible(self, df_simce):
+        """Contraparte de los dos anteriores: el camino feliz no se rompe."""
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado",
+             "fecha_inicio": "2025-01-01", "fecha_fin": "2025-07-31"},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is True
+        assert res.filtros["Año"] == ["2025"]
+        assert res.filtros["Mes"] == ["ABRIL"]
+
+    @pytest.mark.parametrize("campo", ["fecha_inicio", "fecha_fin"])
+    def test_fecha_ilegible_no_disponible(self, df_simce, campo):
+        """Una fecha que no se entiende se rechaza; jamás se ignora."""
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado", campo: "el año pasado"},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is False
+        assert "No se pudo interpretar el rango de fechas" in res.motivo
+
+    def test_extremo_vacio_no_es_ilegible(self, df_simce):
+        """`fecha_fin: ""` = rango abierto, no un error de formato."""
+        res = resolver_periodo(
+            df_simce,
+            {"tipo": "personalizado", "fecha_inicio": "2025-01", "fecha_fin": ""},
+            date(2026, 7, 29),
+        )
+        assert res.disponible is True
 
     def test_rango_sin_dimension_temporal_no_disponible(self, df_sin_tiempo):
         res = resolver_periodo(

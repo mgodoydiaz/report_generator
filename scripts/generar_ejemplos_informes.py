@@ -18,6 +18,13 @@ Asignatura: cuando la card declara `asignatura.requerida` (el indicador
 trae ≥2 asignaturas), se elige UNA automáticamente y el archivo lleva su
 sufijo. Sin eso, el backend responde 400 — que es justo lo que el usuario
 vería si el frontend no ofreciera el selector.
+
+Motores soportados: `custom`, `v2`, `weasyprint`, `pdl_idel`, `docxtpl` y
+`custom:<modulo>` (motor único). Un motor que no esté en esa lista se
+reporta como **ERROR**, no como OMITIDO: este script es el único chequeo
+automatizado de que las cards generan, y un motor nuevo sin soporte hacía
+que las cards desaparecieran del resumen dejando "errores: 0" (falso verde
+del gate §5.3.1, QA del piloto SIMCE 2026-07-30).
 """
 from __future__ import annotations
 
@@ -213,6 +220,30 @@ def main() -> int:
                     resp = requests.post(
                         f"{BASE}/api/indicators/{iid}/export-pdf", headers=hdr, timeout=300, json=body,
                     )
+                elif str(op["motor"]).startswith("custom:"):
+                    # MOTOR ÚNICO. El módulo (`reports/custom/<nombre>.py`)
+                    # arma sus propias secciones a partir del `periodo`.
+                    # NO se manda `engine`: por contrato §2.2 un `engine`
+                    # explícito fuerza el fallback v1, así que el gate
+                    # estaría ejercitando el motor equivocado (trampa
+                    # documentada por el QA del piloto SIMCE).
+                    params = op.get("invocacion", {}).get("params") or {}
+                    periodo_body = dict(params.get("periodo") or op.get("periodo") or {})
+                    if not periodo_body:
+                        resumen.append((
+                            archivo, "ERROR",
+                            f"card {op['id']} de motor {op['motor']} sin `periodo`",
+                        ))
+                        continue
+                    if val_asig:
+                        periodo_body["filtros"] = {
+                            **(periodo_body.get("filtros") or {}),
+                            dim_asig: [val_asig],
+                        }
+                    resp = requests.post(
+                        f"{BASE}/api/indicators/{iid}/export-pdf", headers=hdr,
+                        timeout=300, json={"periodo": periodo_body},
+                    )
                 elif op["motor"] == "docxtpl":
                     informe = op["id"].removeprefix("word_")
                     resp = requests.post(
@@ -220,7 +251,13 @@ def main() -> int:
                         json={"indicator_id": iid, "filtros": {}},
                     )
                 else:
-                    resumen.append((archivo, "OMITIDO", f"motor desconocido {op['motor']}"))
+                    # ERROR, no OMITIDO: un motor que el script no sabe
+                    # invocar hace que la card DESAPAREZCA del gate sin que
+                    # el resumen lo note. Es exactamente el falso verde que
+                    # dejó pasar el piloto SIMCE (motor `custom:simce`
+                    # nuevo, script sin actualizar) — el gate tiene que
+                    # romperse, no callarse.
+                    resumen.append((archivo, "ERROR", f"motor desconocido {op['motor']}"))
                     continue
 
                 if resp.ok:

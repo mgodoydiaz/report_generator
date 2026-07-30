@@ -1129,6 +1129,16 @@ def export_pdf(
             if branding_override:
                 overrides_modulo["branding"] = branding_override
 
+            # FUENTE ÚNICA del período (QA piloto SIMCE 2026-07-30, P1-1):
+            # la `descripcion` que resolvió `periodos.py` alimenta a la vez
+            # el encabezado corrido (vía branding) y el bloque de título del
+            # módulo. Antes el módulo la recalculaba por su cuenta y en
+            # `personalizado` el título decía "2025" mientras el encabezado
+            # decía "ENERO 2025 – JULIO 2025".
+            params_modulo: Dict[str, Any] = {}
+            if descripcion_periodo:
+                params_modulo["periodo_desc"] = descripcion_periodo
+
             try:
                 pdf_bytes = modulo_custom.generar(
                     db,
@@ -1136,7 +1146,7 @@ def export_pdf(
                     org_id=user.org_id,
                     modo=modo_periodo,
                     filtros=filtros_modulo,
-                    params=None,
+                    params=params_modulo or None,
                     overrides=overrides_modulo,
                 )
             except (DatosInsuficientes, ValueError) as e:

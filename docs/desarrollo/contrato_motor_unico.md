@@ -207,6 +207,8 @@ Variante "+ columna semestre/año anterior" que piden las fichas de SIMCE/DIA/Pa
 def seccion_evolucion(seccion: dict, df: pd.DataFrame, columna_temporal: str) -> list[dict]
 ```
 **Semántica**: si `df[columna_temporal].dropna().nunique() <= 1` devuelve `[]` (la sección se auto-omite, sin aviso de error ni gráfico de una sola serie). Con ≥2 puntos devuelve `[seccion]`. La columna temporal se detecta con `periodos.detectar_columnas_temporales_df(df, tipos)["mes_like"]` (existe) y se ordena con `helpers.ordenar_valores_categoricos` / `clave_orden_temporal` (existen).
+
+> **Cómo se materializa la auto-omisión** (aceptado por el orquestador tras el QA del piloto, 2026-07-30): cuando el bloque de evolución completo queda vacío, el módulo **no deja un hueco**: imprime en su lugar una **nota explicativa en gris con borde izquierdo** ("El período seleccionado tiene una sola evaluación registrada, así que no hay evolución que graficar todavía…"). El espíritu de la decisión 16 se respeta — no se dibuja una serie de un punto — y además el lector entiende por qué falta la tendencia. Las secciones individuales sí se omiten en silencio; la nota es del bloque, no de cada gráfico.
 Esto cierra de una vez el defecto compartido SIMCE + Panguipulli (P1.8 de la comparación, pregunta abierta 1 de la ficha 6).
 
 > **Eje multi-año**: `_resolver_anual` fija un solo año, así que el colapso "mismo mes de años distintos" **no** afecta a los modos `anual`/`semestral`. Solo afecta a `personalizado` con rango multi-año. `NUEVO opcional`: `columna_periodo_compuesta(df, col_anio, col_mes) -> Series` que produce `"2025-10"` para usar como `agrupar_secundario_por`. Se implementa cuando se aborde `personalizado`, no bloquea el piloto.
@@ -224,6 +226,8 @@ def tabla_riesgo_persistente(
 ) -> pd.DataFrame
 ```
 **Semántica**: identidad del estudiante vía `helpers.serie_identidad_estudiante` (existe: RUT → Nombre_Norm → Nombre → Curso+N°Lista — cubre el RUT vacío de Cálculo Veloz). Se ordenan las evaluaciones con `clave_orden_temporal`, se toman las `n_evaluaciones` últimas **consecutivas presentes para ese estudiante**, y se incluye al estudiante si `columna_nivel == nivel_objetivo` en todas. Salida: `Curso · Estudiante · <puntaje eval n-1> · <puntaje eval n> · Nivel`, ordenada por curso (orden natural) y puntaje ascendente. Sin segunda evaluación ⇒ DataFrame vacío ⇒ la sección se omite igual que la evolución.
+
+> **Cómo se materializa la auto-omisión** (mismo criterio que §3.2, aceptado por el orquestador tras el QA del piloto, 2026-07-30): con el DataFrame vacío el módulo imprime una **nota explicativa en gris** en lugar de la tabla ("El riesgo persistente compara el nivel de cada estudiante en dos evaluaciones consecutivas. El período seleccionado no tiene dos evaluaciones consecutivas con datos…"). Mejor UX que un hueco silencioso, sin dibujar una tabla vacía.
 
 ### 3.4 Iteración por curso
 
@@ -425,3 +429,4 @@ Retirar el path v1 de las cards de período (dejar `build_pdf_bytes` solo detrá
 - **T4 → APROBADO**: fix de `tabla_logro_por_alumno` con `filtering.matches` (filtros multi-valor), programado para la migración de Cálculo Veloz (fase 4).
 - **T5 → GANA EL ESQUEMA VIGENTE** (Habilidad/Eje cruzados por Curso): la paridad con la referencia Pullinque validada por el dueño pesa más que la propuesta de la ficha. Ficha anotada.
 - **T6 → APROBADO tal como quedó documentado**: `REQUIERE_FILTRO_TEMPORAL` no se consulta en el despacho por período; limpieza formal en fase 5.
+- **QA fase 3 (2026-07-30)**: P0-1 y P0-2 cerrados en `dev2` sobre `698bd36`; nota explicativa aceptada como implementación de la auto-omisión (§3.2 y §3.3). También se unificó la fuente del período entre router y módulo (P1-1: el despacho inyecta `params["periodo_desc"]`) y el color de las etiquetas sobre segmentos pasó a decidirse por luminancia (P2-1). Ver [qa_piloto_simce_2026-07-30.md](../reportes/qa_piloto_simce_2026-07-30.md).

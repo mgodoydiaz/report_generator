@@ -403,14 +403,14 @@ class TestSeccionesPorCurso:
 
 @pytest.mark.integration
 class TestGenerarPorModo:
-    def _generar(self, db, ind, modo, filtros):
+    def _generar(self, db, ind, modo, filtros, params=None):
         with patch(
             "backend.rgenerator.reports.runtime.construir_pdf",
             return_value=b"%PDF-1.4\n",
         ) as mock:
             pdf = simce.generar(
                 db, indicator_id=ind.id_indicator, org_id=ind.org_id,
-                modo=modo, filtros=filtros,
+                modo=modo, filtros=filtros, params=params,
             )
         assert pdf == b"%PDF-1.4\n"
         return mock.call_args
@@ -497,3 +497,65 @@ class TestGenerarPorModo:
                 org_id=simce_indicator_historico.org_id, modo="anual",
                 filtros={"Asignatura": "Lenguaje", "Año": "1999"},
             )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Fuente única del período (QA piloto SIMCE 2026-07-30, P1-1)
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestFuenteUnicaDelPeriodo(TestGenerarPorModo):
+    """El período del bloque de título y el del encabezado son EL MISMO.
+
+    Antes el router inyectaba `ResultadoPeriodo.descripcion` en el
+    encabezado corrido y el módulo recalculaba el suyo para el título: en
+    `personalizado` el título decía "2025" y el encabezado
+    "ENERO 2025 – JULIO 2025".
+    """
+
+    def _ultima_linea_header(self, args) -> str:
+        return args.kwargs["overrides"]["branding"]["center_header"][-1]
+
+    def test_periodo_desc_inyectado_manda_sobre_el_calculo_propio(
+        self, db_session, simce_indicator_historico
+    ):
+        from datetime import date
+        anio = date.today().year
+        desc = f"ENERO {anio} – JULIO {anio}"
+        args = self._generar(
+            db_session, simce_indicator_historico, "personalizado",
+            {"Asignatura": "Lenguaje", "Año": str(anio)},
+            params={"periodo_desc": desc},
+        )
+        assert args.kwargs["esquema"]["filters_label"] == desc
+        assert self._ultima_linea_header(args) == desc
+
+    def test_titulo_y_encabezado_coinciden_en_todos_los_modos(
+        self, db_session, simce_indicator_historico
+    ):
+        from datetime import date
+        anio = date.today().year
+        for modo, desc in (
+            ("ultima_prueba", f"MAYO {anio} (prueba 2)"),
+            ("anual", str(anio)),
+            ("personalizado", f"ENERO {anio} – JULIO {anio}"),
+        ):
+            args = self._generar(
+                db_session, simce_indicator_historico, modo,
+                {"Asignatura": "Lenguaje", "Año": str(anio)},
+                params={"periodo_desc": desc},
+            )
+            assert args.kwargs["esquema"]["filters_label"] == desc, modo
+            assert self._ultima_linea_header(args) == desc, modo
+
+    def test_sin_periodo_desc_cae_al_calculo_propio(
+        self, db_session, simce_indicator_historico
+    ):
+        """Invocación directa del módulo: el fallback sigue vivo."""
+        from datetime import date
+        anio = date.today().year
+        args = self._generar(
+            db_session, simce_indicator_historico, "anual",
+            {"Asignatura": "Lenguaje", "Año": str(anio)},
+        )
+        assert args.kwargs["esquema"]["filters_label"] == str(anio)

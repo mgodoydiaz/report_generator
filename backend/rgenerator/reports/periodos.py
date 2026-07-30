@@ -743,11 +743,29 @@ def _describir_rango(inicio: tuple[int, int] | None, fin: tuple[int, int] | None
 # ─────────────────────────────────────────────────────────────────────────
 
 def parsear_ym(texto: Any) -> Optional[tuple[int, int]]:
-    """'2026-03' → (2026, 3). Acepta 'YYYY-M', 'YYYY/MM' y 'YYYY' (mes 1/12
-    lo decide el caller). Devuelve None si no parsea."""
+    """'2026-03' → (2026, 3). Devuelve None si no parsea.
+
+    Formatos aceptados:
+        "YYYY-MM" / "YYYY-M" / "YYYY/MM"   → (año, mes)
+        "YYYY"                             → (año, 0)  mes indeterminado:
+                                             el caller decide si es 1 o 12
+        fechas completas                   → (año, mes) del día concreto
+                                             ("2019-01-01", "07-04-2026",
+                                             `date`/`Timestamp`)
+
+    Las fechas completas se aceptan porque el frontend y los clientes de la
+    API mandan `fecha_inicio`/`fecha_fin` en "YYYY-MM-DD": antes devolvían
+    None y el rango se descartaba EN SILENCIO, entregando el informe del
+    dataset entero (QA piloto SIMCE 2026-07-30, P0-2).
+    """
     if texto is None:
         return None
+    if isinstance(texto, (pd.Timestamp, datetime, date)):
+        fecha = parsear_fecha(texto)
+        return (fecha.year, fecha.month) if fecha else None
     s = str(texto).strip()
+    if not s:
+        return None
     m = re.match(r"^(\d{4})[-/](\d{1,2})$", s)
     if m:
         mes = int(m.group(2))
@@ -757,7 +775,21 @@ def parsear_ym(texto: Any) -> Optional[tuple[int, int]]:
     m = re.match(r"^(\d{4})$", s)
     if m:
         return (int(m.group(1)), 0)  # 0 = mes indeterminado, el caller decide
+    fecha = parsear_fecha(s)
+    if fecha is not None:
+        return (fecha.year, fecha.month)
     return None
+
+
+def _viene_con_valor(crudo: Any) -> bool:
+    """True si el caller mandó algo distinto de None/"" en ese extremo."""
+    if crudo is None:
+        return False
+    if isinstance(crudo, float) and pd.isna(crudo):
+        return False
+    if isinstance(crudo, (pd.Timestamp, datetime, date)):
+        return True
+    return str(crudo).strip() != ""
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1031,16 +1063,51 @@ def _resolver_personalizado(
     filtro resultante es un superconjunto del rango exacto. Es el precio
     de mantener el contrato `dict nombre → valores` que consumen todos los
     loaders del proyecto.
+
+    REGLA DURA (QA piloto SIMCE 2026-07-30, P0-2): un rango que el caller
+    pidió y que NO se puede honrar jamás degrada a "sin recorte temporal".
+    Fecha ilegible, rango invertido o rango sin un solo punto temporal
+    dentro devuelven `disponible=False` con motivo accionable — el router
+    lo traduce a 400. Entregar en silencio un informe con datos de otro
+    período es el peor modo de falla posible en un documento que va a un
+    establecimiento, y esta función la comparten los 6 módulos del motor
+    único.
     """
     filtros_usuario = dict(periodo.get("filtros") or {})
-    inicio = parsear_ym(periodo.get("fecha_inicio"))
-    fin = parsear_ym(periodo.get("fecha_fin"))
+    crudo_inicio = periodo.get("fecha_inicio")
+    crudo_fin = periodo.get("fecha_fin")
+    inicio = parsear_ym(crudo_inicio)
+    fin = parsear_ym(crudo_fin)
+
+    ilegibles = [
+        str(crudo).strip()
+        for crudo, parseado in ((crudo_inicio, inicio), (crudo_fin, fin))
+        if _viene_con_valor(crudo) and parseado is None
+    ]
+    if ilegibles:
+        return _no_disponible(
+            "personalizado",
+            "No se pudo interpretar el rango de fechas "
+            f"({', '.join(ilegibles)}). Usa el formato AAAA-MM "
+            "(por ejemplo 2025-03) o AAAA-MM-DD.",
+            cols,
+        )
 
     # "2026" sin mes: inicio → enero, fin → diciembre.
     if inicio and inicio[1] == 0:
         inicio = (inicio[0], 1)
     if fin and fin[1] == 0:
         fin = (fin[0], 12)
+
+    if inicio and fin and inicio > fin:
+        return _no_disponible(
+            "personalizado",
+            "El rango de fechas está invertido: el inicio "
+            f"({_describir_rango(inicio, inicio)}) es posterior al fin "
+            f"({_describir_rango(fin, fin)}). Intercambia las fechas e "
+            "inténtalo de nuevo.",
+            cols,
+        )
 
     filtros: dict[str, Any] = dict(filtros_usuario)
     col_anio = cols.get("anio")
@@ -1094,9 +1161,12 @@ def _resolver_personalizado(
                     fechas_ok.add(str(row.get(col_fecha)))
 
         if not filas_ok:
+            rango = _describir_rango(inicio, fin)
             return _no_disponible(
                 "personalizado",
-                "Sin datos en el período seleccionado.",
+                "No hay datos en el período seleccionado"
+                + (f" ({rango})." if rango else ".")
+                + " Elige un rango con evaluaciones registradas.",
                 cols,
             )
 
