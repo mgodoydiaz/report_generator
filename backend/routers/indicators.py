@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
 from backend.auth import get_current_user
+from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
 from backend.models import User, Indicator, IndicatorMetric, Metric
 
@@ -1158,7 +1159,7 @@ def export_pdf(
                 media_type="application/pdf",
                 headers={
                     "Content-Disposition":
-                        f'attachment; filename="informe_{safe_name}.pdf"'
+                        content_disposition(f"informe_{safe_name}.pdf")
                 },
             )
 
@@ -1203,7 +1204,7 @@ def export_pdf(
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f'attachment; filename="informe_{safe_name}.pdf"'},
+            headers={"Content-Disposition": content_disposition(f"informe_{safe_name}.pdf")},
         )
     except HTTPException:
         raise

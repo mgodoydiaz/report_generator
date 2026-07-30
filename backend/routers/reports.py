@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend.auth import get_current_user
 from backend.database import get_db
+from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
 from backend.models import User
 from backend.rgenerator.reports.data import cargar_dataframes_indicator
@@ -161,7 +162,7 @@ def generar_informe_word(
     return Response(
         content=docx_bytes,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        headers={"Content-Disposition": f'attachment; filename="informe_{nombre}.docx"'},
+        headers={"Content-Disposition": content_disposition(f"informe_{nombre}.docx")},
     )
 
 
@@ -259,7 +260,7 @@ def generar_informe_custom(
     return Response(
         content=contenido,
         media_type=meta["mime"],
-        headers={"Content-Disposition": f'attachment; filename="{meta["filename"]}"'},
+        headers={"Content-Disposition": content_disposition(meta["filename"])},
     )
 
 
@@ -314,5 +315,5 @@ def generar_reporte(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="informe_{tipo}.pdf"'},
+        headers={"Content-Disposition": content_disposition(f"informe_{tipo}.pdf", disposition="inline")},
     )

@@ -51,10 +51,7 @@ def indicador_sin_modulo(db_session, org):
         ident["Mes"]: NUMERO_A_MES[hoy.month],
     })
     return make_indicator(
-        # Nombre ASCII a propósito: `Content-Disposition` se emite en
-        # latin-1 y un nombre con tilde revienta el TestClient (bug
-        # preexistente del endpoint, ajeno a este piloto).
-        db_session, org, name="Ensayo Generico", metrics=[metric],
+        db_session, org, name="Ensayo Genérico", metrics=[metric],
         pdf_layout=LAYOUT, pdf_layout_historico=LAYOUT,
     )
 

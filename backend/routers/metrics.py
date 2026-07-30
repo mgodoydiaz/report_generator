@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.auth import get_current_user
 from backend.auditing import client_ip, make_metric_data
+from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
 from backend.models import User, Metric, MetricDimension, MetricData, Dimension
 from backend.routers.tables import invalidate_metric_df_cache
@@ -840,7 +841,7 @@ def get_metric_template(
         return StreamingResponse(
             stream,
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f"attachment; filename={filename}"},
+            headers={"Content-Disposition": content_disposition(filename)},
         )
     except HTTPException:
         raise

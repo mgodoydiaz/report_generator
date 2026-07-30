@@ -326,11 +326,8 @@ def simce_indicator_historico(db_session, org):
         "rut": "1-1", "nombre": "Alumno Uno", "rend": 0.40,
         "simce": 200, "logro": "Insuficiente",
     })
-    # Nombre sin tilde: `Content-Disposition` de export-pdf se emite en
-    # latin-1 y un nombre con tilde rompe el TestClient (bug preexistente
-    # del endpoint, ajeno al motor único).
     return _montar_simce(
-        db_session, org, filas, name="SIMCE Historico",
+        db_session, org, filas, name="SIMCE Histórico",
         achievement_levels=[
             {"name": "Insuficiente", "color": "#dc2626", "order": 1},
             {"name": "Elemental", "color": "#eab308", "order": 2},
