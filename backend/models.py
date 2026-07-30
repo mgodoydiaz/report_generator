@@ -115,7 +115,11 @@ class Dimension(Base):
 
     id_dimension     = Column(Integer, primary_key=True, index=True)
     name             = Column(String(200), nullable=False)
-    data_type        = Column(String(20), default="str")       # str | int | float
+    # Tipo de dato de la dimensión: str (texto) | int | float (numéricos) |
+    # date (fecha real). "date" habilita derivar AÑO y MES desde la columna
+    # — es lo que permite los informes semestral/anual en indicadores sin
+    # dimensión "Año" (ver rgenerator/reports/periodos.py).
+    data_type        = Column(String(20), default="str", server_default="str")
     validation_mode  = Column(String(20), default="free")      # free | list
     description      = Column(Text, default="")
     updated_at       = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

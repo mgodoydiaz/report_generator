@@ -1,10 +1,15 @@
 """Resolver de períodos temporales para informes.
 
-En este proyecto NO existe una columna de fecha real: el tiempo vive en
-dimensiones ("Año", "Mes", "Hito", "Versión", "N Prueba"). Este módulo
-traduce un período declarativo — "la última prueba", "el semestre en
-curso", "el año en curso", "un rango YYYY-MM" — a un dict de filtros por
-NOMBRE de columna que cualquier motor de informes puede aplicar.
+El tiempo vive en dimensiones ("Año", "Mes", "Hito", "Versión",
+"N Prueba") y — desde el tipo de dato de dimensión "fecha" — también en
+columnas con fechas reales ("Fecha": "2026-04-07"). Este módulo traduce
+un período declarativo — "la última prueba", "el semestre en curso", "el
+año en curso", "un rango YYYY-MM" — a un dict de filtros por NOMBRE de
+columna que cualquier motor de informes puede aplicar.
+
+Una columna de tipo fecha actúa como fuente de AÑO **y** de MES: por eso
+Fluidez Lectora, que no tiene dimensión "Año", igual puede resolver los
+informes semestral y anual.
 
 Todas las funciones son PURAS (no tocan la DB): reciben un DataFrame ya
 cargado (`cargar_dataframes_indicator`) y devuelven un `ResultadoPeriodo`.
@@ -26,7 +31,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Optional
 
 import pandas as pd
@@ -96,6 +101,16 @@ del _clave, _mes
 _TOKENS_ANIO = ("ano", "anos", "anio", "anios", "year", "years")
 _TOKENS_MES_LIKE = ("mes", "fecha", "hito", "version")  # en orden de preferencia
 _TOKENS_ORDINAL = ("prueba", "ensayo")
+_TOKENS_FECHA = ("fecha", "fechas", "date", "dates")
+
+# Valores de `dimensions.data_type` que declaran una columna como fecha.
+# Se acepta la forma en español y las inglesas por retrocompatibilidad.
+TIPOS_DATO_FECHA = frozenset({"fecha", "date", "datetime", "timestamp"})
+
+# Una columna sin declarar se toma como fecha si al menos este porcentaje
+# de la muestra parsea como fecha real.
+UMBRAL_PARSEO_FECHA = 0.9
+_MUESTRA_MAX = 500
 
 # Semánticas de columna mes-like. Determinan cómo se interpreta un valor:
 # en una columna "Versión", "1" es v1 (abril), NO enero.
@@ -174,6 +189,157 @@ def tipo_mes_like(nombre: Optional[str]) -> Optional[str]:
         if _menciona_token(nombre, (token,)) or _menciona_substring(nombre, (token,)):
             return token
     return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Fechas reales (tipo de dato de dimensión "fecha")
+# ─────────────────────────────────────────────────────────────────────────
+
+# "2026-04-07", "2026/04/07", "2026-04-07 00:00:00", "2026-04-07T10:30"
+_RE_FECHA_ISO = re.compile(r"^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T].*)?$")
+# "07-04-2026", "7/4/2026", "07-04-2026 00:00:00"
+_RE_FECHA_LATINA = re.compile(r"^(\d{1,2})[-/](\d{1,2})[-/](\d{4})(?:[ T].*)?$")
+
+
+def parsear_fecha(valor: Any) -> Optional[date]:
+    """Valor de celda → `date`, o None si no es una fecha.
+
+    Formatos aceptados (los tres que aparecen en los datos reales de la
+    fundación, más los objetos nativos de pandas/datetime):
+
+        ISO      "2026-04-07", "2026-04-07 00:00:00", "2026/04/07"
+        latino   "07-04-2026", "07/04/2026"  (día primero, SIEMPRE)
+        nativos  `pd.Timestamp`, `datetime`, `date`
+
+    Deliberadamente NO usa `pd.to_datetime` con inferencia: pandas
+    interpreta "07-04-2026" como 4 de julio (mes primero) y en Chile eso
+    es el 7 de abril. El parseo es determinista y estricto — "2026",
+    "2026-04" o "abril" devuelven None.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, (pd.Timestamp, datetime, date)):
+        try:
+            if pd.isna(valor):
+                return None
+        except (TypeError, ValueError):  # pragma: no cover — defensivo
+            pass
+        if isinstance(valor, (pd.Timestamp, datetime)):
+            return valor.date()
+        return valor
+    if isinstance(valor, float) and pd.isna(valor):
+        return None
+
+    crudo = str(valor).strip()
+    if not crudo:
+        return None
+
+    m = _RE_FECHA_ISO.match(crudo)
+    if m:
+        anio, mes, dia = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    else:
+        m = _RE_FECHA_LATINA.match(crudo)
+        if not m:
+            return None
+        dia, mes, anio = int(m.group(1)), int(m.group(2)), int(m.group(3))
+
+    try:
+        return date(anio, mes, dia)
+    except ValueError:
+        return None
+
+
+def tasa_parseo_fecha(valores: Iterable[Any]) -> float:
+    """Fracción [0.0–1.0] de `valores` no vacíos que parsean como fecha."""
+    utiles = []
+    for v in valores or []:
+        if v is None:
+            continue
+        if isinstance(v, float) and pd.isna(v):
+            continue
+        if not isinstance(v, (pd.Timestamp, datetime, date)) and str(v).strip() == "":
+            continue
+        utiles.append(v)
+    if not utiles:
+        return 0.0
+    ok = sum(1 for v in utiles if parsear_fecha(v) is not None)
+    return ok / len(utiles)
+
+
+def _tipo_declarado(nombre: str, tipos: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """`data_type` declarado para una columna (match tolerante a tildes)."""
+    if not tipos:
+        return None
+    objetivo = _sin_tildes(nombre)
+    for clave, valor in tipos.items():
+        if _sin_tildes(clave) == objetivo:
+            return _sin_tildes(valor) if valor else None
+    return None
+
+
+def es_columna_fecha(
+    nombre: str,
+    tipos: Optional[Mapping[str, Any]] = None,
+    muestra: Optional[Iterable[Any]] = None,
+) -> bool:
+    """True si la columna se puede tratar como fecha real.
+
+    Dos vías, en este orden:
+        1. metadata: `data_type` de la dimensión ∈ `TIPOS_DATO_FECHA`.
+        2. heurística: ≥`UMBRAL_PARSEO_FECHA` de la muestra parsea como
+           fecha. Sin muestra se cae al nombre ("Fecha", "Date").
+    """
+    if _tipo_declarado(nombre, tipos) in TIPOS_DATO_FECHA:
+        return True
+    if muestra is None:
+        return _menciona_token(nombre, _TOKENS_FECHA) or _menciona_substring(
+            nombre, _TOKENS_FECHA
+        )
+    return tasa_parseo_fecha(muestra) >= UMBRAL_PARSEO_FECHA
+
+
+def _primera_columna_fecha(
+    cols: list[str],
+    tipos: Optional[Mapping[str, Any]],
+    muestras: Optional[Mapping[str, Iterable[Any]]],
+) -> Optional[str]:
+    """Elige LA columna fecha: declarada > nombrada > detectada por valores."""
+    declarada = next(
+        (c for c in cols if _tipo_declarado(c, tipos) in TIPOS_DATO_FECHA), None
+    )
+    if declarada:
+        return declarada
+
+    nombradas = [
+        c for c in cols
+        if _menciona_token(c, _TOKENS_FECHA) or _menciona_substring(c, _TOKENS_FECHA)
+    ]
+    for c in nombradas:
+        if muestras is None:
+            return c
+        if tasa_parseo_fecha(muestras.get(c) or []) >= UMBRAL_PARSEO_FECHA:
+            return c
+
+    if muestras:
+        for c in cols:
+            if tasa_parseo_fecha(muestras.get(c) or []) >= UMBRAL_PARSEO_FECHA:
+                return c
+    return None
+
+
+def muestras_de_dataframe(
+    df: "pd.DataFrame", limite: int = _MUESTRA_MAX
+) -> dict[str, list]:
+    """{columna: primeros valores no nulos} para la heurística de fechas."""
+    muestras: dict[str, list] = {}
+    if df is None:
+        return muestras
+    for c in df.columns:
+        try:
+            muestras[str(c)] = df[c].head(limite).dropna().tolist()
+        except Exception:  # pragma: no cover — defensivo
+            muestras[str(c)] = []
+    return muestras
 
 
 def _version_a_mes(crudo: str) -> Optional[int]:
@@ -265,12 +431,10 @@ def a_numero_mes(valor: Any, semantica: Optional[str] = None) -> Optional[int]:
         mes = int(m.group(2))
         if 1 <= mes <= 12:
             return mes
-    # Fecha "DD/MM/YYYY" o "DD-MM-YYYY"
-    m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", crudo)
-    if m:
-        mes = int(m.group(2))
-        if 1 <= mes <= 12:
-            return mes
+    # Fecha "DD/MM/YYYY" o "DD-MM-YYYY", con o sin hora
+    fecha = parsear_fecha(crudo)
+    if fecha is not None:
+        return fecha.month
 
     return None
 
@@ -301,11 +465,21 @@ def _meses_del_semestre(semestre: int) -> tuple[int, int]:
 # Detección de columnas temporales
 # ─────────────────────────────────────────────────────────────────────────
 
-def detectar_columnas_temporales(columns: Iterable[str]) -> dict[str, Optional[str]]:
+def detectar_columnas_temporales(
+    columns: Iterable[str],
+    tipos: Optional[Mapping[str, Any]] = None,
+    muestras: Optional[Mapping[str, Iterable[Any]]] = None,
+) -> dict[str, Optional[str]]:
     """Clasifica las columnas de un DataFrame en roles temporales.
 
     Args:
         columns: nombres de columna (humanizados por `data.py`).
+        tipos: {columna: data_type} del catálogo de dimensiones. Un
+            `data_type` de `TIPOS_DATO_FECHA` marca la columna como fecha
+            real sin necesidad de heurística.
+        muestras: {columna: valores} para la heurística de parseo (ver
+            `muestras_de_dataframe`). Sin esto la detección de fechas cae
+            al nombre de la columna.
 
     Returns:
         dict con keys:
@@ -313,10 +487,12 @@ def detectar_columnas_temporales(columns: Iterable[str]) -> dict[str, Optional[s
             "mes_like" columna que aporta el mes: Mes | Fecha | Hito |
                        Versión, en ese orden de preferencia (o None)
             "ordinal"  columna con el número de prueba/ensayo (o None)
+            "fecha"    columna con fechas reales, fuente de año Y mes
+                       (o None)
 
     Ejemplo:
         >>> detectar_columnas_temporales(["Curso", "Año", "Mes", "N Prueba"])
-        {'anio': 'Año', 'mes_like': 'Mes', 'ordinal': 'N Prueba'}
+        {'anio': 'Año', 'mes_like': 'Mes', 'ordinal': 'N Prueba', 'fecha': None}
     """
     cols = [str(c) for c in columns]
 
@@ -329,8 +505,77 @@ def detectar_columnas_temporales(columns: Iterable[str]) -> dict[str, Optional[s
             break
 
     ordinal = _primera_columna(cols, _TOKENS_ORDINAL)
+    fecha = _primera_columna_fecha(cols, tipos, muestras)
 
-    return {"anio": anio, "mes_like": mes_like, "ordinal": ordinal}
+    # Una columna fecha declarada por metadata puede llamarse "Aplicación"
+    # y no matchear ningún token mes-like: igual aporta el mes.
+    if fecha and not mes_like:
+        mes_like = fecha
+
+    return {"anio": anio, "mes_like": mes_like, "ordinal": ordinal, "fecha": fecha}
+
+
+def detectar_columnas_temporales_df(
+    df: "pd.DataFrame",
+    tipos: Optional[Mapping[str, Any]] = None,
+) -> dict[str, Optional[str]]:
+    """`detectar_columnas_temporales` muestreando el propio DataFrame."""
+    if df is None:
+        return detectar_columnas_temporales([], tipos)
+    return detectar_columnas_temporales(df.columns, tipos, muestras_de_dataframe(df))
+
+
+def semantica_columna(
+    nombre: Optional[str],
+    cols: Optional[Mapping[str, Optional[str]]] = None,
+) -> Optional[str]:
+    """Semántica de una columna, considerando la fecha detectada.
+
+    `tipo_mes_like` solo mira el NOMBRE; si la columna fue detectada como
+    fecha (por metadata o por sus valores) manda `SEMANTICA_FECHA` aunque
+    se llame "Aplicación".
+    """
+    if nombre and cols and nombre == cols.get("fecha"):
+        return SEMANTICA_FECHA
+    return tipo_mes_like(nombre)
+
+
+def _componentes_temporales(
+    row: Mapping[str, Any],
+    cols: Mapping[str, Optional[str]],
+) -> tuple[int, int, int, int]:
+    """(anio, mes, dia, ordinal) de una fila. -1 donde falte.
+
+    El año y el mes se derivan de la columna fecha cuando no hay columnas
+    Año/Mes explícitas — es lo que habilita los informes semestral y anual
+    en indicadores como Fluidez Lectora.
+    """
+    col_anio = cols.get("anio")
+    col_mes = cols.get("mes_like")
+    col_ord = cols.get("ordinal")
+    col_fecha = cols.get("fecha")
+
+    fecha = parsear_fecha(row.get(col_fecha)) if col_fecha else None
+
+    anio = _a_entero(row.get(col_anio)) if col_anio else None
+    if anio is None and fecha is not None:
+        anio = fecha.year
+
+    mes = (
+        a_numero_mes(row.get(col_mes), semantica_columna(col_mes, cols))
+        if col_mes else None
+    )
+    if mes is None and fecha is not None:
+        mes = fecha.month
+
+    ordinal = _a_entero(row.get(col_ord)) if col_ord else None
+
+    return (
+        anio if anio is not None else -1,
+        mes if mes is not None else -1,
+        fecha.day if fecha is not None else -1,
+        ordinal if ordinal is not None else -1,
+    )
 
 
 def clave_temporal(
@@ -347,24 +592,28 @@ def clave_temporal(
         Tupla de 3 enteros comparable con `max()`. Los valores no
         parseables degradan a -1 (van al final del orden).
     """
-    col_anio = cols.get("anio")
-    col_mes = cols.get("mes_like")
-    col_ord = cols.get("ordinal")
+    anio, mes, _dia, ordinal = _componentes_temporales(row, cols)
+    return (anio, mes, ordinal)
 
-    anio = _a_entero(row.get(col_anio)) if col_anio else None
-    mes = a_numero_mes(row.get(col_mes), tipo_mes_like(col_mes)) if col_mes else None
-    ordinal = _a_entero(row.get(col_ord)) if col_ord else None
 
-    return (
-        anio if anio is not None else -1,
-        mes if mes is not None else -1,
-        ordinal if ordinal is not None else -1,
-    )
+def clave_temporal_detallada(
+    row: Mapping[str, Any],
+    cols: Mapping[str, Optional[str]],
+) -> tuple[int, int, int, int]:
+    """`clave_temporal` con el DÍA entre el mes y el ordinal.
+
+    Necesaria para ordenar por fecha real: sin el día, dos pruebas del
+    mismo mes ("2026-04-02" y "2026-04-13") empatan y la "última prueba"
+    la termina eligiendo el orden de las filas. Cuando no hay columna
+    fecha el día es siempre -1 y el orden es idéntico al de
+    `clave_temporal`.
+    """
+    return _componentes_temporales(row, cols)
 
 
 def hay_columna_temporal(cols: Mapping[str, Optional[str]]) -> bool:
     """True si se detectó al menos una columna temporal."""
-    return any(cols.get(k) for k in ("anio", "mes_like", "ordinal"))
+    return any(cols.get(k) for k in ("anio", "mes_like", "ordinal", "fecha"))
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -436,9 +685,9 @@ def _mes_like_legible(valor: Any, semantica: Optional[str]) -> str:
     if semantica == SEMANTICA_VERSION and _version_a_mes(crudo) is not None:
         return crudo if crudo.upper().startswith("V") else f"v{crudo}"
     if semantica == SEMANTICA_FECHA:
-        # "2026-04-07 00:00:00" → "2026-04-07" (viene como string del df)
-        parsed = pd.to_datetime(crudo, errors="coerce")
-        if parsed is not pd.NaT and not pd.isna(parsed):
+        # "2026-04-07 00:00:00" → "07-04-2026" (viene como string del df)
+        parsed = parsear_fecha(crudo)
+        if parsed is not None:
             return parsed.strftime("%d-%m-%Y")
     return crudo.upper()
 
@@ -451,7 +700,7 @@ def _describir_evaluacion(valores: dict[str, Any], cols: dict) -> str:
     col_ord = cols.get("ordinal")
 
     if col_mes and valores.get(col_mes) not in (None, ""):
-        partes.append(_mes_like_legible(valores[col_mes], tipo_mes_like(col_mes)))
+        partes.append(_mes_like_legible(valores[col_mes], semantica_columna(col_mes, cols)))
     if col_anio and valores.get(col_anio) not in (None, ""):
         partes.append(str(valores[col_anio]))
 
@@ -549,9 +798,24 @@ def aplicar_filtros_a_dataframes(
     }
 
 
-def _claves_distintas(df: pd.DataFrame, cols: dict) -> set[tuple[int, int, int]]:
+def _claves_distintas(df: pd.DataFrame, cols: dict) -> set[tuple[int, int, int, int]]:
     """Set de claves temporales distintas presentes en `df`."""
-    return {clave_temporal(row, cols) for _, row in df.iterrows()}
+    return {clave_temporal_detallada(row, cols) for _, row in df.iterrows()}
+
+
+def _valores_de_columna(df: pd.DataFrame, columna: str) -> list:
+    """Valores únicos no nulos de una columna (lista vacía si no existe)."""
+    if df is None or df.empty or columna not in df.columns:
+        return []
+    return df[columna].dropna().unique().tolist()
+
+
+def _ordenar_por_fecha(valores: Iterable[Any]) -> list[str]:
+    """Ordena valores de una columna fecha cronológicamente (como strings)."""
+    return sorted(
+        {str(v) for v in valores},
+        key=lambda v: (parsear_fecha(v) or date.min, str(v)),
+    )
 
 
 def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
@@ -567,10 +831,10 @@ def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
             "ultima_prueba", "Sin datos cargados para este indicador.", cols
         )
 
-    mejor_clave: tuple[int, int, int] | None = None
+    mejor_clave: tuple[int, int, int, int] | None = None
     mejor_row: Mapping[str, Any] | None = None
     for _, row in df.iterrows():
-        k = clave_temporal(row, cols)
+        k = clave_temporal_detallada(row, cols)
         if mejor_clave is None or k > mejor_clave:
             mejor_clave, mejor_row = k, row
 
@@ -580,9 +844,17 @@ def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
         )
 
     # Fijar CADA columna temporal detectada al valor de la clave máxima.
+    # La columna fecha solo entra al filtro cuando ES la fuente del año: si
+    # el indicador ya tiene Año/Mes/N Prueba (Cálculo Veloz), esas columnas
+    # identifican la evaluación y fijar además el día la acotaría de más —
+    # una prueba aplicada en varias jornadas perdería filas.
+    roles = ("anio", "mes_like", "ordinal")
+    if not cols.get("anio"):
+        roles = roles + ("fecha",)
+
     filtros: dict[str, Any] = {}
     valores: dict[str, Any] = {}
-    for rol in ("anio", "mes_like", "ordinal"):
+    for rol in roles:
         col = cols.get(rol)
         if not col:
             continue
@@ -610,16 +882,40 @@ def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
 
 def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo:
     col_anio = cols.get("anio")
-    if not col_anio:
+    col_fecha = cols.get("fecha")
+    anio = hoy.year
+
+    if not col_anio and not col_fecha:
         return _no_disponible(
             "anual",
-            "No se detectó una dimensión de año en los datos de este "
-            "indicador — el informe anual no se puede acotar.",
+            "No se detectó una dimensión de año ni de fecha en los datos de "
+            "este indicador — el informe anual no se puede acotar.",
             cols,
             tipo_layout="historico",
         )
 
-    anio = hoy.year
+    if not col_anio:
+        # Año derivado de la columna fecha: el filtro se materializa como la
+        # lista de fechas del año (el loader filtra por valores de columna).
+        permitidos = [
+            str(v) for v in _valores_de_columna(df, col_fecha)
+            if (f := parsear_fecha(v)) is not None and f.year == anio
+        ]
+        if not permitidos:
+            return _no_disponible(
+                "anual",
+                f"Sin datos del año en curso ({anio}) para este indicador.",
+                cols,
+                tipo_layout="historico",
+            )
+        return ResultadoPeriodo(
+            tipo="anual",
+            filtros={col_fecha: _ordenar_por_fecha(permitidos)},
+            tipo_layout="historico",
+            descripcion=str(anio),
+            columnas=cols,
+        )
+
     sub = df[df[col_anio].astype(str).str.strip() == str(anio)] if not df.empty else df
     if sub.empty:
         return _no_disponible(
@@ -641,16 +937,21 @@ def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo
 def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo:
     col_anio = cols.get("anio")
     col_mes = cols.get("mes_like")
+    col_fecha = cols.get("fecha")
 
-    if not col_anio:
+    anio = hoy.year
+    semestre = semestre_de_mes(hoy.month)
+    mes_ini, mes_fin = _meses_del_semestre(semestre)
+
+    if not col_anio and not col_fecha:
         return _no_disponible(
             "semestral",
-            "No se detectó una dimensión de año en los datos de este "
-            "indicador — el informe semestral no se puede acotar.",
+            "No se detectó una dimensión de año ni de fecha en los datos de "
+            "este indicador — el informe semestral no se puede acotar.",
             cols,
             tipo_layout="historico",
         )
-    if not col_mes:
+    if not col_mes and not col_fecha:
         return _no_disponible(
             "semestral",
             "No se detectó una dimensión de mes (Mes, Fecha, Hito o "
@@ -659,9 +960,27 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
             tipo_layout="historico",
         )
 
-    anio = hoy.year
-    semestre = semestre_de_mes(hoy.month)
-    mes_ini, mes_fin = _meses_del_semestre(semestre)
+    if not col_anio:
+        # Año y mes derivados de la misma columna fecha.
+        permitidos = [
+            str(v) for v in _valores_de_columna(df, col_fecha)
+            if (f := parsear_fecha(v)) is not None
+            and f.year == anio and mes_ini <= f.month <= mes_fin
+        ]
+        if not permitidos:
+            return _no_disponible(
+                "semestral",
+                f"Sin datos del {_describir_semestre(anio, semestre)} para este indicador.",
+                cols,
+                tipo_layout="historico",
+            )
+        return ResultadoPeriodo(
+            tipo="semestral",
+            filtros={col_fecha: _ordenar_por_fecha(permitidos)},
+            tipo_layout="historico",
+            descripcion=_describir_semestre(anio, semestre),
+            columnas=cols,
+        )
 
     if df.empty:
         return _no_disponible(
@@ -671,7 +990,7 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
             tipo_layout="historico",
         )
 
-    semantica = tipo_mes_like(col_mes)
+    semantica = semantica_columna(col_mes, cols)
     del_anio = df[df[col_anio].astype(str).str.strip() == str(anio)]
     permitidos: list[str] = []
     for valor in del_anio[col_mes].dropna().unique().tolist():
@@ -726,9 +1045,10 @@ def _resolver_personalizado(
     filtros: dict[str, Any] = dict(filtros_usuario)
     col_anio = cols.get("anio")
     col_mes = cols.get("mes_like")
-    semantica = tipo_mes_like(col_mes)
+    col_fecha = cols.get("fecha")
+    semantica = semantica_columna(col_mes, cols)
 
-    if (inicio or fin) and not (col_anio or col_mes):
+    if (inicio or fin) and not (col_anio or col_mes or col_fecha):
         return _no_disponible(
             "personalizado",
             "No se detectó ninguna dimensión temporal — no se puede aplicar "
@@ -745,11 +1065,15 @@ def _resolver_personalizado(
 
         anios_ok: set[str] = set()
         meses_ok: set[str] = set()
+        fechas_ok: set[str] = set()
         filas_ok: list[int] = []
 
         for idx, row in base.iterrows():
-            anio = _a_entero(row.get(col_anio)) if col_anio else None
-            mes = a_numero_mes(row.get(col_mes), semantica) if col_mes else None
+            # `_componentes_temporales` deriva año/mes de la columna fecha
+            # cuando no hay dimensiones Año/Mes explícitas.
+            anio_i, mes_i, _dia, _ord = _componentes_temporales(row, cols)
+            anio = anio_i if anio_i >= 0 else None
+            mes = mes_i if mes_i >= 0 else None
 
             if anio is None:
                 # Sin año no hay forma de ubicar la fila en el rango.
@@ -766,6 +1090,8 @@ def _resolver_personalizado(
                     anios_ok.add(str(row.get(col_anio)))
                 if col_mes and row.get(col_mes) not in (None, ""):
                     meses_ok.add(str(row.get(col_mes)))
+                if col_fecha and row.get(col_fecha) not in (None, ""):
+                    fechas_ok.add(str(row.get(col_fecha)))
 
         if not filas_ok:
             return _no_disponible(
@@ -780,6 +1106,11 @@ def _resolver_personalizado(
             filtros[col_mes] = sorted(
                 meses_ok, key=lambda v: (a_numero_mes(v, semantica) or 0, str(v))
             )
+        # La fecha solo entra al filtro cuando es la fuente del año (mismo
+        # criterio que `_resolver_ultima_prueba`): con Año/Mes explícitos,
+        # fijar además el día acotaría el rango de más.
+        if col_fecha and fechas_ok and not col_anio and col_fecha not in filtros:
+            filtros[col_fecha] = _ordenar_por_fecha(fechas_ok)
 
         resultante = base.loc[filas_ok]
         descripcion = _describir_rango(inicio, fin)
@@ -808,6 +1139,7 @@ def resolver_periodo(
     df: pd.DataFrame,
     periodo: Mapping[str, Any],
     hoy: date,
+    tipos: Optional[Mapping[str, Any]] = None,
 ) -> ResultadoPeriodo:
     """Resuelve un período declarativo contra los datos reales de un df.
 
@@ -819,6 +1151,9 @@ def resolver_periodo(
             filtros: {nombre_dim: valor | [valores]} (solo personalizado)
         hoy: fecha de referencia (inyectada para que la función sea pura
             y testeable).
+        tipos: {columna: data_type} del catálogo de dimensiones. Sirve
+            para declarar columnas de tipo fecha sin depender del nombre
+            ni de la heurística de parseo.
 
     Returns:
         `ResultadoPeriodo`. Cuando `disponible` es False, `motivo` explica
@@ -834,7 +1169,7 @@ def resolver_periodo(
 
     if df is None:
         df = pd.DataFrame()
-    cols = detectar_columnas_temporales(df.columns)
+    cols = detectar_columnas_temporales_df(df, tipos)
 
     if tipo == "ultima_prueba":
         return _resolver_ultima_prueba(df, cols)
@@ -849,7 +1184,10 @@ def resolver_periodo(
 # Conveniencia para múltiples DataFrames
 # ─────────────────────────────────────────────────────────────────────────
 
-def elegir_df_temporal(dataframes: Mapping[str, pd.DataFrame]) -> Optional[pd.DataFrame]:
+def elegir_df_temporal(
+    dataframes: Mapping[str, pd.DataFrame],
+    tipos: Optional[Mapping[str, Any]] = None,
+) -> Optional[pd.DataFrame]:
     """Elige el DataFrame más apto para resolver períodos.
 
     Prefiere el rol "estudiantes"; si no lo tiene (o no aporta columnas
@@ -860,8 +1198,8 @@ def elegir_df_temporal(dataframes: Mapping[str, pd.DataFrame]) -> Optional[pd.Da
         return None
 
     def _puntaje(df: pd.DataFrame) -> int:
-        cols = detectar_columnas_temporales(df.columns)
-        return sum(1 for k in ("anio", "mes_like", "ordinal") if cols.get(k))
+        cols = detectar_columnas_temporales_df(df, tipos)
+        return sum(1 for k in ("anio", "mes_like", "ordinal", "fecha") if cols.get(k))
 
     preferido = dataframes.get("estudiantes")
     if preferido is not None and _puntaje(preferido) > 0:
@@ -879,12 +1217,13 @@ def resolver_periodo_multi(
     dataframes: Mapping[str, pd.DataFrame],
     periodo: Mapping[str, Any],
     hoy: date,
+    tipos: Optional[Mapping[str, Any]] = None,
 ) -> ResultadoPeriodo:
     """`resolver_periodo` sobre el dict {rol: df} de `cargar_dataframes_indicator`."""
-    df = elegir_df_temporal(dataframes)
+    df = elegir_df_temporal(dataframes, tipos)
     if df is None:
         return _no_disponible(
             (periodo or {}).get("tipo") or "ultima_prueba",
             "Sin datos cargados para este indicador.",
         )
-    return resolver_periodo(df, periodo, hoy)
+    return resolver_periodo(df, periodo, hoy, tipos)

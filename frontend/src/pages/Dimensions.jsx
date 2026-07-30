@@ -1,9 +1,18 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Layers, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ShieldCheck, List, Type, Hash } from 'lucide-react';
+import { Layers, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Trash2, Settings, ShieldCheck, List, Type, Hash, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
 import NewDimensionDrawer from '../components/NewDimensionDrawer';
+
+// Badge por tipo de dato. Los tipos numéricos comparten estilo; "date"
+// tiene el suyo porque cambia el comportamiento de los informes.
+const TIPO_DATO_META = {
+    str: { label: 'TEXTO', Icon: Type, clase: 'bg-indigo-50 text-indigo-600 border-indigo-100' },
+    int: { label: 'NUMÉRICO', Icon: Hash, clase: 'bg-amber-50 text-amber-600 border-amber-100' },
+    float: { label: 'NUMÉRICO', Icon: Hash, clase: 'bg-amber-50 text-amber-600 border-amber-100' },
+    date: { label: 'FECHA', Icon: Calendar, clase: 'bg-sky-50 text-sky-600 border-sky-100' },
+};
 
 export default function Dimensions() {
     const { fetchAuth } = useAuth();
@@ -164,10 +173,16 @@ export default function Dimensions() {
                                         <td className="p-5 font-bold text-slate-700 dark:text-slate-200">{d.name}</td>
                                         <td className="p-5 text-slate-500 text-sm">{d.description}</td>
                                         <td className="p-5">
-                                            <span className={`flex items-center gap-1 w-fit px-2 py-1 rounded-md text-[10px] font-bold border ${d.data_type === 'str' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : 'bg-amber-50 text-amber-600 border-amber-100'}`}>
-                                                {d.data_type === 'str' ? <Type size={12} /> : <Hash size={12} />}
-                                                {d.data_type === 'str' ? 'TEXTO' : 'NUMÉRICO'}
-                                            </span>
+                                            {(() => {
+                                                const meta = TIPO_DATO_META[d.data_type] || TIPO_DATO_META.str;
+                                                const Icono = meta.Icon;
+                                                return (
+                                                    <span className={`flex items-center gap-1 w-fit px-2 py-1 rounded-md text-[10px] font-bold border ${meta.clase}`}>
+                                                        <Icono size={12} />
+                                                        {meta.label}
+                                                    </span>
+                                                );
+                                            })()}
                                         </td>
                                         <td className="p-5">
                                             <span className={`flex items-center gap-1 w-fit px-2 py-1 rounded-md text-[10px] font-bold border ${d.validation_mode === 'list' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-slate-50 text-slate-500 border-slate-100'}`}>

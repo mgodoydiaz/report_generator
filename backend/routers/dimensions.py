@@ -13,10 +13,44 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/dimensions", tags=["dimensions"])
 
+# Tipos de dato canónicos de una dimensión:
+#   str   texto (default histórico)
+#   int / float  numéricos
+#   date  fecha real — habilita derivar AÑO y MES de la columna para los
+#         informes semestral/anual (ver rgenerator/reports/periodos.py)
+DATA_TYPES_DIMENSION = ("str", "int", "float", "date")
+
+# Alias aceptados en la entrada (el frontend y los scripts hablan español).
+# Todo lo que no esté acá se guarda tal cual: la columna nunca fue un enum
+# y no queremos romper datos existentes.
+_ALIAS_DATA_TYPE = {
+    "texto": "str", "text": "str", "string": "str", "cadena": "str",
+    "numero": "int", "número": "int", "num": "int", "number": "int",
+    "entero": "int", "integer": "int",
+    "decimal": "float", "real": "float",
+    "fecha": "date", "datetime": "date", "timestamp": "date",
+}
+
+
+def normalizar_data_type(valor: Optional[str]) -> str:
+    """Normaliza el tipo de dato de una dimensión a su forma canónica.
+
+    Retrocompatible: acepta "str"/"int"/"float"/"date" tal cual, traduce
+    los alias en español ("texto", "numero", "fecha") y deja pasar
+    cualquier otro valor sin tocarlo. Vacío → "str".
+    """
+    if valor is None:
+        return "str"
+    limpio = str(valor).strip()
+    if not limpio:
+        return "str"
+    return _ALIAS_DATA_TYPE.get(limpio.lower(), limpio)
+
+
 # --- Pydantic Models ---
 class DimensionBase(BaseModel):
     name: str
-    data_type: str = "str"
+    data_type: str = "str"  # str | int | float | date (ver DATA_TYPES_DIMENSION)
     validation_mode: str = "free"  # free, list
     description: Optional[str] = ""
 
@@ -47,7 +81,7 @@ async def get_dimensions(
             {
                 "id_dimension": d.id_dimension,
                 "name": d.name,
-                "data_type": d.data_type,
+                "data_type": normalizar_data_type(d.data_type),
                 "validation_mode": d.validation_mode,
                 "description": d.description or "",
                 "updated_at": d.updated_at.strftime("%Y-%m-%d %H:%M:%S") if d.updated_at else "",
@@ -68,7 +102,7 @@ async def create_dimension(
     try:
         new_dim = Dimension(
             name=dim.name,
-            data_type=dim.data_type,
+            data_type=normalizar_data_type(dim.data_type),
             validation_mode=dim.validation_mode,
             description=dim.description or "",
             org_id=user.org_id,
@@ -111,7 +145,7 @@ async def update_dimension(
             raise HTTPException(status_code=404, detail="Dimensión no encontrada")
 
         record.name = dim.name
-        record.data_type = dim.data_type
+        record.data_type = normalizar_data_type(dim.data_type)
         record.validation_mode = dim.validation_mode
         if dim.description is not None:
             record.description = dim.description

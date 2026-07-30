@@ -251,6 +251,27 @@ def _columna_de_dimension(nombre_dimension: str) -> str:
     return _humanize_column(_to_field_name(nombre_dimension))
 
 
+def _tipos_de_columna(db: Session, indicator_id: int, org_id: int) -> Dict[str, str]:
+    """{columna: data_type} de las dimensiones del indicador.
+
+    Se pasa al resolver de períodos para que reconozca las columnas de
+    tipo fecha por metadata (`dimensions.data_type == "date"`) y no solo
+    por el nombre o por heurística. Se indexa por el nombre de la columna
+    del DataFrame y por el nombre crudo de la dimensión.
+    """
+    tipos: Dict[str, str] = {}
+    try:
+        for dim in _dimensiones_del_indicador(db, indicator_id, org_id):
+            tipo = (dim.data_type or "").strip()
+            if not tipo:
+                continue
+            tipos.setdefault(_columna_de_dimension(dim.name), tipo)
+            tipos.setdefault(dim.name, tipo)
+    except Exception:  # pragma: no cover — nunca debe tumbar el endpoint
+        logger.error("No se pudieron leer los tipos de dimensión", exc_info=True)
+    return tipos
+
+
 def _dimensiones_filtrables(db: Session, indicator_id: int, org_id: int,
                             dataframes: dict) -> list[dict]:
     """Dimensiones del indicador con sus valores únicos reales.
@@ -260,6 +281,7 @@ def _dimensiones_filtrables(db: Session, indicator_id: int, org_id: int,
     catálogo `dimension_values`.
     """
     from backend.models import DimensionValue
+    from backend.routers.dimensions import normalizar_data_type
 
     out: list[dict] = []
     for dim in _dimensiones_del_indicador(db, indicator_id, org_id):
@@ -279,6 +301,11 @@ def _dimensiones_filtrables(db: Session, indicator_id: int, org_id: int,
         out.append({
             "id_dimension": dim.id_dimension,
             "name": dim.name,
+            # Aditivo: el selector actual lo ignora, pero es lo que permitirá
+            # ofrecer un rango de fechas en vez de un multiselect de valores.
+            # Se normaliza igual que en el router de dimensiones para que
+            # ambos endpoints reporten el mismo vocabulario.
+            "data_type": normalizar_data_type(dim.data_type),
             "values": sorted(set(valores), key=_orden_natural),
         })
     return out
@@ -407,6 +434,10 @@ def report_options(
     # todas las cards PDF exigen elegir una (ver `_descriptor_asignatura`).
     descriptor_asignatura = _descriptor_asignatura(dataframes)
 
+    # Tipos de dato de las dimensiones: una dimensión "date" deja que el
+    # resolver derive año y mes desde la columna de fechas.
+    tipos_columna = _tipos_de_columna(db, indicator_id, user.org_id)
+
     # ── Grupo "periodo" ──
     grupo_periodo: list[dict] = []
     for card in _CARDS_PERIODO:
@@ -416,7 +447,9 @@ def report_options(
         resultado = None
         if not requiere_config and not error_datos:
             try:
-                resultado = resolver_periodo_multi(dataframes, periodo, hoy)
+                resultado = resolver_periodo_multi(
+                    dataframes, periodo, hoy, tipos_columna
+                )
             except Exception:
                 logger.error(
                     "report-options: falló resolver_periodo (%s) del indicador %s",
@@ -760,7 +793,10 @@ def _resolver_periodo_a_filtros(
     if filtros_usuario:
         dataframes = aplicar_filtros_a_dataframes(dataframes, filtros_usuario)
 
-    resultado = resolver_periodo_multi(dataframes, periodo, date.today())
+    resultado = resolver_periodo_multi(
+        dataframes, periodo, date.today(),
+        _tipos_de_columna(db, record.id_indicator, org_id),
+    )
     if not resultado.disponible:
         raise HTTPException(
             status_code=400,

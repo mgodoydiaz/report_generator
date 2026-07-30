@@ -74,7 +74,9 @@ class TestMapeos:
 class TestDetectarColumnas:
     def test_caso_simce(self):
         cols = detectar_columnas_temporales(["Curso", "Nombre", "Año", "Mes", "N Prueba"])
-        assert cols == {"anio": "Año", "mes_like": "Mes", "ordinal": "N Prueba"}
+        assert cols == {
+            "anio": "Año", "mes_like": "Mes", "ordinal": "N Prueba", "fecha": None
+        }
 
     def test_anio_sin_tilde_y_year(self):
         assert detectar_columnas_temporales(["Anio"])["anio"] == "Anio"
@@ -93,7 +95,7 @@ class TestDetectarColumnas:
 
     def test_sin_columnas_temporales(self):
         assert detectar_columnas_temporales(["Curso", "RUT", "Logro"]) == {
-            "anio": None, "mes_like": None, "ordinal": None
+            "anio": None, "mes_like": None, "ordinal": None, "fecha": None
         }
 
     def test_no_confunde_palabras_que_contienen_ano(self):

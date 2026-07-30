@@ -65,6 +65,7 @@ Prioridad alta. Pendientes concretos a tomar en las próximas iteraciones:
 - [ ] `NewSpecDrawer.jsx`: agregar sección de edición para tipo `Dashboard`
 
 ### Frontend / UX
+- [ ] **Selector de rango de fechas en el informe personalizado** (fase 2 del tipo de dato "fecha"). Backend listo: `report-options` ya devuelve `data_type` por dimensión en `dimensiones_filtrables`, y `periodos.resolver_periodo` acepta `fecha_inicio`/`fecha_fin` en formato `YYYY-MM`. Falta que `ReportSelectorModal` muestre un date-range picker (en vez del multiselect de valores) cuando `data_type === "date"`, y que envíe el rango en `periodo.fecha_inicio` / `periodo.fecha_fin`. Nota: hoy el rango se materializa como lista de valores permitidos por columna — para rangos que cruzan el año con Año/Mes separados el filtro es un superconjunto (ver docstring de `_resolver_personalizado`); con una columna fecha real el recorte sí es exacto.
 - [ ] Corregir modo oscuro: legibilidad de texto y estados de botones
 - [ ] Implementar sistema de internacionalización (i18n) con archivo de mensajes por idioma
 - [ ] En Drawers de creación, agregar botón para abrir modal de edición completa

@@ -1,8 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { X, Plus, Trash2, Save, Check, ShieldCheck, List, Type, Hash } from 'lucide-react';
+import { X, Plus, Trash2, Save, Check, ShieldCheck, List, Type, Hash, Calendar } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+
+// Tipos de dato de una dimensión. "date" no es cosmético: el resolver de
+// períodos deriva el año y el mes de esa columna (ver periodos.py).
+const DATA_TYPES = [
+    { id: 'str', label: 'Texto', Icon: Type },
+    { id: 'int', label: 'Numérico', Icon: Hash },
+    { id: 'date', label: 'Fecha', Icon: Calendar },
+];
 
 export default function NewDimensionDrawer({ isOpen, onClose, title, initialData, onSave }) {
     const { fetchAuth } = useAuth();
@@ -157,28 +165,28 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
                         <div className="grid grid-cols-2 gap-6">
                             <div className="space-y-3">
                                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">Tipo de Dato</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        onClick={() => setFormData({ ...formData, data_type: 'str' })}
-                                        className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${formData.data_type === 'str'
-                                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
-                                            : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 text-slate-400'
-                                            }`}
-                                    >
-                                        <Type size={24} className="mb-2" />
-                                        <span className="text-xs font-bold">Texto</span>
-                                    </button>
-                                    <button
-                                        onClick={() => setFormData({ ...formData, data_type: 'int' })}
-                                        className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${formData.data_type === 'int'
-                                            ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
-                                            : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 text-slate-400'
-                                            }`}
-                                    >
-                                        <Hash size={24} className="mb-2" />
-                                        <span className="text-xs font-bold">Numérico</span>
-                                    </button>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {DATA_TYPES.map(({ id, label, Icon }) => (
+                                        <button
+                                            key={id}
+                                            onClick={() => setFormData({ ...formData, data_type: id })}
+                                            className={`flex flex-col items-center justify-center p-4 rounded-xl border-2 transition-all ${formData.data_type === id
+                                                ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400'
+                                                : 'border-slate-100 dark:border-slate-800 hover:border-slate-200 dark:hover:border-slate-700 text-slate-400'
+                                                }`}
+                                        >
+                                            <Icon size={24} className="mb-2" />
+                                            <span className="text-xs font-bold">{label}</span>
+                                        </button>
+                                    ))}
                                 </div>
+                                {formData.data_type === 'date' && (
+                                    <p className="text-[11px] text-slate-400 leading-snug">
+                                        Las dimensiones de tipo fecha permiten derivar el año y el mes
+                                        de cada registro: habilitan los informes semestral y anual
+                                        aunque el indicador no tenga una dimensión "Año".
+                                    </p>
+                                )}
                             </div>
 
                             <div className="space-y-3">
