@@ -355,8 +355,9 @@ def report_options(
                                anual, personalizado) resueltas contra los
                                datos reales del indicador.
         grupos.especializados  informes hardcodeados del registro
-                               `reports/custom/` aplicables al engine_type,
-                               más los informes Word.
+                               `reports/custom/` aplicables al engine_type.
+                               (Los informes Word están pospuestos y no se
+                               listan aquí — ver comentario más abajo.)
         dimensiones_filtrables dimensiones del indicador con sus valores.
         opciones               concatenación plana de ambos grupos (compat).
 
@@ -459,7 +460,8 @@ def report_options(
             opcion["asignatura"] = dict(descriptor_asignatura)
         grupo_periodo.append(opcion)
 
-    # ── Grupo "especializados": registro custom + informes Word ──
+    # ── Grupo "especializados": registro custom (los informes Word están
+    # pospuestos, ver comentario más abajo) ──
     especializados: list[dict] = []
     try:
         from backend.rgenerator.reports import custom as custom_reports
@@ -480,8 +482,7 @@ def report_options(
                 },
             }
             # El módulo DECLARA que su informe es por asignatura; los datos
-            # deciden si de verdad hay que elegir una. Los informes Word no
-            # participan (están fuera del alcance de esta versión).
+            # deciden si de verdad hay que elegir una.
             if (
                 inf.get("requiere_asignatura")
                 and inf["formato"] == "pdf"
@@ -492,25 +493,11 @@ def report_options(
     except Exception:
         logger.error("No se pudieron listar informes custom para report-options", exc_info=True)
 
-    try:
-        from backend.rgenerator.reports import word as word_reports
-        for inf in word_reports.listar_informes():
-            disponible = bool(inf.get("plantilla_existe"))
-            especializados.append({
-                "id": f"word_{inf['nombre']}",
-                "label": f"Word — {inf.get('label') or inf['nombre']}",
-                "descripcion": inf.get("descripcion") or "Documento Word editable generado desde plantilla.",
-                "formato": "word",
-                "motor": "docxtpl",
-                "disponible": disponible,
-                "motivo_no_disponible": None if disponible else "Falta la plantilla .docx en el servidor.",
-                "invocacion": {
-                    "endpoint": f"/api/reports/word/{inf['nombre']}",
-                    "params": {"indicator_id": indicator_id},
-                },
-            })
-    except Exception:
-        logger.error("No se pudieron listar informes Word para report-options", exc_info=True)
+    # Los informes Word quedan pospuestos para el final del proyecto (decisión
+    # del dueño 2026-07-30): no se agregan cards al selector. El registro y
+    # los endpoints `POST /api/reports/word/*` siguen intactos — cuando se
+    # retomen, basta reinsertar aquí el bloque que llama a
+    # `backend.rgenerator.reports.word.listar_informes()`.
 
     try:
         dimensiones = _dimensiones_filtrables(db, indicator_id, user.org_id, dataframes)

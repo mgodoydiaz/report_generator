@@ -125,12 +125,12 @@ class TestReportOptionsConAsignatura:
         assert ops["custom_dia"]["asignatura"]["requerida"] is True
         assert ops["custom_dia"]["asignatura"]["valores"] == ["LECTURA", "MATEMATICA"]
 
-    def test_los_informes_word_no_lo_traen(self, client_auth, indicador_multi):
-        """Word está fuera del alcance: nunca declara asignatura."""
+    def test_los_informes_word_no_aparecen(self, client_auth, indicador_multi):
+        """Word está pospuesto (decisión del dueño 2026-07-30): no se lista
+        en el selector, así que tampoco puede declarar asignatura."""
         body = _report_options(client_auth, indicador_multi)
         word = [o for o in body["grupos"]["especializados"] if o["formato"] == "word"]
-        assert word, "debería listarse al menos un informe Word"
-        assert all("asignatura" not in o for o in word)
+        assert word == []
 
 
 @pytest.mark.integration

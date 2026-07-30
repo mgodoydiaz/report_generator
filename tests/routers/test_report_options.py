@@ -4,7 +4,7 @@ Contrato vigente (Fase 2 del selector de informes):
 
     {
       "indicator_id", "engine_type", "engine_type_origen",
-      "grupos": {"periodo": [4 cards], "especializados": [custom + word]},
+      "grupos": {"periodo": [4 cards], "especializados": [custom]},
       "dimensiones_filtrables": [{"id_dimension", "name", "values"}],
       "opciones": [...]   # plano periodo + especializados (compat)
     }
@@ -298,13 +298,15 @@ class TestReportOptionsEspecializados:
         body = client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options").json()
         assert not any(o["motor"] == "custom" for o in body["opciones"])
 
-    def test_informes_word_siguen_en_especializados(self, client_auth, db_session, org):
+    def test_informes_word_pospuestos_no_aparecen(self, client_auth, db_session, org):
+        """Los informes Word quedan pospuestos (decisión del dueño 2026-07-30):
+        el selector ya no debe ofrecerlos, aunque el registro y los endpoints
+        `POST /api/reports/word/*` sigan intactos."""
         ind = make_indicator(db_session, org, name="Asistencia Mensual")
         body = client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options").json()
         word = [o for o in body["grupos"]["especializados"] if o["formato"] == "word"]
-        assert word, "debería listarse al menos el informe Word registrado"
-        assert word[0]["motor"] == "docxtpl"
-        assert word[0]["invocacion"]["endpoint"].startswith("/api/reports/word/")
+        assert word == []
+        assert not any(o.get("formato") == "word" for o in body["opciones"])
 
 
 @pytest.mark.integration

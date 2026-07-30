@@ -4,7 +4,7 @@ Guía paso a paso para el personal de Fundación PHP que usa la aplicación web 
 
 ## A quién está dirigido
 
-A cualquier persona de la fundación que necesite cargar datos de una evaluación (SIMCE, DIA, IDEL, u otra), revisar los resultados en pantalla y descargar el informe en PDF o Word. No se requieren conocimientos técnicos.
+A cualquier persona de la fundación que necesite cargar datos de una evaluación (SIMCE, DIA, IDEL, u otra), revisar los resultados en pantalla y descargar el informe en PDF. No se requieren conocimientos técnicos.
 
 ## Requisitos antes de empezar
 
@@ -166,7 +166,6 @@ Esta sección reúne informes con un formato propio, distinto al informe estánd
 
 - **Informe PDL IDEL-Woodcock** (formato oficial de esa evaluación).
 - **Informe de evaluación SIMCE (formato oficial)** y **DIA (formato oficial)**.
-- **Word — Resumen del Indicador** (un documento Word editable en vez de un PDF).
 
 1. Haz clic sobre la tarjeta del informe especializado que necesitas para descargarlo con un clic.
 
@@ -194,7 +193,6 @@ Si una tarjeta aparece atenuada (gris, no se puede hacer clic), el sistema expli
 
 - **"Sin datos cargados para este indicador"** — todavía no se ha cargado información (ver Parte 1).
 - **"Este informe aún no está configurado"** — falta que el administrador defina el diseño del informe en el editor de layout.
-- **"Falta la plantilla .docx en el servidor"** — aplica solo a informes Word.
 
 ![Captura: tarjeta de informe deshabilitada con el motivo visible](pendiente)
 
