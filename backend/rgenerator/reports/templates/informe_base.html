@@ -222,6 +222,18 @@ p.error {
   font-size: 9pt;
   font-style: italic;
 }
+
+/* ── Nota explicativa (sección omitida por falta de puntos) ── */
+
+p.nota {
+  color: #374151;
+  font-size: 9.5pt;
+  font-style: italic;
+  background: #f3f4f6;
+  border-left: 3pt solid #9ca3af;
+  padding: 0.20cm 0.30cm;
+  margin: 0.20cm 0 0.45cm 0;
+}
 </style>
 </head>
 <body>
@@ -274,6 +286,10 @@ p.error {
     {% elif sec.tipo == "table" %}
     {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
     {{ sec.html | safe }}
+
+    {% elif sec.tipo == "nota" %}
+    {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}
+    <p class="nota">{{ sec.texto }}</p>
 
     {% elif sec.tipo == "error" %}
     {% if sec.titulo %}<h3 class="section-title">{{ sec.titulo }}</h3>{% endif %}

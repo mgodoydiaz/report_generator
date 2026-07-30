@@ -20,9 +20,17 @@ Contrato del módulo (ver `_ejemplo.py` para la plantilla comentada):
     REQUIERE_FILTRO_TEMPORAL = []            # ej ["Mes", "N Prueba"]
     REQUIERE_ASIGNATURA = False              # True → el informe es por asignatura
     FILENAME = "informe_pdl_idel.pdf"        # opcional
+    MODOS = ["ultima_prueba", "anual"]       # modos de período que sabe generar
+    MOTIVO_MODO_NO_DISPONIBLE = {...}        # {modo: motivo pedagógico}
 
-    def generar(db, *, indicator_id, org_id, filtros=None, params=None,
-                overrides=None) -> bytes: ...
+    def generar(db, *, indicator_id, org_id, modo=None, filtros=None,
+                params=None, overrides=None) -> bytes: ...
+
+`MODOS` es lo que convierte a un módulo en un informe del MOTOR ÚNICO: el
+despacho de `POST /api/indicators/{id}/export-pdf` le entrega las cards de
+período que el módulo declara y deja de usar el `pdf_layout`. Un módulo sin
+`MODOS` (o con la lista vacía) se comporta exactamente como antes: solo
+"formato oficial" vía `POST /api/reports/custom/{nombre}`.
 
 API pública:
     get_registry(refresh=False)  → dict {nombre: módulo}
@@ -31,6 +39,11 @@ API pública:
     aplica_a(modulo, engine_type)→ bool (filtro por ENGINE_TYPES)
     requiere_asignatura(modulo)  → bool (lee REQUIERE_ASIGNATURA)
     metadata(nombre|modulo)      → dict de UN informe
+    modos(modulo)                → list[str] de modos declarados
+    soporta_modo(modulo, modo)   → bool
+    motivo_modo(modulo, modo)    → motivo pedagógico del modo no servido
+    nombre_de(modulo)            → nombre público del módulo
+    modulo_de_indicador(engine_type) → módulo del motor único, o None
 """
 from __future__ import annotations
 
@@ -43,6 +56,10 @@ MIME_POR_FORMATO = {
     "pdf": "application/pdf",
     "word": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 }
+
+#: Motivo genérico cuando un módulo declara `MODOS` pero no explica por qué
+#: le falta uno. Se prefiere SIEMPRE el motivo pedagógico del módulo.
+MOTIVO_MODO_GENERICO = "Este indicador no genera este informe."
 
 _registry: dict[str, ModuleType] | None = None
 
@@ -110,6 +127,10 @@ def metadata(nombre: str, mod: ModuleType | None = None) -> dict:
         "requiere_filtro_temporal": list(getattr(mod, "REQUIERE_FILTRO_TEMPORAL", []) or []),
         "requiere_asignatura": requiere_asignatura(mod),
         "filename": nombre_archivo(nombre, mod),
+        # Motor único (contrato N2): vacío en los módulos que solo sirven el
+        # informe "formato oficial" — no cambia nada para ellos.
+        "modos": modos(mod),
+        "motivos_modo": dict(getattr(mod, "MOTIVO_MODO_NO_DISPONIBLE", {}) or {}),
     }
 
 
@@ -148,3 +169,64 @@ def informes_para(engine_type: Optional[str]) -> list[dict]:
         for nombre, mod in sorted(get_registry().items())
         if aplica_a(mod, engine_type)
     ]
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Motor único: modos de período que sabe generar cada módulo (contrato N2)
+# ─────────────────────────────────────────────────────────────────────────
+
+def modos(mod: ModuleType) -> list[str]:
+    """Modos de período declarados por el módulo.
+
+    `[]` (ausente o vacío) ⇒ retrocompatibilidad total: el módulo sigue
+    siendo solo "formato oficial" y las cards de período usan el path v1.
+    """
+    return list(getattr(mod, "MODOS", []) or [])
+
+
+def soporta_modo(mod: ModuleType, modo: Optional[str]) -> bool:
+    """True si `modo` está en `MODOS`.
+
+    `modo=None` devuelve False a propósito: `None` es el informe "formato
+    oficial" clásico (`POST /api/reports/custom/{nombre}`), no un modo de
+    período.
+    """
+    if not modo:
+        return False
+    return modo in modos(mod)
+
+
+def motivo_modo(mod: ModuleType, modo: str) -> str:
+    """Motivo pedagógico por el que el módulo no sirve `modo`."""
+    motivos = getattr(mod, "MOTIVO_MODO_NO_DISPONIBLE", {}) or {}
+    return motivos.get(modo) or MOTIVO_MODO_GENERICO
+
+
+def nombre_de(mod: ModuleType) -> str:
+    """Nombre público del módulo (el filename sin .py)."""
+    return mod.__name__.rsplit(".", 1)[-1]
+
+
+def modulo_de_indicador(engine_type: Optional[str]) -> Optional[ModuleType]:
+    """Módulo del motor único que atiende a ese `engine_type`.
+
+    Es el único módulo registrado que `aplica_a(engine_type)` **y** declara
+    `MODOS`. Devuelve None cuando no hay ninguno (el despacho cae al path
+    v1, que es el comportamiento actual). Con más de uno gana el primero por
+    orden alfabético y se loguea un warning: dos módulos del motor único
+    para el mismo engine_type es un error de configuración.
+    """
+    candidatos = [
+        (nombre, mod)
+        for nombre, mod in sorted(get_registry().items())
+        if aplica_a(mod, engine_type) and modos(mod)
+    ]
+    if not candidatos:
+        return None
+    if len(candidatos) > 1:
+        print(
+            f"[reports.custom] engine_type '{engine_type}' tiene "
+            f"{len(candidatos)} módulos con MODOS "
+            f"({', '.join(n for n, _ in candidatos)}); se usa el primero"
+        )
+    return candidatos[0][1]

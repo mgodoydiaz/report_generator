@@ -33,7 +33,14 @@ def hoy():
 
 @pytest.fixture
 def indicador(db_session, org, hoy):
-    """Indicador con Curso/Año/Mes/N Prueba y datos del año en curso."""
+    """Indicador con Curso/Año/Mes/N Prueba y datos del año en curso.
+
+    Deliberadamente SIN `report_engine_type` y con un nombre que no dispara
+    la heurística de `engine_types.inferir_engine_type`: estos tests cubren
+    el camino v1 (`build_pdf_bytes`), que es el fallback cuando el
+    indicador no tiene módulo del motor único. El despacho al módulo lo
+    cubre `tests/reports/test_despacho_modos.py`.
+    """
     dims = {n: make_dimension(db_session, org, name=n)
             for n in ("Curso", "Año", "Mes", "N Prueba")}
     metric = make_metric(
@@ -51,7 +58,7 @@ def indicador(db_session, org, hoy):
         ident["Mes"]: NUMERO_A_MES[hoy.month], ident["N Prueba"]: "3",
     })
     ind = make_indicator(
-        db_session, org, name="SIMCE Lenguaje", metrics=[metric],
+        db_session, org, name="Ensayo Lenguaje", metrics=[metric],
         pdf_layout=LAYOUT_EVAL, pdf_layout_historico=LAYOUT_HIST,
     )
     ind._ident = ident

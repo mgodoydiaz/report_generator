@@ -214,6 +214,132 @@ def client_auth(client, auth_headers):
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Indicadores SIMCE de prueba
+#
+# Vivían como fixture local de `tests/reports/test_dispatch_v2.py`; se
+# promovieron acá (contrato del motor único, N9) porque los tests del
+# despacho por modos y los del módulo SIMCE necesitan el mismo montaje.
+# ─────────────────────────────────────────────────────────────────────────
+
+#: Dimensiones mínimas de un indicador SIMCE.
+_DIMS_SIMCE = ("Curso", "RUT", "Nombre", "Asignatura", "Mes", "N Prueba", "Año")
+
+
+def _montar_simce(db_session, org, filas, *, achievement_levels=None, **kwargs):
+    """Indicador SIMCE con metrics `estudiantes` + `preguntas` y `filas` de datos.
+
+    Args:
+        filas: lista de dicts con keys `curso`, `mes`, `n_prueba`, `anio`,
+            `rut`, `nombre`, `asignatura`, `rend`, `simce`, `logro`.
+    """
+    from tests.factories import (
+        make_dimension, make_indicator, make_metric, make_metric_data,
+    )
+
+    dims = {n: make_dimension(db_session, org, name=n) for n in _DIMS_SIMCE}
+    dims["Logro"] = make_dimension(db_session, org, name="Logro")
+    dims["Pregunta"] = make_dimension(db_session, org, name="Pregunta")
+    dims["Habilidad"] = make_dimension(db_session, org, name="Habilidad")
+
+    m_est = make_metric(
+        db_session, org, name="Resultados SIMCE por Estudiante", data_type="object",
+        fields=[{"name": "Buenas", "type": "int"}, {"name": "Rend", "type": "float"},
+                {"name": "Simce", "type": "float"}],
+        dimensions=list(dims.values()),
+    )
+    m_preg = make_metric(
+        db_session, org, name="Resultados SIMCE por Pregunta", data_type="object",
+        fields=[{"name": "Logro", "type": "float"}],
+        dimensions=list(dims.values()),
+    )
+    ident = {n: str(d.id_dimension) for n, d in dims.items()}
+
+    for fila in filas:
+        base = {
+            ident["Curso"]: fila.get("curso", "II A"),
+            ident["RUT"]: fila.get("rut", "1-1"),
+            ident["Nombre"]: fila.get("nombre", "Test"),
+            ident["Asignatura"]: fila.get("asignatura", "Lenguaje"),
+            ident["Mes"]: fila.get("mes", "ABRIL"),
+            ident["N Prueba"]: str(fila.get("n_prueba", 1)),
+            ident["Año"]: str(fila.get("anio", 2026)),
+            ident["Logro"]: fila.get("logro", "Insuficiente"),
+        }
+        make_metric_data(
+            db_session, m_est,
+            value={"Buenas": 8, "Rend": fila.get("rend", 0.5),
+                   "Simce": fila.get("simce", 250)},
+            dimensions_json=base,
+        )
+        make_metric_data(
+            db_session, m_preg, value={"Logro": fila.get("logro_pregunta", 0.6)},
+            dimensions_json={
+                **base,
+                ident["Pregunta"]: fila.get("pregunta", "1"),
+                ident["Habilidad"]: fila.get("habilidad", "Inferir"),
+            },
+        )
+
+    import json as _json
+    return make_indicator(
+        db_session, org, name=kwargs.pop("name", "SIMCE Test"),
+        metrics=[m_est, m_preg], report_engine_type="simce",
+        # La columna es Text: el JSON va serializado, igual que en la DB real.
+        achievement_levels=_json.dumps(achievement_levels or [], ensure_ascii=False),
+        **kwargs,
+    )
+
+
+@pytest.fixture
+def simce_indicator(db_session, org):
+    """Indicador SIMCE mínimo con metrics estudiantes + preguntas (1 prueba)."""
+    return _montar_simce(
+        db_session, org,
+        [{"curso": "II A", "mes": "ABRIL", "n_prueba": 1, "anio": 2026}],
+    )
+
+
+@pytest.fixture
+def simce_indicator_historico(db_session, org):
+    """Indicador SIMCE con 2 meses del año en curso y el año anterior.
+
+    Sirve para probar la evolución (≥2 puntos temporales), la comparación
+    con el período anterior y el riesgo persistente (mismo alumno en nivel
+    Insuficiente en dos meses consecutivos).
+    """
+    from datetime import date
+    anio = date.today().year
+    filas = []
+    for mes, n in (("ABRIL", 1), ("MAYO", 2)):
+        for rut, nombre, rend, logro in (
+            ("1-1", "Alumno Uno", 0.30, "Insuficiente"),
+            ("2-2", "Alumno Dos", 0.80, "Adecuado"),
+        ):
+            filas.append({
+                "curso": "II A", "mes": mes, "n_prueba": n, "anio": anio,
+                "rut": rut, "nombre": nombre, "rend": rend,
+                "simce": int(rend * 400), "logro": logro,
+            })
+    # Año anterior: alimenta la columna comparada del cuadro resumen.
+    filas.append({
+        "curso": "II A", "mes": "NOVIEMBRE", "n_prueba": 5, "anio": anio - 1,
+        "rut": "1-1", "nombre": "Alumno Uno", "rend": 0.40,
+        "simce": 200, "logro": "Insuficiente",
+    })
+    # Nombre sin tilde: `Content-Disposition` de export-pdf se emite en
+    # latin-1 y un nombre con tilde rompe el TestClient (bug preexistente
+    # del endpoint, ajeno al motor único).
+    return _montar_simce(
+        db_session, org, filas, name="SIMCE Historico",
+        achievement_levels=[
+            {"name": "Insuficiente", "color": "#dc2626", "order": 1},
+            {"name": "Elemental", "color": "#eab308", "order": 2},
+            {"name": "Adecuado", "color": "#22c55e", "order": 3},
+        ],
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Rate limiter de login — estado global in-memory que NO debe filtrar
 # fallos entre tests (varios tests hacen logins inválidos a propósito).
 # ─────────────────────────────────────────────────────────────────────────

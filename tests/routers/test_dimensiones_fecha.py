@@ -177,7 +177,7 @@ class TestReportOptionsConFecha:
         import backend.database as _db  # noqa: F401 — asegura los modelos cargados
         from sqlalchemy.orm import object_session
         db = object_session(ind)
-        tipo_layout, filtros, descripcion = _resolver_periodo_a_filtros(
+        tipo_layout, filtros, descripcion, resultado = _resolver_periodo_a_filtros(
             db, ind, ind.org_id, {"tipo": "anual"}
         )
         assert tipo_layout == "historico"
@@ -185,6 +185,10 @@ class TestReportOptionsConFecha:
         clave = str(dims["Fecha"].id_dimension)
         assert clave in filtros
         assert len(filtros[clave]) == 2   # las dos fechas del año en curso
+        # N4 del motor único: el 4º elemento son los MISMOS filtros pero por
+        # nombre de columna, que es lo que consumen los módulos custom.
+        assert "Fecha" in resultado.filtros
+        assert len(resultado.filtros["Fecha"]) == 2
 
 
 # ─────────────────────────────────────────────────────────────────────────

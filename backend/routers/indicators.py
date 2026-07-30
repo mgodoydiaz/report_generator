@@ -439,10 +439,19 @@ def report_options(
     tipos_columna = _tipos_de_columna(db, indicator_id, user.org_id)
 
     # ── Grupo "periodo" ──
+    # Motor único: si un módulo de `reports/custom/` declara los modos de
+    # este engine_type, las cards de período las sirve ÉL y el requisito de
+    # `pdf_layout` deja de aplicar (contrato §2.5a).
+    from backend.rgenerator.reports import custom as custom_reports
+
+    modulo_custom, nombre_modulo = _modulo_motor_unico(record)
+    modos_modulo = custom_reports.modos(modulo_custom) if modulo_custom else []
+
     grupo_periodo: list[dict] = []
     for card in _CARDS_PERIODO:
         periodo = {"tipo": card["tipo"]}
         requiere_config = bool(card.get("requiere_configuracion"))
+        sirve_el_modulo = bool(modulo_custom) and card["tipo"] in modos_modulo
 
         resultado = None
         if not requiere_config and not error_datos:
@@ -458,7 +467,11 @@ def report_options(
                 resultado = None
 
         motivo = None
-        if not tiene[card["layout"]]:
+        if modulo_custom and not sirve_el_modulo:
+            # El módulo existe pero NO declara este modo: la card se muestra
+            # deshabilitada con el motivo pedagógico del propio módulo.
+            motivo = custom_reports.motivo_modo(modulo_custom, card["tipo"])
+        elif not sirve_el_modulo and not tiene[card["layout"]]:
             motivo = _MOTIVO_SIN_LAYOUT[card["layout"]]
         elif requiere_config:
             motivo = None
@@ -474,7 +487,7 @@ def report_options(
             "label": card["label"],
             "descripcion": _descripcion_card(card, resultado),
             "formato": "pdf",
-            "motor": "weasyprint",
+            "motor": f"custom:{nombre_modulo}" if modulo_custom else "weasyprint",
             "periodo": periodo,
             "tipo_layout": (
                 resultado.tipo_layout if resultado is not None
@@ -757,7 +770,13 @@ def _resolver_periodo_a_filtros(
     periodo: Dict[str, Any],
     datos: Optional[tuple] = None,
 ) -> tuple:
-    """(tipo_layout, {id_dimension: valores}, descripcion) para el `periodo`.
+    """(tipo_layout, {id_dimension: valores}, descripcion, resultado) del `periodo`.
+
+    El cuarto elemento es el `ResultadoPeriodo` completo (contrato del motor
+    único, N4): sus `filtros` vienen por NOMBRE DE COLUMNA ("Mes", "Año"),
+    que es el espacio de nombres que consumen `data.cargar_dataframes_indicator`
+    y los módulos de `reports/custom/`. Los `{id_dimension: valores}` del
+    segundo elemento solo los entiende el motor v1 (`build_pdf_bytes`).
 
     La `descripcion` es el texto resuelto contra los datos reales
     ("DIAGNOSTICO 2026", "1er semestre 2026 (enero–julio)") y se usa para
@@ -828,7 +847,7 @@ def _resolver_periodo_a_filtros(
 
     filtros = {str(mapa[col]): valor for col, valor in combinados.items()}
     filtros.update(ya_traducidos)
-    return resultado.tipo_layout, filtros, resultado.descripcion
+    return resultado.tipo_layout, filtros, resultado.descripcion, resultado
 
 
 def _normalizar_filtros_a_dimensiones(
@@ -857,6 +876,49 @@ def _normalizar_filtros_a_dimensiones(
         else:
             out[str(clave)] = valor
     return out
+
+
+def _filtros_por_columna(
+    db: Session,
+    indicator_id: int,
+    org_id: int,
+    filters: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Inverso de `_normalizar_filtros_a_dimensiones`: ids → nombres de columna.
+
+    Los módulos del motor único (`reports/custom/*.py`) consumen filtros por
+    NOMBRE de columna, igual que `data.cargar_dataframes_indicator`. Un
+    filtro que llegue como `{"12": "MAYO"}` se convertiría en la columna
+    `_12`, que no matchea nada, y el informe saldría silenciosamente vacío
+    (contrato §2.3). Las claves que ya son nombres pasan tal cual.
+    """
+    if not filters:
+        return {}
+    mapa = _mapa_columna_a_dimension(db, indicator_id, org_id)
+    inverso: Dict[str, str] = {}
+    for columna, id_dimension in mapa.items():
+        inverso.setdefault(str(id_dimension), columna)
+    return {inverso.get(str(k), str(k)): v for k, v in (filters or {}).items()}
+
+
+def _modulo_motor_unico(record: Indicator):
+    """(módulo, nombre) del motor único para el indicador, o (None, None).
+
+    Nunca levanta: si el registro custom está roto, el despacho cae al path
+    v1 y el informe se sigue generando.
+    """
+    try:
+        from backend.rgenerator.reports import custom as custom_reports
+        from backend.rgenerator.reports.engine_types import resolver_engine_type
+
+        engine_type, _ = resolver_engine_type(record)
+        modulo = custom_reports.modulo_de_indicador(engine_type)
+        if modulo is None:
+            return None, None
+        return modulo, custom_reports.nombre_de(modulo)
+    except Exception:  # pragma: no cover — defensivo
+        logger.error("No se pudo resolver el módulo del motor único", exc_info=True)
+        return None, None
 
 
 def _validar_asignatura(
@@ -905,9 +967,14 @@ def export_pdf(
     """
     Genera y descarga el informe PDF del indicador.
 
-    Dispatcher por motor (clave pdf_layout.engine):
-      - "weasyprint" (default): usa build_pdf_bytes con las secciones configuradas.
-      - "pdl_idel": reservado para el informe PDL IDEL-Woodcock (Fase B).
+    Dispatcher por motor, en este orden de precedencia:
+      1. `body.engine` explícito — override consciente del modal de admin.
+      2. Módulo del MOTOR ÚNICO (`reports/custom/*.py` que declara `MODOS`)
+         cuando el body trae un `periodo` cuyo tipo el módulo sabe generar.
+         El módulo arma sus secciones en Python; no usa `pdf_layout`.
+      3. `pdf_layout.engine`:
+         - "weasyprint" (default): build_pdf_bytes con las secciones configuradas.
+         - "pdl_idel": informe PDL IDEL-Woodcock.
 
     Body opcional: { "filters": { "<id_dimension>": "<valor>", ... } }
     Los filtros se propagan a los MetricData antes de renderizar, de modo que
@@ -946,12 +1013,18 @@ def export_pdf(
 
         # ── Período declarativo: manda sobre `tipo` y agrega filtros ──
         descripcion_periodo = ""
+        resultado_periodo = None
+        filtros_usuario = dict(filters)
         if periodo:
-            resuelto_tipo, filtros_periodo, descripcion_periodo = _resolver_periodo_a_filtros(
-                db, record, user.org_id, periodo, datos
-            )
+            (
+                resuelto_tipo,
+                filtros_periodo,
+                descripcion_periodo,
+                resultado_periodo,
+            ) = _resolver_periodo_a_filtros(db, record, user.org_id, periodo, datos)
             tipo = resuelto_tipo
             filters.update(filtros_periodo)
+            filtros_usuario.update((periodo or {}).get("filtros") or {})
 
         filters = _normalizar_filtros_a_dimensiones(
             db, indicator_id, user.org_id, filters
@@ -1022,6 +1095,62 @@ def export_pdf(
             header_nuevo = reemplazar_ultima_linea(header_actual, descripcion_periodo)
             if header_nuevo:
                 branding_override = {"center_header": header_nuevo}
+
+        # ── Motor único: despacho al módulo del indicador ──
+        # Precedencia (contrato §2.2): `body.engine` explícito > módulo que
+        # declara el modo > `pdf_layout.engine` > weasyprint. El módulo trae
+        # sus propias secciones, así que NO pasa por el 422 de "sin
+        # secciones configuradas".
+        modo_periodo = (periodo or {}).get("tipo") if periodo else None
+        modulo_custom, nombre_modulo = (
+            _modulo_motor_unico(record) if (modo_periodo and not engine_override)
+            else (None, None)
+        )
+        if modulo_custom is not None:
+            from backend.rgenerator.reports import custom as custom_reports
+            from backend.rgenerator.reports.errores import DatosInsuficientes
+
+            if not custom_reports.soporta_modo(modulo_custom, modo_periodo):
+                # No debería ocurrir: report-options ya deshabilitó la card.
+                raise HTTPException(
+                    status_code=400,
+                    detail=custom_reports.motivo_modo(modulo_custom, modo_periodo),
+                )
+
+            # Los módulos consumen filtros por NOMBRE de columna, nunca por
+            # id de dimensión (contrato §2.3).
+            filtros_modulo = _filtros_por_columna(
+                db, indicator_id, user.org_id, filtros_usuario
+            )
+            if resultado_periodo is not None:
+                filtros_modulo.update(resultado_periodo.filtros)
+
+            overrides_modulo: Dict[str, Any] = {}
+            if branding_override:
+                overrides_modulo["branding"] = branding_override
+
+            try:
+                pdf_bytes = modulo_custom.generar(
+                    db,
+                    indicator_id=indicator_id,
+                    org_id=user.org_id,
+                    modo=modo_periodo,
+                    filtros=filtros_modulo,
+                    params=None,
+                    overrides=overrides_modulo,
+                )
+            except (DatosInsuficientes, ValueError) as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
+            safe_name = record.name.replace(" ", "_").replace("/", "-")
+            return Response(
+                content=pdf_bytes,
+                media_type="application/pdf",
+                headers={
+                    "Content-Disposition":
+                        f'attachment; filename="informe_{safe_name}.pdf"'
+                },
+            )
 
         if engine == "weasyprint":
             if not pdf_layout.get("sections"):

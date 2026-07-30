@@ -20,6 +20,7 @@ Flujo:
 """
 from __future__ import annotations
 
+import copy
 import json
 import tempfile
 from pathlib import Path
@@ -125,6 +126,7 @@ def _ejecutar_seccion(
             chart → {tipo: "chart", titulo, image_b64}
             table → {tipo: "table", titulo, html}
             heading → {tipo: "heading", titulo}  (puramente visual)
+            nota    → {tipo: "nota", titulo, texto} (párrafo explicativo)
     """
     tipo = seccion.get("tipo")
     titulo = seccion.get("titulo", "")
@@ -134,6 +136,18 @@ def _ejecutar_seccion(
 
     if tipo == "page_break":
         return {"tipo": "page_break"}
+
+    if tipo == "nota":
+        # Párrafo explicativo. Lo usan los módulos del motor único para
+        # decir POR QUÉ una sección no está (evolución con un solo punto
+        # temporal, riesgo persistente sin 2 evaluaciones consecutivas):
+        # un informe que simplemente omite el bloque deja al lector
+        # preguntándose si se rompió algo.
+        return {
+            "tipo": "nota",
+            "titulo": titulo,
+            "texto": seccion.get("texto", ""),
+        }
 
     fn_name = seccion.get("fn")
     df_key = seccion.get("df_input")
@@ -190,12 +204,14 @@ def construir_pdf(
     overrides: dict | None = None,
     df_principal: str | None = None,
     filtros_desc: str = "",
+    esquema: dict | None = None,
 ) -> bytes:
     """Punto de entrada: genera bytes PDF para un tipo de informe.
 
     Args:
         report_type: "simce" | "dia" | etc. — coincide con el subdirectorio
-            que contiene el esquema.json.
+            que contiene el esquema.json. Cuando se pasa `esquema` solo se
+            usa como etiqueta (prefijo del directorio temporal).
         dataframes: dict {role: DataFrame}, ej {"estudiantes": df1,
             "preguntas": df2}. Las keys deben coincidir con las que el
             esquema declare en `df_input`.
@@ -209,17 +225,29 @@ def construir_pdf(
             gráficos en blanco (QA 2026-07-30, P0-1).
         filtros_desc: filtros aplicados en texto legible, para el mensaje
             de error ("Hito: INTERMEDIO · Año: 2026").
+        esquema: esquema YA construido en memoria. Cuando viene, NO se lee
+            `<report_type>/esquema.json` del disco: es lo que permite a los
+            módulos del motor único (`reports/custom/*.py`) armar sus
+            secciones en Python y variarlas por modo, y a los indicadores
+            sin carpeta de esquema (Cálculo Veloz, Fluidez Lectora) usar
+            este runtime. Con `None` el comportamiento es idéntico al
+            histórico (contrato motor único, N5 / tensión T1).
 
     Returns:
         Bytes del PDF generado.
 
     Raises:
-        FileNotFoundError: si no existe el esquema.json del tipo solicitado.
+        FileNotFoundError: si no existe el esquema.json del tipo solicitado
+            y no se pasó `esquema`.
         DatosInsuficientes: si `df_principal` quedó vacío.
     """
-    esquema_path = REPORTS_DIR / report_type / "esquema.json"
-    if not esquema_path.exists():
-        raise FileNotFoundError(f"No existe esquema para tipo '{report_type}': {esquema_path}")
+    esquema_en_memoria = esquema is not None
+    if not esquema_en_memoria:
+        esquema_path = REPORTS_DIR / report_type / "esquema.json"
+        if not esquema_path.exists():
+            raise FileNotFoundError(
+                f"No existe esquema para tipo '{report_type}': {esquema_path}"
+            )
 
     # Guardia de dataset vacío ANTES de gastar tiempo en secciones: sin
     # filas todos los charts salen en blanco y las tablas con solo
@@ -229,8 +257,13 @@ def construir_pdf(
         if df_ppal is None or len(df_ppal) == 0:
             raise DatosInsuficientes(mensaje_sin_datos(filtros_desc))
 
-    with open(esquema_path, "r", encoding="utf-8") as f:
-        esquema = json.load(f)
+    if esquema_en_memoria:
+        # Copia profunda: los overrides mutan el dict y el módulo llamador
+        # puede estar reutilizando su esquema entre corridas.
+        esquema = copy.deepcopy(esquema)
+    else:
+        with open(esquema_path, "r", encoding="utf-8") as f:
+            esquema = json.load(f)
 
     # Aplicar overrides (merge superficial, suficiente para esta versión)
     if overrides:

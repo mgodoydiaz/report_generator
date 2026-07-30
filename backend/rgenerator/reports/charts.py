@@ -468,6 +468,7 @@ def alumnos_por_nivel_cualitativo(
     agrupar_por: str = "Curso",
     lista_niveles: list = ("Adecuado", "Elemental", "Insuficiente"),
     lista_paleta: list | None = None,
+    color_overrides: dict | None = None,
     titulo_grafico: str = "",
     titulo_leyenda: str = "",
     ylabel: str = "",
@@ -492,6 +493,12 @@ def alumnos_por_nivel_cualitativo(
         columna_nivel: columna cualitativa con los nombres de los niveles.
         agrupar_por: columna del eje X (ej "Curso").
         lista_niveles: tupla/lista de 3 niveles ordenados de mejor a peor.
+        lista_paleta: colores en el mismo orden que `lista_niveles`.
+        color_overrides: `{nivel: "#rrggbb"}` que pisa la paleta nivel por
+            nivel — la vía por la que un módulo inyecta los colores de
+            `Indicator.achievement_levels` para que este gráfico y
+            `composicion_por_nivel` usen exactamente el mismo código de
+            color en la misma página.
         titulo_grafico, titulo_leyenda, ylabel: texto.
         nombre_grafico: path PNG.
         columna_identidad: columna que identifica al estudiante. Si no se
@@ -528,13 +535,11 @@ def alumnos_por_nivel_cualitativo(
     # Paleta semáforo: si no la pasan, default por cantidad de niveles
     # (mejor → peor). Soporta 3, 4 o 5 niveles.
     if lista_paleta is None:
-        defaults = {
-            3: ["#1f9e89", "#f1a340", "#e64b35"],
-            4: ["#1f9e89", "#f1ce63", "#f1a340", "#e64b35"],
-            5: ["#1f9e89", "#a6d854", "#f1ce63", "#f1a340", "#e64b35"],
-        }
-        lista_paleta = defaults.get(len(lista_niveles), defaults[3])
+        lista_paleta = PALETAS_SEMAFORO.get(len(lista_niveles), PALETAS_SEMAFORO[3])
     colores = {nivel: lista_paleta[i % len(lista_paleta)] for i, nivel in enumerate(lista_niveles)}
+    for nivel, color in (color_overrides or {}).items():
+        if nivel in colores and color:
+            colores[nivel] = color
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -582,6 +587,142 @@ def alumnos_por_nivel_cualitativo(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Composición global por nivel (barra apilada 100% horizontal)
+# ─────────────────────────────────────────────────────────────────────────
+
+#: Paletas semáforo por cantidad de niveles (mejor → peor). Misma tabla que
+#: usa `alumnos_por_nivel_cualitativo`: los dos gráficos van en la misma
+#: página y deben leerse con el mismo código de color.
+PALETAS_SEMAFORO: dict[int, list[str]] = {
+    3: ["#1f9e89", "#f1a340", "#e64b35"],
+    4: ["#1f9e89", "#f1ce63", "#f1a340", "#e64b35"],
+    5: ["#1f9e89", "#a6d854", "#f1ce63", "#f1a340", "#e64b35"],
+}
+
+
+def composicion_por_nivel(
+    df_estudiantes: pd.DataFrame,
+    columna_nivel: str = "Logro",
+    lista_niveles: list | tuple = ("Adecuado", "Elemental", "Insuficiente"),
+    lista_paleta: list | None = None,
+    color_overrides: dict | None = None,
+    titulo_grafico: str = "Composición Global por Nivel",
+    titulo_leyenda: str = "",
+    etiqueta_barra: str = "Establecimiento",
+    columna_identidad: str | None = None,
+    nombre_grafico: str = "aux_files/composicion_por_nivel.png",
+):
+    """Barra apilada 100% HORIZONTAL con la composición global por nivel.
+
+    Display name: Composición global por nivel (barra 100%)
+    Una sola barra que suma 100%: cada segmento es un nivel cualitativo, en
+    el orden de `lista_niveles` (de mejor a peor, izquierda a derecha). Cada
+    segmento rotula su porcentaje y, entre paréntesis, la cantidad de
+    estudiantes distintos.
+
+    Es la resolución de la tensión T2 del contrato del motor único: las 6
+    fichas piden "Composición Global por Nivel" y el motor no tenía ningún
+    gráfico de composición. Se eligió barra apilada 100% horizontal en lugar
+    de torta — más legible con 3 a 5 niveles, consistente con
+    `alumnos_por_nivel_cualitativo` y capaz de heredar los colores oficiales
+    de `Indicator.achievement_levels`.
+
+    Args:
+        df_estudiantes: DataFrame con la columna de nivel.
+        columna_nivel: columna cualitativa (ej "Logro", "Nivel").
+        lista_niveles: niveles ordenados de MEJOR a PEOR. Define el orden de
+            los segmentos y el mapeo de la paleta por defecto.
+        lista_paleta: colores en el mismo orden que `lista_niveles`. Sin
+            esto se usa la paleta semáforo por cantidad de niveles.
+        color_overrides: `{nivel: "#rrggbb"}` que pisa la paleta nivel por
+            nivel. Es la vía por la que un módulo inyecta los colores de
+            `achievement_levels` sin tener que reordenar la paleta.
+        titulo_grafico, titulo_leyenda: texto.
+        etiqueta_barra: rótulo del eje Y (a qué se refiere la barra única).
+        columna_identidad: columna que identifica al estudiante. Sin ella se
+            autodetecta (RUT → Nombre_Norm → Nombre → Curso+N° Lista).
+        nombre_grafico: path PNG.
+
+    Returns:
+        None (el gráfico se escribe en `nombre_grafico`).
+    """
+    niveles = [n for n in lista_niveles]
+    if columna_nivel not in df_estudiantes.columns:
+        _placeholder_sin_datos(
+            nombre_grafico, f"Sin la columna «{columna_nivel}» para graficar"
+        )
+        return None
+
+    df_local = df_estudiantes.dropna(subset=[columna_nivel])
+    conteo = contar_estudiantes(
+        df_local, agrupar_por=columna_nivel, columna_identidad=columna_identidad,
+    )
+    # Niveles presentes en los datos pero no declarados: se agregan al final
+    # para no perder alumnos del total (el mismo criterio de `orden_meses`).
+    for nivel in conteo.index.tolist():
+        if nivel not in niveles:
+            niveles.append(nivel)
+
+    valores = [float(conteo.get(n, 0)) for n in niveles]
+    total = sum(valores)
+    if total <= 0:
+        _placeholder_sin_datos(
+            nombre_grafico, f"Sin registros de «{columna_nivel}» para graficar"
+        )
+        return None
+
+    if lista_paleta is None:
+        lista_paleta = PALETAS_SEMAFORO.get(len(niveles), PALETAS_SEMAFORO[3])
+    colores = {n: lista_paleta[i % len(lista_paleta)] for i, n in enumerate(niveles)}
+    for nivel, color in (color_overrides or {}).items():
+        if nivel in colores and color:
+            colores[nivel] = color
+
+    fig, ax = plt.subplots(figsize=(10, 2.6))
+
+    izquierda = 0.0
+    for nivel, cantidad in zip(niveles, valores):
+        fraccion = cantidad / total
+        ax.barh(
+            [0], [fraccion], left=izquierda, height=0.55,
+            color=colores[nivel], label=nivel, edgecolor="white", linewidth=1.2,
+            zorder=2,
+        )
+        # Etiqueta dentro del segmento solo si hay espacio (segmentos muy
+        # finos quedarían con el texto encima del vecino).
+        if fraccion >= 0.06:
+            ax.text(
+                izquierda + fraccion / 2, 0,
+                f"{fraccion:.0%}\n({int(round(cantidad))})",
+                ha="center", va="center", fontsize=9,
+                color="white", fontweight="bold", zorder=3,
+            )
+        izquierda += fraccion
+
+    ax.set_xlim(0, 1)
+    ax.set_ylim(-0.5, 0.5)
+    ax.set_yticks([0])
+    ax.set_yticklabels([etiqueta_barra])
+    ax.xaxis.set_major_formatter(PercentFormatter(1.0))
+    ax.set_xlabel(f"% de alumnos (n = {int(round(total))})")
+    ax.set_title(titulo_grafico)
+    for lado in ("top", "right", "left"):
+        ax.spines[lado].set_visible(False)
+    ax.grid(axis="x", linestyle="--", alpha=0.5, zorder=0)
+
+    ax.legend(
+        title=titulo_leyenda or None,
+        loc="upper center", bbox_to_anchor=(0.5, -0.35),
+        ncol=min(len(niveles), 5), frameon=False,
+    )
+
+    plt.tight_layout()
+    plt.savefig(nombre_grafico, dpi=300, bbox_inches="tight")
+    plt.close()
+    return None
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Stacked: evolución de niveles por curso × mes (con separadores entre cursos)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -592,6 +733,7 @@ def alumnos_por_nivel_curso_y_mes(
     columna_mes: str = "Mes",
     lista_niveles: tuple = ("Insuficiente", "Elemental", "Adecuado"),
     lista_paleta: list | None = None,
+    color_overrides: dict | None = None,
     orden_cursos: list | None = None,
     orden_meses: list = ("ABRIL", "JUNIO", "AGOSTO", "OCTUBRE", "NOVIEMBRE"),
     titulo_grafico: str = "Comparación de Alumnos por Nivel de Logro, Curso y Mes",
@@ -618,7 +760,10 @@ def alumnos_por_nivel_curso_y_mes(
         columna_nivel, columna_curso, columna_mes: nombres de columna.
         lista_niveles: 3 niveles ordenados de PEOR a MEJOR para que el peor
             quede en la base del stack.
-        lista_paleta: lista de 3 colores hex (default azul SIMCE).
+        lista_paleta: colores en el mismo orden que `lista_niveles`. Sin
+            esto se usa la paleta SIMCE original (tierra/azul/verde).
+        color_overrides: `{nivel: "#rrggbb"}` que pisa la paleta nivel por
+            nivel (colores de `Indicator.achievement_levels`).
         orden_cursos: lista para fijar el orden del eje X.
         orden_meses: lista para fijar el orden de los meses. Los meses
             presentes en los datos que no estén en la lista se agregan al
@@ -641,7 +786,15 @@ def alumnos_por_nivel_curso_y_mes(
     resumen.columns = [columna_curso, columna_mes, columna_nivel, "Cantidad"]
 
     if orden_cursos is None:
-        orden_cursos = df_estudiantes[columna_curso].dropna().unique().tolist()
+        # Orden natural, no el de aparición en el df: el eje salía
+        # "II B, II C, II A, II D" según cómo viniera `metric_data`,
+        # mientras el resto de los gráficos del informe ya ordenaba
+        # "II A … II D" (P0-A del QA 2026-07-30).
+        orden_cursos = ordenar_valores_categoricos(
+            sorted(df_estudiantes[columna_curso].dropna().unique().tolist(),
+                   key=lambda x: str(x)),
+            columna_curso,
+        )
 
     meses_datos = ordenar_valores_temporales(
         df_estudiantes[columna_mes].dropna().unique().tolist(), columna_mes
@@ -670,13 +823,24 @@ def alumnos_por_nivel_curso_y_mes(
     x_labels = [m for (_, m) in pivot.index]
     x_positions = np.arange(len(pivot))
 
-    # 3) Colores por nivel (fija — diseño SIMCE original)
-    paleta = {
-        "Insuficiente": "#C2A47A",
-        "Elemental": "#2196F3",
-        "Adecuado": "#5FA59E",
-    }
-    colores = {n: paleta.get(n, "#888888") for n in lista_niveles}
+    # 3) Colores por nivel. `lista_paleta` se declaraba pero se ignoraba: el
+    # gráfico quedaba SIEMPRE con la paleta SIMCE original (tierra/azul/
+    # verde), incompatible con el semáforo del resto del informe cuando los
+    # dos gráficos de niveles conviven en el mismo PDF.
+    if lista_paleta:
+        colores = {
+            n: lista_paleta[i % len(lista_paleta)] for i, n in enumerate(lista_niveles)
+        }
+    else:
+        paleta = {
+            "Insuficiente": "#C2A47A",
+            "Elemental": "#2196F3",
+            "Adecuado": "#5FA59E",
+        }
+        colores = {n: paleta.get(n, "#888888") for n in lista_niveles}
+    for nivel, color in (color_overrides or {}).items():
+        if nivel in colores and color:
+            colores[nivel] = color
 
     # 4) Plot
     fig, ax = plt.subplots(figsize=(12, 7))
@@ -729,12 +893,20 @@ def alumnos_por_nivel_curso_y_mes(
     # 6) Ejes, grilla, leyenda
     ax.set_xticks(x_positions)
     ax.set_xticklabels(x_labels, rotation=rot_x, ha="right")
-    ax.set_title(titulo_grafico, pad=14, fontsize=14, fontweight="bold")
+    # Título ARRIBA de la leyenda: con `pad=14` y la leyenda anclada en
+    # y=1.12 ambos caían casi a la misma altura y el texto salía superpuesto
+    # en el PDF. Ahora la leyenda se apoya justo sobre los ejes
+    # (`loc="lower center"`, y=1.01) y el título deja espacio para ella.
+    ax.set_title(
+        titulo_grafico,
+        pad=52 if titulo_leyenda else 34,
+        fontsize=14, fontweight="bold",
+    )
     ax.set_ylabel(ylabel)
     ax.grid(axis="y", linestyle="--", alpha=0.5, zorder=0)
     ax.yaxis.set_major_locator(MaxNLocator(integer=True))
 
-    leg = ax.legend(title=titulo_leyenda, loc="upper center", bbox_to_anchor=(0.5, 1.12), ncol=len(lista_niveles), frameon=False)
+    leg = ax.legend(title=titulo_leyenda, loc="lower center", bbox_to_anchor=(0.5, 1.01), ncol=len(lista_niveles), frameon=False)
     if leg and leg.get_title():
         leg.get_title().set_fontweight("bold")
 
@@ -871,7 +1043,15 @@ CHART_REGISTRY = {
         "display_name": "Cantidad por nivel (stacked semáforo)",
         "description": "Barras apiladas con paleta semáforo fija (verde/naranja/rojo). El orden de `lista_niveles` mapea los colores. Cuenta estudiantes distintos, no filas.",
         "required_params": ["columna_nivel", "agrupar_por", "lista_niveles"],
-        "optional_params": ["titulo_grafico", "titulo_leyenda", "ylabel", "columna_identidad"],
+        "optional_params": ["lista_paleta", "color_overrides", "titulo_grafico", "titulo_leyenda", "ylabel", "columna_identidad"],
+        "input_dataframes": ["df_estudiantes"],
+    },
+    "composicion_por_nivel": {
+        "fn": composicion_por_nivel,
+        "display_name": "Composición global por nivel (barra 100%)",
+        "description": "Barra apilada 100% horizontal con el reparto de estudiantes por nivel cualitativo. Hereda los colores de `achievement_levels` vía `color_overrides`. Cuenta estudiantes distintos, no filas.",
+        "required_params": ["columna_nivel", "lista_niveles"],
+        "optional_params": ["lista_paleta", "color_overrides", "titulo_grafico", "titulo_leyenda", "etiqueta_barra", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
     },
     "alumnos_por_nivel_curso_y_mes": {
@@ -879,7 +1059,7 @@ CHART_REGISTRY = {
         "display_name": "Evolución de niveles por curso y período",
         "description": "Stacked compuesto: cada barra es un (curso × mes), con separadores verticales y rótulo de curso debajo. Meses en orden cronológico y conteo de estudiantes distintos.",
         "required_params": ["columna_nivel", "columna_curso", "columna_mes", "lista_niveles"],
-        "optional_params": ["orden_cursos", "orden_meses", "titulo_grafico", "ylabel", "mostrar_totales", "columna_identidad"],
+        "optional_params": ["lista_paleta", "color_overrides", "orden_cursos", "orden_meses", "titulo_grafico", "ylabel", "mostrar_totales", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
     },
     "comparacion_logro_por_curso": {

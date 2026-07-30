@@ -19,9 +19,6 @@ from backend.rgenerator.reports.dispatch_v2 import (
     separar_filtros,
     validar_tipo,
 )
-from tests.factories import (
-    make_dimension, make_indicator, make_metric, make_metric_data,
-)
 
 
 @pytest.mark.unit
@@ -94,31 +91,9 @@ class TestPieDeOrganizacion:
         assert out == {}
 
 
-@pytest.fixture
-def simce_indicator(db_session, org):
-    """Indicador SIMCE mínimo con metrics estudiantes + preguntas."""
-    dims = {n: make_dimension(db_session, org, name=n)
-            for n in ("Curso", "RUT", "Nombre", "Asignatura", "Mes", "N Prueba")}
-    m_est = make_metric(
-        db_session, org, name="Resultados SIMCE por Estudiante", data_type="object",
-        fields=[{"name": "Buenas", "type": "int"}, {"name": "Rend", "type": "float"}],
-        dimensions=list(dims.values()),
-    )
-    m_preg = make_metric(
-        db_session, org, name="Resultados SIMCE por Pregunta", data_type="object",
-        fields=[{"name": "Logro", "type": "float"}],
-        dimensions=list(dims.values()),
-    )
-    ident = {n: str(d.id_dimension) for n, d in dims.items()}
-    base = {
-        ident["Curso"]: "II A", ident["RUT"]: "1-1", ident["Nombre"]: "Test",
-        ident["Asignatura"]: "Lenguaje", ident["Mes"]: "ABRIL", ident["N Prueba"]: "1",
-    }
-    make_metric_data(db_session, m_est, value={"Buenas": 8, "Rend": 0.5}, dimensions_json=base)
-    make_metric_data(db_session, m_preg, value={"Logro": 0.6},
-                     dimensions_json={**base, ident["Curso"]: ""})
-    return make_indicator(db_session, org, name="SIMCE Test",
-                          metrics=[m_est, m_preg], report_engine_type="simce")
+# El fixture `simce_indicator` vive en `tests/conftest.py` desde el piloto
+# del motor único (contrato N9): lo comparten estos tests, los del despacho
+# por modos y los del módulo SIMCE.
 
 
 @pytest.mark.integration

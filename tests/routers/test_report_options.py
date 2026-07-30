@@ -135,7 +135,11 @@ class TestReportOptionsEstructura:
             assert card["invocacion"]["endpoint"] == f"/api/indicators/{iid}/export-pdf"
             assert card["invocacion"]["params"] == {"periodo": {"tipo": tipo}}
             assert card["formato"] == "pdf"
-            assert card["motor"] == "weasyprint"
+            # Motor único: el indicador es `report_engine_type="simce"` y el
+            # módulo `reports/custom/simce.py` declara los 4 modos, así que
+            # las cards las sirve él (contrato §2.5a). Sin módulo el motor
+            # sigue siendo "weasyprint" — lo cubre test_despacho_modos.py.
+            assert card["motor"] == "custom:simce"
 
     def test_personalizado_requiere_configuracion(self, client_auth, indicador_con_datos):
         cards = _cards_por_id(

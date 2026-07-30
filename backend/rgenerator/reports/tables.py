@@ -349,6 +349,44 @@ def _formatear_alternativas(resumen: pd.DataFrame, columnas: list) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Tabla ya calculada (puente para módulos del motor único)
+# ─────────────────────────────────────────────────────────────────────────
+
+def tabla_desde_dataframe(
+    df: pd.DataFrame,
+    columnas: list | None = None,
+    columnas_renombrar: dict | None = None,
+):
+    """Imprime tal cual un DataFrame que el llamador ya calculó.
+
+    Display name: Tabla ya calculada
+    El runtime solo sabe ejecutar funciones de `TABLE_REGISTRY`, así que un
+    módulo que arma su tabla en Python (resumen comparado, riesgo
+    persistente, comparativos de `crear_df_comparacion`…) necesita un `fn`
+    de paso: calcula el DataFrame, lo publica como un `df_input` más y
+    declara la sección con esta función. Es el puente que el contrato del
+    motor único deja abierto en §6.1.
+
+    Args:
+        df: DataFrame ya formateado, listo para imprimir.
+        columnas: subconjunto/orden de columnas a mostrar. Las que no
+            existan se ignoran.
+        columnas_renombrar: `{original: nuevo}` aplicado al final.
+
+    Returns:
+        DataFrame listo para `helpers.df_a_html_table`.
+    """
+    out = df
+    if columnas:
+        presentes = [c for c in columnas if c in out.columns]
+        if presentes:
+            out = out[presentes]
+    if columnas_renombrar:
+        out = out.rename(columns=columnas_renombrar)
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Comparativo entre evaluaciones (utility para charts.comparacion_*)
 # ─────────────────────────────────────────────────────────────────────────
 
@@ -459,6 +497,14 @@ TABLE_REGISTRY = {
         "required_params": ["columna", "agrupar_por"],
         "optional_params": ["formato", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
+    },
+    "tabla_desde_dataframe": {
+        "fn": tabla_desde_dataframe,
+        "display_name": "Tabla ya calculada",
+        "description": "Imprime tal cual un DataFrame calculado por el llamador (módulos del motor único). Permite subconjunto de columnas y renombre.",
+        "required_params": [],
+        "optional_params": ["columnas", "columnas_renombrar"],
+        "input_dataframes": ["df"],
     },
     "tabla_logro_por_alumno": {
         "fn": tabla_logro_por_alumno,

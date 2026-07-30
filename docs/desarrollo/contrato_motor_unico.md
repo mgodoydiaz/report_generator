@@ -413,6 +413,10 @@ Retirar el path v1 de las cards de período (dejar `build_pdf_bytes` solo detrá
 
 ---
 
+## OK de fase 2 (Miguel, 2026-07-30) — con una salvedad vinculante
+
+**SIN portada de página completa.** El helper de "portada" es solo un **bloque de título** (título + subtítulo + período resuelto) en la primera página, seguido inmediatamente del contenido — igual que todos los PDF de referencia entregados (Pullinque, IDEL Panguipulli). Ninguna página dedicada exclusivamente a portada.
+
 ## Resoluciones de tensiones (orquestador, 2026-07-30)
 
 - **T1 → APROBADO N5**: `runtime.construir_pdf` gana el parámetro `esquema: dict | None` (retrocompatible; con `None` sigue leyendo el JSON de disco). Se implementa en el piloto.
