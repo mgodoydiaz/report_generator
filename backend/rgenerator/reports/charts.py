@@ -33,6 +33,7 @@ from matplotlib.ticker import PercentFormatter, MaxNLocator
 from .helpers import (
     contar_estudiantes,
     es_columna_temporal,
+    ordenar_valores_categoricos,
     ordenar_valores_temporales,
 )
 
@@ -133,8 +134,9 @@ def grafico_barras_promedio_por(
     ).reset_index()
 
     # Orden del eje X: cronológico si la categoría es temporal (Mes, Hito,
-    # Versión, N° Prueba, Año). El groupby default es alfabético (P0-9).
-    orden_x = ordenar_valores_temporales(resumen[agrupar_por].tolist(), agrupar_por)
+    # Versión, N° Prueba, Año) y natural si está numerada (N° Pregunta,
+    # "1 A"…"10 A"). El groupby default es alfabético (P0-9 / P0-A).
+    orden_x = ordenar_valores_categoricos(resumen[agrupar_por].tolist(), agrupar_por)
     resumen = resumen.set_index(agrupar_por).reindex(orden_x).reset_index()
 
     # Crear gráfico
@@ -248,10 +250,10 @@ def valor_promedio_agrupado_por(
     # Hito, Versión, N° Prueba, Año), de lo contrario el que trae el
     # groupby. Antes el eje "Evolución …" salía alfabético y la secuencia
     # mostrada no era la real (P0-9 del QA 2026-07-30).
-    grupo_primario = ordenar_valores_temporales(
+    grupo_primario = ordenar_valores_categoricos(
         resumen[agrupar_principal_por].unique().tolist(), agrupar_principal_por
     )
-    grupo_secundario = ordenar_valores_temporales(
+    grupo_secundario = ordenar_valores_categoricos(
         resumen[agrupar_secundario_por].unique().tolist(), agrupar_secundario_por
     )
 
@@ -387,7 +389,11 @@ def boxplot_valor_por_curso(
     if es_columna_temporal(agrupar_por):
         cursos = ordenar_valores_temporales(valores_unicos, agrupar_por)
     else:
-        cursos = sorted(valores_unicos, key=lambda x: str(x))
+        # Alfabético como siempre, y natural encima cuando las etiquetas
+        # llevan número ("10 A" después de "9 A", P0-A).
+        cursos = ordenar_valores_categoricos(
+            sorted(valores_unicos, key=lambda x: str(x)), agrupar_por
+        )
     data = [
         df_estudiantes.loc[df_estudiantes[agrupar_por] == c, columna_valor].dropna().values
         for c in cursos
@@ -507,8 +513,9 @@ def alumnos_por_nivel_cualitativo(
     # Pivot para stacked bar
     pivot = resumen.pivot(index=agrupar_por, columns=columna_nivel, values="Cantidad").fillna(0)
 
-    # Eje X en orden cronológico si la categoría es temporal (P0-9)
-    pivot = pivot.reindex(ordenar_valores_temporales(pivot.index.tolist(), agrupar_por))
+    # Eje X en orden cronológico si la categoría es temporal (P0-9) y
+    # natural si está numerada (P0-A)
+    pivot = pivot.reindex(ordenar_valores_categoricos(pivot.index.tolist(), agrupar_por))
 
     cursos = [str(c) for c in pivot.index.tolist()]
     if not cursos:

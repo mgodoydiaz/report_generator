@@ -20,6 +20,10 @@ comparten (hallazgos del QA visual 2026-07-30):
 - Orden cronológico (`ordenar_valores_temporales`): los ejes temporales se
   ordenan con la semántica real (meses en español, hitos DIA, versiones
   IDEL, N° Prueba, Año), no alfabéticamente.
+- Orden natural (`clave_orden_natural`, `ordenar_valores_categoricos`,
+  `ordenar_df_por`): los ejes categóricos con números (N° Pregunta, N°
+  Lista, cursos "1 A"…"10 B") se ordenan 1, 2, … 10 y no 1, 10, 2 como
+  hacía el orden lexicográfico de strings.
 """
 from __future__ import annotations
 
@@ -441,10 +445,257 @@ def ordenar_valores_temporales(
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Orden natural (numérico-aware) de ejes categóricos
+# ─────────────────────────────────────────────────────────────────────────
+
+# Parte el texto en tramos de dígitos y de no-dígitos. `re.split` con grupo
+# de captura deja los tramos numéricos en las posiciones impares.
+_RE_TROZOS_NATURALES = re.compile(r"(\d+)")
+
+
+def clave_orden_natural(valor: Any) -> tuple:
+    """Clave de orden natural: los tramos numéricos se comparan como números.
+
+    Resuelve el orden lexicográfico de los N° de pregunta guardados como
+    texto ("1", "10", "11", …, "2", "20"), que es la forma en que la
+    dimensión `Pregunta` llega desde `metric_data`. Los valores no numéricos
+    ("P1a", "12 bis") degradan a una comparación por tramos, así que siguen
+    quedando en un orden estable y previsible.
+
+    Reglas:
+        - Un tramo numérico ordena antes que uno textual, de modo que
+          "3" < "P1" y las preguntas puramente numéricas quedan primero.
+        - El texto se compara sin tildes ni mayúsculas (`_norm`).
+        - El texto original rompe empates para que el orden sea estable.
+
+    Ejemplos:
+        >>> sorted(["10", "2", "1"], key=clave_orden_natural)
+        ['1', '2', '10']
+        >>> sorted(["P10", "P2"], key=clave_orden_natural)
+        ['P2', 'P10']
+
+    Nota: los tramos se comparan como enteros, así que "1.10" queda después
+    de "1.9". Es intencional — el uso previsto son numeraciones ordinales,
+    no decimales.
+    """
+    texto = "" if valor is None else str(valor).strip()
+    trozos: list[tuple[int, int, str]] = []
+    for i, trozo in enumerate(_RE_TROZOS_NATURALES.split(texto)):
+        if i % 2:
+            trozos.append((0, int(trozo), ""))
+        elif trozo:
+            normalizado = _norm(trozo)
+            if normalizado:
+                trozos.append((1, 0, normalizado))
+    if not trozos:
+        trozos.append((1, 0, ""))
+    return (tuple(trozos), texto)
+
+
+def ordenar_valores_naturales(valores: Iterable[Any]) -> list:
+    """Ordena valores con `clave_orden_natural` (1, 2, … 10 y no 1, 10, 2)."""
+    return sorted(valores, key=clave_orden_natural)
+
+
+def ordenar_valores_categoricos(
+    valores: Iterable[Any],
+    nombre_columna: Any = None,
+) -> list:
+    """Orden de un eje categórico: cronológico si es temporal, natural si no.
+
+    Es el reemplazo de `ordenar_valores_temporales` para los ejes donde el
+    caller ya venía ordenando alfabéticamente (`sorted(..., key=str)` o el
+    orden implícito del `groupby`). Deliberadamente NO reordena las
+    etiquetas sin dígitos: ahí el orden natural coincidiría con el
+    alfabético salvo por tildes y mayúsculas, y cambiarlo movería los
+    colores de series ya validadas (Habilidad, Eje Temático). El orden
+    natural solo entra cuando hay números en juego, que es el caso que
+    estaba roto (N° Pregunta, "1 A" vs "10 A").
+
+    Args:
+        valores: valores únicos del eje, ya en el orden que el caller
+            considera por defecto.
+        nombre_columna: nombre de la columna de origen; si denota tiempo
+            (Mes, Hito, Versión, N° Prueba, Año…) manda el orden cronológico.
+
+    Returns:
+        Lista ordenada, o la original si el eje no es temporal ni numerado.
+    """
+    vals = list(valores)
+    if len(vals) < 2:
+        return vals
+    if es_columna_temporal(nombre_columna) or valores_parecen_temporales(vals):
+        return sorted(vals, key=clave_orden_temporal)
+    if not any(_RE_ENTERO.search(str(v)) for v in vals):
+        return vals
+    return sorted(vals, key=clave_orden_natural)
+
+
+def ordenar_df_por(
+    df: pd.DataFrame,
+    columna: str,
+    ascending: bool = True,
+) -> pd.DataFrame:
+    """`sort_values` consciente de numeraciones guardadas como texto.
+
+    - Columna numérica o de fechas → `sort_values` de siempre (idéntico
+      comportamiento: es el caso de "Rend", "Logro", "Simce").
+    - Columna de texto → orden natural (`clave_orden_natural`), que es lo
+      que arregla el "1, 10, 11, … 2, 20" del N° de pregunta.
+
+    Args:
+        df: DataFrame a ordenar.
+        columna: columna por la que ordenar. Si no existe se devuelve el df
+            sin tocar (mismo criterio defensivo del resto del módulo).
+        ascending: False para descendente.
+
+    Returns:
+        DataFrame ordenado (no se resetea el índice).
+    """
+    if columna not in df.columns:
+        return df
+    serie = df[columna]
+    if pd.api.types.is_numeric_dtype(serie) or pd.api.types.is_datetime64_any_dtype(serie):
+        return df.sort_values(by=columna, ascending=ascending)
+
+    claves = [clave_orden_natural(v) for v in serie]
+    posiciones = sorted(
+        range(len(claves)), key=lambda i: claves[i], reverse=not ascending
+    )
+    return df.iloc[posiciones]
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Render de tablas
 # ─────────────────────────────────────────────────────────────────────────
 
-def df_a_html_table(df: pd.DataFrame, css_class: str = "report-table") -> str:
+#: Ancho útil de una página del informe, en cm. `informe_base.html` usa
+#: letter (21.59 cm) con márgenes laterales de 2 cm.
+ANCHO_CONTENIDO_CM = 17.59
+
+_PT_POR_CM = 28.3465
+
+#: Escalones de compactación, del más holgado al más apretado:
+#: (clase CSS extra, font-size en pt, padding lateral en pt). El primero es
+#: el estilo base de `report-table` (sin clase adicional). Cada clase está
+#: definida en templates/informe_base.html.
+_ESCALONES_TABLA: tuple[tuple[str | None, float, float], ...] = (
+    (None, 9.0, 6.0),
+    ("tabla-compacta-1", 8.0, 4.0),
+    ("tabla-compacta-2", 7.0, 2.5),
+    ("tabla-compacta-3", 6.0, 1.5),
+)
+
+#: Ancho medio de un carácter como fracción del font-size, para Segoe UI /
+#: DejaVu Sans con contenido mezclado (dígitos, %, texto). Estimación
+#: deliberadamente holgada: sobreestimar solo compacta de más, subestimar
+#: deja la tabla fuera del margen.
+_FACTOR_ANCHO_CARACTER = 0.58
+
+#: Los encabezados van en negrita → ocupan más que el mismo texto en regular.
+_FACTOR_NEGRITA = 1.08
+
+
+def _ancho_estimado_cm(df: pd.DataFrame, font_pt: float, padding_pt: float) -> float:
+    """Ancho que ocuparía la tabla sin cortar ninguna celda, en cm.
+
+    Suma por columna: el texto más largo (encabezado incluido, con recargo
+    por la negrita) × ancho medio de carácter, más el padding a ambos lados
+    y el borde. WeasyPrint no permite medir antes de renderizar, así que la
+    estimación es la base para decidir el escalón de compactación.
+    """
+    total_pt = 0.0
+    for col in df.columns:
+        largo_header = len(str(col)) * _FACTOR_NEGRITA
+        largo_datos = max((len(texto_celda(v)) for v in df[col]), default=0)
+        caracteres = max(largo_header, largo_datos)
+        total_pt += caracteres * font_pt * _FACTOR_ANCHO_CARACTER + 2 * padding_pt + 0.5
+    return total_pt / _PT_POR_CM
+
+
+#: Decimales máximos que se muestran de un número crudo cuando la tabla no
+#: cabe a lo ancho. Decisión del dueño (2026-07-30): "con las tablas que se
+#: van de los márgenes, lo mejor es aproximar los números a dos decimales".
+DECIMALES_AJUSTE_ANCHO = 2
+
+
+def _es_flotante_cruda(serie: pd.Series) -> bool:
+    """True si la columna trae números sin formatear y alguno tiene decimales."""
+    num = pd.to_numeric(serie, errors="coerce")
+    sin_dato = serie.map(es_sin_dato)
+    if not bool(num.notnull().any() and (num.notnull() | sin_dato).all()):
+        return False
+    return bool((num.dropna() % 1 != 0).any())
+
+
+def redondear_decimales_para_ancho(
+    df: pd.DataFrame,
+    decimales: int = DECIMALES_AJUSTE_ANCHO,
+) -> pd.DataFrame:
+    """Recorta a `decimales` los números crudos de una tabla que no cabe.
+
+    Es la PRIMERA palanca contra el desborde horizontal: una proporción sin
+    formatear se imprime con todo el ruido binario
+    ("0.5700000000000001", 18 caracteres) y por sí sola empuja las últimas
+    columnas fuera del margen. Recortarla a "0.57" recupera más ancho que
+    cualquier reducción de fuente.
+
+    Es un redondeo de PRESENTACIÓN: trabaja sobre una copia y solo sobre lo
+    que se va a imprimir. Ningún promedio ni porcentaje se recalcula a
+    partir de estos valores — los cálculos ya ocurrieron aguas arriba, en
+    `tables.py`.
+
+    Coherencia por columna: si una columna necesita decimales, TODAS sus
+    celdas salen con la misma cantidad; si la columna es entera, se imprime
+    como entera. Las columnas ya formateadas como texto ("53%", "—",
+    nombres) no se tocan.
+
+    Args:
+        df: DataFrame a imprimir.
+        decimales: máximo de decimales visibles.
+
+    Returns:
+        El mismo df si no había nada que recortar; una copia si sí.
+    """
+    columnas = [c for c in df.columns if _es_flotante_cruda(df[c])]
+    if not columnas:
+        return df
+    out = df.copy()
+    for col in columnas:
+        out[col] = formatear_serie(
+            pd.to_numeric(out[col], errors="coerce"), "decimal", decimales=decimales
+        )
+    return out
+
+
+def escalon_tabla(
+    df: pd.DataFrame,
+    ancho_disponible_cm: float = ANCHO_CONTENIDO_CM,
+) -> str | None:
+    """Clase CSS de compactación mínima para que la tabla quepa a lo ancho.
+
+    Args:
+        df: DataFrame ya formateado (los valores se miden tal como saldrán).
+        ancho_disponible_cm: ancho útil de la página.
+
+    Returns:
+        `None` si la tabla cabe con el estilo base; si no, el nombre de la
+        clase del primer escalón que la haga caber, o la del último escalón
+        cuando ni el más apretado alcanza (en ese caso el CSS de la clase
+        además parte las celdas para no desbordar).
+    """
+    for clase, font_pt, padding_pt in _ESCALONES_TABLA:
+        if _ancho_estimado_cm(df, font_pt, padding_pt) <= ancho_disponible_cm:
+            return clase
+    return _ESCALONES_TABLA[-1][0]
+
+
+def df_a_html_table(
+    df: pd.DataFrame,
+    css_class: str = "report-table",
+    ajustar_ancho: bool = True,
+    ancho_disponible_cm: float = ANCHO_CONTENIDO_CM,
+) -> str:
     """Convierte DataFrame → HTML <table> con alineación smart.
 
     - Columnas numéricas o que terminen en % → texto alineado a derecha.
@@ -453,17 +704,36 @@ def df_a_html_table(df: pd.DataFrame, css_class: str = "report-table") -> str:
     - Ausencia de dato (NaN, None, NaT y los literales "nan" / "nan%" que
       deja un formateo prematuro) → `—`. Nunca se imprime "nan".
     - Sin zebra. Bordes negros 0.5pt.
+    - Ancho adaptativo, en dos palancas y solo si la tabla NO cabe entre los
+      márgenes: (1) los números crudos se recortan a 2 decimales
+      (`redondear_decimales_para_ancho`), (2) si aún no cabe, se agrega una
+      clase `tabla-compacta-N` que reduce fuente y padding. Una tabla que ya
+      cabía sale EXACTAMENTE igual que antes (QA 2026-07-30, P0-B: la
+      estadística por pregunta perdía las columnas D, E, Correcta y
+      Distractor fuera del margen derecho).
 
     Args:
         df: DataFrame a renderizar.
         css_class: clase CSS de la tabla. Default "report-table" (definida
             en templates/informe_base.html).
+        ajustar_ancho: False desactiva la compactación adaptativa.
+        ancho_disponible_cm: ancho útil de la página, en cm.
 
     Returns:
         HTML string.
 
     Equivalente LaTeX: df_a_latex_loop (en SIMCE/DIA funciones.py).
     """
+    # Palanca 1 del ajuste de ancho: recortar decimales ANTES de medir de
+    # nuevo, porque es lo que más ancho recupera sin tocar la legibilidad.
+    escalon = None
+    if ajustar_ancho:
+        base_font, base_padding = _ESCALONES_TABLA[0][1], _ESCALONES_TABLA[0][2]
+        if _ancho_estimado_cm(df, base_font, base_padding) > ancho_disponible_cm:
+            df = redondear_decimales_para_ancho(df)
+        # Palanca 2: fuente y padding adaptativos si todavía no cabe.
+        escalon = escalon_tabla(df, ancho_disponible_cm)
+
     cols = df.columns.tolist()
 
     # Detectar columnas numéricas / porcentajes (igual que df_a_latex_loop).
@@ -483,7 +753,8 @@ def df_a_html_table(df: pd.DataFrame, css_class: str = "report-table") -> str:
     is_numeric = [n or p for n, p in zip(numeric_cols_mask, percent_cols_mask)]
 
     # Render
-    parts = [f'<table class="{css_class}">']
+    clases = f"{css_class} {escalon}" if escalon else css_class
+    parts = [f'<table class="{clases}">']
 
     # Header
     parts.append("<thead><tr>")

@@ -15,11 +15,13 @@ import pandas as pd
 
 from ..core.pivot_engine import pivot, pivot_to_dataframe
 from .helpers import (
+    DECIMALES_AJUSTE_ANCHO,
     coalescer_nombre_estudiante,
     columnas_nombre_estudiante,
     contar_estudiantes,
     formatear_serie,
-    ordenar_valores_temporales,
+    ordenar_df_por,
+    ordenar_valores_categoricos,
 )
 
 
@@ -91,12 +93,10 @@ def resumen_estadistico_basico(
         )
 
     # Orden del grupo: cronológico si es una dimensión temporal (P0-9),
-    # alfabético en cualquier otro caso.
-    orden = ordenar_valores_temporales(resumen[agrupar_por].tolist(), agrupar_por)
-    if orden != resumen[agrupar_por].tolist():
-        resumen = resumen.set_index(agrupar_por).reindex(orden).reset_index()
-    else:
-        resumen = resumen.sort_values(by=agrupar_por)
+    # natural en cualquier otro caso — "10 A" después de "9 A", no antes
+    # (P0-A del QA 2026-07-30).
+    orden = ordenar_valores_categoricos(resumen[agrupar_por].tolist(), agrupar_por)
+    resumen = resumen.set_index(agrupar_por).reindex(orden).reset_index()
     return resumen
 
 
@@ -166,7 +166,9 @@ def tabla_logro_por_alumno(
             break
 
     df = df_estudiantes[columnas].copy()
-    df = df.sort_values(by=sort_by, ascending=False)
+    # Orden natural: para una columna numérica ("Rend") es el sort_values de
+    # siempre; para una de texto evita el 1, 10, 11, … 2 (P0-A).
+    df = ordenar_df_por(df, sort_by, ascending=False)
     df = df.reset_index(drop=True)
 
     # Formato por columna — se decide primero si hay valor, para que un
@@ -228,7 +230,9 @@ def tabla_logro_por_pregunta(
         }
 
     df = df_preguntas[df_preguntas[agrupar_por] == valor_agrupacion][columnas].copy()
-    df = df.sort_values(by=sort_by, ascending=False)
+    # Igual que en `tabla_logro_por_alumno`: ordenar por "Logro" (numérico)
+    # no cambia, pero ordenar por "Pregunta" (texto) ya sale 1, 2, … 10.
+    df = ordenar_df_por(df, sort_by, ascending=False)
     df = df.reset_index(drop=True)
 
     # Formato tras comprobar que haya valor: "—" en vez de "nan%".
@@ -286,6 +290,13 @@ def crear_tabla_estadistica_por_pregunta(
         valor = resumen[col] / resumen[columnas_alternativas].sum(axis=1)
         resumen[f"%{col}"] = formatear_serie(valor, "percent")
 
+    # Los conteos A-E se formatean DESPUÉS de calcular los porcentajes.
+    # Sin esto la métrica publica proporciones crudas y la celda sale con el
+    # ruido binario completo ("0.5700000000000001", 18 caracteres): con 13
+    # columnas eso empujaba D, E, Correcta y Distractor fuera del margen
+    # derecho (QA 2026-07-30, P0-B).
+    _formatear_alternativas(resumen, columnas_alternativas)
+
     # Reordenar: Pregunta, A, %A, B, %B, ...
     resumen = resumen[
         ["Pregunta"] + list(itertools.chain.from_iterable((col, f"%{col}") for col in columnas_alternativas))
@@ -299,8 +310,42 @@ def crear_tabla_estadistica_por_pregunta(
         how="left",
     )
 
-    resumen = resumen.sort_values(by="Pregunta").reset_index(drop=True)
+    # Orden numérico de las preguntas. La dimensión `Pregunta` llega como
+    # texto desde metric_data, así que el sort_values de strings las dejaba
+    # 1, 10, 11, … 2, 20 (QA 2026-07-30, P0-A).
+    resumen = ordenar_df_por(resumen, "Pregunta").reset_index(drop=True)
     return resumen
+
+
+def _formatear_alternativas(resumen: pd.DataFrame, columnas: list) -> None:
+    """Formatea in-place los conteos por alternativa (A-E) de la tabla SIMCE.
+
+    La métrica guarda conteos enteros en unas cargas y proporciones en
+    otras. Se decide por el contenido real:
+
+    - Todos los valores enteros → se imprimen como enteros ("62"), igual
+      que el informe de referencia del dueño.
+    - Hay decimales (proporciones) → `DECIMALES_AJUSTE_ANCHO` decimales
+      ("0.57"), que es lo que corta el ruido de coma flotante.
+
+    Toda la columna sale con el mismo formato: es un redondeo de
+    presentación, los porcentajes %A-%E ya se calcularon con los valores
+    completos antes de llegar acá.
+    """
+    numericas = [pd.to_numeric(resumen[col], errors="coerce") for col in columnas]
+    if numericas:
+        todos = pd.concat(numericas).dropna()
+        enteros = bool(todos.empty or (todos % 1 == 0).all())
+    else:
+        enteros = True
+
+    for col in columnas:
+        if enteros:
+            resumen[col] = formatear_serie(resumen[col], "number")
+        else:
+            resumen[col] = formatear_serie(
+                resumen[col], "decimal", decimales=DECIMALES_AJUSTE_ANCHO
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────

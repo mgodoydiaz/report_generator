@@ -163,6 +163,41 @@ table.report-table td.al-left,
 table.report-table th.al-left  { text-align: left; }
 /* Sin zebra; LaTeX no la tiene */
 
+/* ── Escalones de compactación (opt-in por clase) ───────────
+   Los agrega `helpers.df_a_html_table` SOLO cuando la tabla no cabe entre
+   los márgenes con el estilo base — una tabla que ya cabía no cambia. La
+   estadística por pregunta del SIMCE (13 columnas) se salía del margen
+   derecho y perdía D, E, Correcta y Distractor (QA 2026-07-30, P0-B).
+   `max-width` + corte de palabra son la red de seguridad si ni el escalón
+   más apretado alcanza: preferimos una celda partida a una columna que se
+   pierde fuera de la página. */
+
+table.report-table.tabla-compacta-1,
+table.report-table.tabla-compacta-2,
+table.report-table.tabla-compacta-3 {
+  max-width: 100%;
+}
+table.report-table.tabla-compacta-1 th,
+table.report-table.tabla-compacta-1 td,
+table.report-table.tabla-compacta-2 th,
+table.report-table.tabla-compacta-2 td,
+table.report-table.tabla-compacta-3 th,
+table.report-table.tabla-compacta-3 td {
+  overflow-wrap: anywhere;
+}
+
+table.report-table.tabla-compacta-1 { font-size: 8pt; }
+table.report-table.tabla-compacta-1 th,
+table.report-table.tabla-compacta-1 td { padding: 1.5pt 4pt; }
+
+table.report-table.tabla-compacta-2 { font-size: 7pt; }
+table.report-table.tabla-compacta-2 th,
+table.report-table.tabla-compacta-2 td { padding: 1pt 2.5pt; }
+
+table.report-table.tabla-compacta-3 { font-size: 6pt; }
+table.report-table.tabla-compacta-3 th,
+table.report-table.tabla-compacta-3 td { padding: 0.5pt 1.5pt; }
+
 /* ── Figura (gráfico PNG embebido) ─────────────────────────── */
 
 figure.report-figure {

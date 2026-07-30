@@ -35,7 +35,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from . import charts, tables
 from .errores import DatosInsuficientes, mensaje_sin_datos
-from .helpers import df_a_html_table, embed_png_b64
+from .helpers import df_a_html_table, embed_png_b64, ordenar_valores_categoricos
 from ..core.derived_fields_engine import apply_derived_fields
 
 try:  # el logger del backend no está disponible en usos standalone del paquete
@@ -297,8 +297,12 @@ def construir_pdf(
                 df_iterar = dataframes[df_iterar_key]
                 if iterar_por in df_iterar.columns:
                     valores = df_iterar[iterar_por].dropna().unique().tolist()
-                    # Orden alfanumérico natural (1 A, 1 B, 2 A, ...)
-                    valores = sorted(valores, key=lambda x: str(x))
+                    # Orden alfanumérico natural (1 A, 1 B, 2 A, … 10 A):
+                    # alfabético de base y numérico donde hay dígitos, para
+                    # que "10 A" no se cuele entre "1 A" y "2 A" (P0-A).
+                    valores = ordenar_valores_categoricos(
+                        sorted(valores, key=lambda x: str(x)), iterar_por
+                    )
 
                     for valor in valores:
                         # Page break antes de cada valor (igual a \newpage LaTeX)
