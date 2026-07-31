@@ -3,7 +3,7 @@ import pandas as pd
 import json
 from typing import Optional, Dict, Any
 from .step import Step
-from .derived_fields_engine import normalizar_nombre
+from .pares_nombre import completar_pares_nombre, pares_nombre_normalizado
 from backend.auditing import make_metric_data
 from backend.logging_config import get_logger
 from backend.models import Metric, MetricDimension, MetricData, Dimension
@@ -33,49 +33,6 @@ def _build_dim_name_to_id(db, metric_id: int) -> Dict[str, int]:
         return {}
     dims = db.query(Dimension).filter(Dimension.id_dimension.in_(dim_ids)).all()
     return {d.name: d.id_dimension for d in dims}
-
-
-def _pares_nombre_normalizado(dim_name_to_id: Dict[str, int]):
-    """Pares (id_original, id_norm) de dimensiones tipo 'X' / 'X_Norm'.
-
-    Convención del sistema: la dimensión normalizada se llama igual que
-    la original más el sufijo `_Norm`. Ej: ('Nombre', 'Nombre_Norm').
-    """
-    pares = []
-    for nombre, dim_id in dim_name_to_id.items():
-        for sufijo in ("_Norm", "_norm", "_NORM"):
-            id_norm = dim_name_to_id.get(f"{nombre}{sufijo}")
-            if id_norm is not None:
-                pares.append((dim_id, id_norm))
-                break
-    return pares
-
-
-def _completar_pares_nombre(dims_json: Dict[str, str], pares) -> None:
-    """Completa in-place la columna que falte de cada par nombre/normalizado.
-
-    Red de seguridad para que TODA carga deje pobladas ambas columnas,
-    sin depender de que el JSON del pipeline guardado en la DB traiga el
-    mapeo correcto:
-
-    - Falta la normalizada y hay original → se normaliza con la función
-      canónica (`normalizar_nombre`).
-    - Falta la original y hay normalizada → se copia la normalizada. El
-      original real ya se perdió (el archivo no lo traía o el pipeline no
-      lo mapeó), pero es preferible mostrar el nombre reordenado a
-      mostrar un vacío en los informes.
-    - Si faltan ambas, la fila no tiene identidad y se deja intacta.
-    """
-    for id_original, id_norm in pares:
-        k_orig, k_norm = str(id_original), str(id_norm)
-        val_orig = (dims_json.get(k_orig) or "").strip()
-        val_norm = (dims_json.get(k_norm) or "").strip()
-        if val_orig and not val_norm:
-            normalizado = normalizar_nombre(val_orig)
-            if normalizado:
-                dims_json[k_norm] = normalizado
-        elif val_norm and not val_orig:
-            dims_json[k_orig] = val_norm
 
 
 def _build_dim_id_to_name(db, metric_id: int) -> Dict[int, str]:
@@ -197,7 +154,7 @@ class SaveToMetric(Step):
 
         # 3. Construir mapa de dimensiones: nombre → id_dimension
         dim_name_to_id = _build_dim_name_to_id(ctx.db, self.metric_id)
-        pares_nombre = _pares_nombre_normalizado(dim_name_to_id)
+        pares_nombre = pares_nombre_normalizado(dim_name_to_id)
         logger.info(f"[{self.name}] Dimensiones inferidas: {list(dim_name_to_id.keys())}")
         logger.info(f"[{self.name}] Tipo de dato: {metric.data_type}, Nombre métrica: {metric.name}")
 
@@ -227,7 +184,7 @@ class SaveToMetric(Step):
 
             # Toda carga debe dejar el nombre en AMBAS columnas.
             if pares_nombre:
-                _completar_pares_nombre(dims_json, pares_nombre)
+                completar_pares_nombre(dims_json, pares_nombre)
 
             # Extraer valor según tipo de métrica
             final_value = None

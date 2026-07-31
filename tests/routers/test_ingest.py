@@ -358,6 +358,157 @@ class TestAuditoria:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# Pares X / X_Norm
+#
+# La red de seguridad "toda carga deja el nombre en AMBAS columnas" vivía
+# solo en el camino de pipelines (`SaveToMetric`). La ingesta por API la
+# aplica con el mismo helper compartido
+# (`backend/rgenerator/core/pares_nombre.py`).
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def metric_con_par_nombre(db_session, org):
+    """Métrica float con dimensiones Curso + Nombre + Nombre_Norm."""
+    dims = {
+        n: make_dimension(db_session, org, name=n)
+        for n in ("Curso", "Nombre", "Nombre_Norm")
+    }
+    metric = make_metric(
+        db_session, org, name="Logro", data_type="float",
+        dimensions=list(dims.values()),
+    )
+    return metric, dims
+
+
+@pytest.fixture
+def metric_sin_par_nombre(db_session, org):
+    """Métrica float con dimensión Nombre pero SIN su hermana normalizada."""
+    dims = {n: make_dimension(db_session, org, name=n) for n in ("Curso", "Nombre")}
+    metric = make_metric(
+        db_session, org, name="Logro", data_type="float",
+        dimensions=list(dims.values()),
+    )
+    return metric, dims
+
+
+def _dims_guardadas(db, metric):
+    from backend.models import MetricData
+    db.expire_all()
+    filas = (
+        db.query(MetricData)
+        .filter(MetricData.id_metric == metric.id_metric)
+        .order_by(MetricData.id_data)
+        .all()
+    )
+    return [json.loads(f.dimensions_json) for f in filas]
+
+
+class TestParesNombreNormalizado:
+    def test_solo_nombre_completa_la_normalizada(
+        self, client, db_session, write_key, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={"records": [
+                {"value": 0.5, "dimensions": {"Curso": "II A", "Nombre": "Pérez Juan"}},
+                {"value": 0.7, "dimensions": {"Nombre": "Ana Soto"}},
+            ]},
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["rows_ok"] == 2
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        guardadas = _dims_guardadas(db_session, metric)
+        assert [d[id_nom] for d in guardadas] == ["Pérez Juan", "Ana Soto"]
+        assert [d[id_norm] for d in guardadas] == ["JUAN PEREZ", "ANA SOTO"]
+
+    def test_solo_normalizada_copia_el_nombre(
+        self, client, db_session, write_key, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={"records": [{"value": 0.5, "dimensions": {"Nombre_Norm": "JUAN PEREZ"}}]},
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada[id_norm] == "JUAN PEREZ"
+        assert guardada[id_nom] == "JUAN PEREZ"
+
+    def test_ambas_presentes_quedan_intactas(
+        self, client, db_session, write_key, metric_con_par_nombre
+    ):
+        """Guard de no-sobrescritura: si vienen las dos, ninguna se toca."""
+        metric, dims = metric_con_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={"records": [{
+                "value": 0.5,
+                "dimensions": {"Nombre": "Pérez Juan", "Nombre_Norm": "valor raro"},
+            }]},
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {id_nom: "Pérez Juan", id_norm: "valor raro"}
+
+    def test_sin_par_asociado_no_cambia_nada(
+        self, client, db_session, write_key, metric_sin_par_nombre
+    ):
+        metric, dims = metric_sin_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={"records": [{"value": 0.5, "dimensions": {"Nombre": "Pérez Juan"}}]},
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {str(dims["Nombre"].id_dimension): "Pérez Juan"}
+
+    def test_sin_nombre_no_inventa_columnas(
+        self, client, db_session, write_key, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={"records": [{"value": 0.5, "dimensions": {"Curso": "II A"}}]},
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {str(dims["Curso"].id_dimension): "II A"}
+
+    def test_dry_run_no_inserta_nada(
+        self, client, db_session, write_key, metric_con_par_nombre
+    ):
+        """El completado no altera la semántica de dry_run."""
+        metric, _ = metric_con_par_nombre
+        resp = client.post(
+            f"/api/ingest/metrics/{metric.id_metric}/data",
+            json={
+                "records": [{"value": 0.5, "dimensions": {"Nombre": "Pérez Juan"}}],
+                "dry_run": True,
+            },
+            headers=_headers(write_key),
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["rows_ok"] == 1
+        assert _dims_guardadas(db_session, metric) == []
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # Schema endpoint
 # ─────────────────────────────────────────────────────────────────────────
 

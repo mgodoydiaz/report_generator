@@ -514,3 +514,196 @@ class TestGetTemplate:
         # Devuelve un archivo Excel descargable o JSON con estructura;
         # solo aseguramos que no es error.
         assert r.status_code == 200
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Pares X / X_Norm — POST /{id}/import y POST /{id}/data
+#
+# La red de seguridad "toda carga deja el nombre en AMBAS columnas" vivía
+# solo en el camino de pipelines (`SaveToMetric`). Estos tests cubren los
+# dos caminos de escritura de /values: el import de archivo y el alta
+# manual de una fila. Helper compartido en
+# `backend/rgenerator/core/pares_nombre.py`.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def metric_con_par_nombre(db_session, org):
+    """Métrica float con dimensiones Curso + Nombre + Nombre_Norm."""
+    dims = {
+        n: make_dimension(db_session, org, name=n)
+        for n in ("Curso", "Nombre", "Nombre_Norm")
+    }
+    metric = make_metric(
+        db_session, org, name="Logro", data_type="float",
+        dimensions=list(dims.values()),
+    )
+    return metric, dims
+
+
+@pytest.fixture
+def metric_sin_par_nombre(db_session, org):
+    """Métrica float con dimensión Nombre pero SIN su hermana normalizada."""
+    dims = {n: make_dimension(db_session, org, name=n) for n in ("Curso", "Nombre")}
+    metric = make_metric(
+        db_session, org, name="Logro", data_type="float",
+        dimensions=list(dims.values()),
+    )
+    return metric, dims
+
+
+def _csv(texto: str):
+    """Payload `files` para el endpoint de import (CSV con separador ';')."""
+    return {"files": ("datos.csv", texto.encode("utf-8"), "text/csv")}
+
+
+def _dims_guardadas(db_session, metric):
+    from backend.models import MetricData
+    db_session.expire_all()
+    filas = (
+        db_session.query(MetricData)
+        .filter(MetricData.id_metric == metric.id_metric)
+        .order_by(MetricData.id_data)
+        .all()
+    )
+    return [json.loads(f.dimensions_json) for f in filas]
+
+
+@pytest.mark.integration
+class TestImportCompletaParesNombre:
+    def test_solo_nombre_completa_la_normalizada(
+        self, client_auth, db_session, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        r = client_auth.post(
+            f"/api/metrics/{metric.id_metric}/import",
+            files=_csv("Curso;Nombre;Logro\nII A;Pérez Juan;0.5\nII A;Ana Soto;0.7\n"),
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["imported"] == 2
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        guardadas = _dims_guardadas(db_session, metric)
+        assert [d[id_nom] for d in guardadas] == ["Pérez Juan", "Ana Soto"]
+        # normalizar_nombre: sin tildes, palabras ordenadas, mayúsculas.
+        assert [d[id_norm] for d in guardadas] == ["JUAN PEREZ", "ANA SOTO"]
+
+    def test_solo_normalizada_copia_el_nombre(
+        self, client_auth, db_session, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        r = client_auth.post(
+            f"/api/metrics/{metric.id_metric}/import",
+            files=_csv("Curso;Nombre_Norm;Logro\nII A;JUAN PEREZ;0.5\n"),
+        )
+        assert r.status_code == 200, r.text
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada[id_norm] == "JUAN PEREZ"
+        assert guardada[id_nom] == "JUAN PEREZ"  # se copia tal cual
+
+    def test_ambas_presentes_quedan_intactas(
+        self, client_auth, db_session, metric_con_par_nombre
+    ):
+        """Guard de no-sobrescritura: si las dos vienen, no se toca ninguna,
+        aunque la normalizada no coincida con normalizar_nombre(original)."""
+        metric, dims = metric_con_par_nombre
+        r = client_auth.post(
+            f"/api/metrics/{metric.id_metric}/import",
+            files=_csv("Nombre;Nombre_Norm;Logro\nPérez Juan;valor raro;0.5\n"),
+        )
+        assert r.status_code == 200, r.text
+
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada[id_nom] == "Pérez Juan"
+        assert guardada[id_norm] == "valor raro"
+
+    def test_sin_par_asociado_no_cambia_nada(
+        self, client_auth, db_session, metric_sin_par_nombre
+    ):
+        """La métrica solo tiene 'Nombre': no hay par, no se inventan claves."""
+        metric, dims = metric_sin_par_nombre
+        r = client_auth.post(
+            f"/api/metrics/{metric.id_metric}/import",
+            files=_csv("Curso;Nombre;Logro\nII A;Pérez Juan;0.5\n"),
+        )
+        assert r.status_code == 200, r.text
+
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {
+            str(dims["Curso"].id_dimension): "II A",
+            str(dims["Nombre"].id_dimension): "Pérez Juan",
+        }
+
+    def test_fila_sin_nombre_no_inventa_columnas(
+        self, client_auth, db_session, metric_con_par_nombre
+    ):
+        """Sin ninguna de las dos, la fila no tiene identidad: se deja igual."""
+        metric, dims = metric_con_par_nombre
+        r = client_auth.post(
+            f"/api/metrics/{metric.id_metric}/import",
+            files=_csv("Curso;Logro\nII A;0.5\n"),
+        )
+        assert r.status_code == 200, r.text
+
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {str(dims["Curso"].id_dimension): "II A"}
+
+
+@pytest.mark.integration
+class TestAltaManualCompletaParesNombre:
+    def test_solo_nombre_completa_la_normalizada(
+        self, client_auth, db_session, metric_con_par_nombre
+    ):
+        metric, dims = metric_con_par_nombre
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+
+        r = client_auth.post(f"/api/metrics/{metric.id_metric}/data", json={
+            "value": "0.5",
+            "dimensions_json": {id_nom: "Pérez Juan"},
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["dimensions_json"][id_norm] == "JUAN PEREZ"
+        (guardada,) = _dims_guardadas(db_session, metric)
+        assert guardada == {id_nom: "Pérez Juan", id_norm: "JUAN PEREZ"}
+
+    def test_solo_normalizada_copia_el_nombre(self, client_auth, metric_con_par_nombre):
+        metric, dims = metric_con_par_nombre
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+
+        r = client_auth.post(f"/api/metrics/{metric.id_metric}/data", json={
+            "value": "0.5",
+            "dimensions_json": {id_norm: "JUAN PEREZ"},
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["dimensions_json"][id_nom] == "JUAN PEREZ"
+
+    def test_ambas_presentes_quedan_intactas(self, client_auth, metric_con_par_nombre):
+        metric, dims = metric_con_par_nombre
+        id_nom = str(dims["Nombre"].id_dimension)
+        id_norm = str(dims["Nombre_Norm"].id_dimension)
+
+        r = client_auth.post(f"/api/metrics/{metric.id_metric}/data", json={
+            "value": "0.5",
+            "dimensions_json": {id_nom: "Pérez Juan", id_norm: "valor raro"},
+        })
+        assert r.status_code == 200, r.text
+        dims_out = r.json()["data"]["dimensions_json"]
+        assert dims_out == {id_nom: "Pérez Juan", id_norm: "valor raro"}
+
+    def test_sin_par_asociado_no_cambia_nada(self, client_auth, metric_sin_par_nombre):
+        metric, dims = metric_sin_par_nombre
+        id_nom = str(dims["Nombre"].id_dimension)
+        r = client_auth.post(f"/api/metrics/{metric.id_metric}/data", json={
+            "value": "0.5",
+            "dimensions_json": {id_nom: "Pérez Juan"},
+        })
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["dimensions_json"] == {id_nom: "Pérez Juan"}

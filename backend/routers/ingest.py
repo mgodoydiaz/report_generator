@@ -33,6 +33,10 @@ from backend.config import UPLOADS_DIR
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Dimension, IngestLog, Metric, MetricDimension, Pipeline
+from backend.rgenerator.core.pares_nombre import (
+    completar_pares_nombre,
+    pares_nombre_normalizado,
+)
 from backend.routers.pipelines import _INPUT_KEY_RE, MAX_UPLOAD_BYTES, _get_pipeline_config_from_db
 from backend.routers.tables import invalidate_metric_df_cache
 from backend.rgenerator.tooling.pipeline_tools import PipelineRunner
@@ -265,6 +269,11 @@ def ingest_metric_data(
             return _log_to_response(prev)
 
     dim_name_to_id = _dim_name_to_id(db, metric)
+    # Pares X/X_Norm de la métrica: si el integrador manda solo una de las
+    # dos dimensiones del par, la otra se completa antes de insertar (misma
+    # red de seguridad que `SaveToMetric` en pipelines y que el import de
+    # /values). Ver `backend/rgenerator/core/pares_nombre.py`.
+    pares_nombre = pares_nombre_normalizado(dim_name_to_id)
     fields = _expected_fields(metric)
 
     errors: List[dict] = []
@@ -276,6 +285,8 @@ def ingest_metric_data(
         if not ok:
             errors.append({"index": idx, "reason": reason})
             continue
+        if pares_nombre:
+            completar_pares_nombre(dims_json, pares_nombre)
         rows_ok += 1
         if not body.dry_run:
             to_insert.append(make_metric_data(
