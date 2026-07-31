@@ -134,42 +134,22 @@ Los endpoints y el registro siguen vivos; solo se retiraron las tarjetas del sel
 
 ## 3. Esquema de ramas
 
-**Estado: todo el trabajo está en `main`. Ninguna rama tiene commits sin mergear.** Verificado el 2026-07-30 con `git rev-list --count main..<rama>` sobre las 14 ramas remotas: todas dan 0.
+**Limpieza hecha el 2026-07-31**: se eliminaron las 12 ramas obsoletas (`dev2`, `dev3`, `dev_1`, `dev_pdfs`, `devtest`, `implementar_docker`, `claude/agitated-diffie`, `feat/pdf-engine-fidel-latex` y las 4 `feature/*`). Antes de borrar se verificó con `git rev-list --count main..<rama>` que **las 14 tenían 0 commits fuera de main** — no se perdió nada. Los tags (`v0.7.0` y anteriores) siguen intactos y apuntan a su historia.
 
 ```
-main (v0.7.0, 167cf5a) ──────────────────────────────► PRODUCCIÓN (Railway auto-deploy)
+main ──────────────────────────────► PRODUCCIÓN (Railway auto-deploy)
   ▲
-  │  merge
+  │  merge con GO explícito de Miguel
   │
-dev2 (167cf5a) ── rama integradora ACTIVA ── trabajar aquí
-  ▲
-  │  (dev3 se fusionó aquí; quedó 13 commits atrás, ya contenida)
-  │
-dev3 (0a6e7a0) ── histórica del sprint QA, ya contenida en main
+dev ─── rama de trabajo ÚNICA
 ```
 
-### Ramas y su estado
+| Rama | Rol |
+|---|---|
+| `main` | Producción. Railway auto-deploya. Solo se mergea con GO explícito. |
+| `dev` | Desarrollo. **Trabajar siempre aquí.** |
 
-| Rama | Último commit | Estado | Acción sugerida |
-|---|---|---|---|
-| `main` | 2026-07-30 | **Producción**, v0.7.0 | — |
-| `dev2` | 2026-07-30 | **Integradora activa** — trabajar aquí | Mantener |
-| `dev3` | 2026-07-30 | Contenida en main (13 comm. atrás) | Archivar o resincronizar |
-| `dev` | 2026-05-25 | Contenida en main (65 atrás) | **Archivar** — dev2 la reemplazó |
-| `devtest` | 2026-05-05 | Contenida en main (156 atrás) | Archivar |
-| `dev_1` | 2026-04-21 | Contenida en main (271 atrás) | Archivar |
-| `dev_pdfs` | 2026-04-22 | Contenida en main (270 atrás) | Archivar |
-| `feat/pdf-engine-fidel-latex` | 2026-05-03 | Contenida en main (227 atrás) | Archivar |
-| `feature/reportes-word-indicadores` | 2026-07-11 | Contenida en main (62 atrás) | Archivar |
-| `feature/w0-hardening` | 2026-07-12 | Contenida en main (62 atrás) | Archivar |
-| `feature/w1-ingesta-api` | 2026-07-12 | Contenida en main (54 atrás) | Archivar |
-| `feature/w2-motor-pivotes` | 2026-07-12 | Contenida en main (50 atrás) | Archivar |
-| `implementar_docker` | 2026-04-11 | Contenida en main (315 atrás) | Archivar |
-| `claude/agitated-diffie` | 2026-04-05 | Contenida en main (321 atrás) | Archivar |
-
-> Nota: la copia **local** de `feature/w2-motor-pivotes` tiene un commit que nunca se pusheó a su remoto, pero **ese commit ya está en `main`** — no hay trabajo en riesgo.
-
-**Convención vigente**: trabajar en `dev2` → merge a `main` con GO explícito (dispara el deploy). Las ramas viejas se pueden borrar del remoto sin perder nada; si prefieres conservar el historial visible, basta con dejarlas quietas.
+Esto restablece la convención original de [CLAUDE.md](../CLAUDE.md), de la que nos habíamos desviado con las ramas integradoras `dev2`/`dev3`. Para trabajo experimental que no deba tocar `dev`, crear una `feature/*` puntual y borrarla al mergear.
 
 ---
 
