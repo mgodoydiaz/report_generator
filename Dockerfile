@@ -49,7 +49,13 @@ FROM base AS dev
 EXPOSE 8000
 
 # pip install . toma el código del volumen montado en /app
-CMD ["/bin/sh", "-c", "pip install -q . && uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload"]
+#
+# --reload-dir backend: el bind mount trae el repo completo (~24k archivos, de los
+# cuales 19.5k son frontend/node_modules y 3k son .git). Docker Desktop no propaga
+# inotify a través de su capa de virtualización, así que el reloader caía a polling
+# y recorría todo el árbol en bucle: ~11% de CPU constante para vigilar 99 .py.
+# Acotarlo a backend/ deja el hot-reload igual de útil a costo cero.
+CMD ["/bin/sh", "-c", "pip install -q . && uvicorn backend.api:app --host 0.0.0.0 --port 8000 --reload --reload-dir backend"]
 
 # --------------------------------------------------------------
 # Stage prod: imagen autocontenida lista para producción
