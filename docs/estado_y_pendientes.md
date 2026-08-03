@@ -60,6 +60,40 @@ Documento vivo. Complementa a [ROADMAP.md](../ROADMAP.md) (backlog histórico) y
 
 Prioridad: **P0** bloquea uso · **P1** visible y serio · **P2** pulido.
 
+### 2.0 QA masivo con agentes (2026-08-03) — puntajes y hallazgos
+
+Se corrió un QA integral de los 6 indicadores de la org 1 con verificación numérica independiente (SQL contra `metric_data`). Artefactos: matriz por indicador (`docs/reportes/qa_matriz_indicadores_2026-08-03.md`, script reutilizable `scripts/qa_matriz_indicadores.py`), críticas por informe (`docs/reportes/qa_informes_2026-08-03/*.md`), dashboards (`docs/reportes/qa_dashboards_2026-08-03.md`), mapa de capas de layout (`docs/desarrollo/mapa_capas_layout.md`), índice visual (`data/output/qa_indicadores/2026-08-03/index.html`).
+
+| Indicador | Informes /100 | Dashboard /100 |
+|---|---:|---:|
+| SIMCE | 72 | 49 |
+| Cálculo Veloz | 69 | 72 |
+| Fluidez Lectora | 67 | 80 |
+| IDEL | 63 | 25 |
+| SIMCE Panguipulli | 62 | 64 |
+| DIA | 54 | 44 |
+
+**Conclusión transversal**: la aritmética de agregación es exacta en los 6 (0 discrepancias en ~100 recálculos SQL); los defectos son semánticos — resolución de períodos anclada al calendario, identidad de estudiantes (filas contadas como personas, anónimos descartados), roles/valores de columna desalineados (`Versión` "1/2/3" vs specs "v1/v2/v3", rol `logro_1` sin definir en IDEL), colores por índice sin `color_overrides` (semáforos invertidos en SIMCE y Panguipulli), y órdenes alfabéticos donde van cronológicos.
+
+**Pre-requisitos de la fase 4 identificados por el QA** (cerrar antes de portar módulos): identidad DIA (375 filas Panguipulli sin nombre), fusión de establecimientos homónimos (`I D`/`II D` en dos colegios sin campo `Establecimiento` en informes), ~~anclaje del resolver de períodos~~ (✅ hecho), y extraer el esqueleto común de `simce.py` a un módulo parametrizado — GO de Miguel 2026-08-03.
+
+**Fixes aplicados el 2026-08-03** (en `dev`, tras el QA; suite 1746 verde, build OK):
+
+| Fix | Efecto verificado |
+|---|---|
+| UI dejaba de usar el motor único (`engine: 'weasyprint'` forzado) | SIMCE por UI: 183 KB → 983 KB (informe completo). Selector explícito del modal sigue funcional |
+| Resolver de períodos anclado a la última evaluación con datos | Semestral/anual pasan de fallar en 5/6 a resolver en todos; período efectivo rotulado ("Evolución del año 2025") |
+| **Tarjeta semestral retirada** (decisión de producto: ≈ anual tras el anclaje) | 3 tarjetas; API `tipo:"semestral"` sigue viva (patrón Word, reactivable) |
+| Specs IDEL `v1/v2/v3` → `1/2/3` (decisión de Miguel; script `fix_specs_version_idel.py`) | Dashboard IDEL revive: 3.890 evaluaciones visibles, roster poblado, matriz de transición 4×4 |
+| Semáforos por índice sin `color_overrides` — eran **10 specs en 4 indicadores** (script `fix_semaforo_color_overrides.py`) | Insuficiente rojo / Adecuado verde, desde `achievement_levels` |
+| Rol `logro_1` faltante en IDEL (script `fix_column_roles_idel.py`) | PDF v1: etiquetas `0.0` → `21.5` (verificado por OCR); tabla resumen deja de decir "Sin datos" |
+| Token `habilidad_prueba` en esquema Panguipulli | Gráfico de habilidades: promedio anual → prueba del informe (46.4% → 55.95% en el caso medido) |
+| Orden temporal declarado (`temporal_config`) en gráficos y tablas del motor v1 | Meses cronológicos (CV) e hitos DIAGNÓSTICO→INTERMEDIO→CIERRE (DIA), antes alfabéticos |
+| Página en blanco al cambiar a indicador con menos tabs | Reset/clamp del tab activo, barrido por los 6 indicadores |
+| Tests deterministas de fecha (`periodos.hoy()` congelable) | La suite ya no se rompe al cruzar semestres |
+
+Los 3 scripts de configuración (semáforos, rol IDEL, specs Versión) son org-scoped, idempotentes, con dry-run — **pendientes de correr en producción con GO de Miguel**. Pendientes menores nuevos: 2 textos de display en DB aún dicen "v1, v2, v3" (description del spec 141 y nota del tab Tendencia); `derived_columns` de CV tiene un `slope` ordinal sin `ordinal_levels` (error tragado en silencio); decisión aparcada: filtro de tablas "Estudiantes en Riesgo" (propuesta de Miguel: bajo el primer cuartil); revisar en producción si IDEL 2026 v2/v3 son clones de 2025 como en dev.
+
 ### 2.1 Motor único — fases 4 y 5 (el trabajo grande que sigue)
 
 | # | Pendiente | Notas |
@@ -97,7 +131,7 @@ Los endpoints y el registro siguen vivos; solo se retiraron las tarjetas del sel
 
 | # | Pendiente | Notas |
 |---|---|---|
-| P1 | **583 filas sin identidad en producción** (576 DIA + 7 Panguipulli) | Sin `Nombre` ni `Nombre_Norm`: irreparables sin los archivos fuente. El patrón (`I D`: 26 con nombre + 30 sin) sugiere **carga duplicada del mismo curso desde dos archivos**, lo que además podría estar inflando conteos. Requiere revisión con los archivos originales. |
+| P1 | **583 filas sin identidad en producción** (576 DIA + 7 Panguipulli) | **Hipótesis de carga duplicada DESMENTIDA por el QA 2026-08-03**: 0 colisiones por `Nombre_Norm`, los `Logro` no se solapan — son **375 alumnos de Panguipulli cargados sin nombre** (el cohorte LECTURA·DIAGNÓSTICO·2026). No inflan conteos: los **desinflan en el motor v1** (`report_steps.py:1356` descarta identidades `None` en cursos mixtos → "Alumnos=26" junto a niveles que suman 56). Acción correcta: recuperar identidades desde los archivos fuente, no des-duplicar. |
 | P1 | `RequestUserFiles` consume en silencio archivos residuales de `data/pipeline_runs/uploads/` | Un usuario puede cargar datos viejos sin darse cuenta (ya ocurrió durante las pruebas). Falta limpiar residuos y pedir confirmación antes de reutilizar. |
 | P1 | El aviso de "columna esperada llegó vacía" no se muestra en pantalla | El backend lo emite y lo devuelve en la respuesta, pero `PipelineExecutionModal.jsx` no lo renderiza. Mejora barata y de alto valor. |
 | P1 | `Numero Lista` ausente en las cargas 2026 | El XLS trae "Número de Lista" (con tilde) y la métrica declara "Numero Lista". Misma familia de bugs que `Nombre` y `Pregunta`. |
