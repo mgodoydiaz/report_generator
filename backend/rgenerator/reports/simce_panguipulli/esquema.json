@@ -127,9 +127,10 @@
     },
     {
       "tipo": "chart",
+      "_comment": "df_input debe ser 'habilidad_prueba' (recorte a la prueba del informe), NO 'habilidad' (histórico del año): bajo un encabezado que dice SEPTIEMBRE 2025 el gráfico mostraba el promedio abril-septiembre, con hasta 10 pp de error e inversión del ranking de habilidades (QA 2026-08-03, H-1).",
       "titulo": "Logro Promedio por Habilidad",
       "fn": "valor_promedio_agrupado_por",
-      "df_input": "habilidad",
+      "df_input": "habilidad_prueba",
       "params": {
         "columna_valor": "LogroHabilidad",
         "agrupar_principal_por": "Curso",

@@ -462,6 +462,35 @@ def orden_valor_temporal(columna: str, valor, temporal_config: Optional[dict] = 
     return (_TIER_NATURAL, 0.0, _clave_natural_estable(crudo))
 
 
+def clave_orden_categorias(columna: str, temporal_config: Optional[dict] = None):
+    """Key function para ordenar las categorías de un eje del dashboard.
+
+    Si `temporal_config` declara un `order` para `columna` — el orden que el
+    usuario configuró en la página de Indicadores — ese orden manda. Sin esto
+    los ejes temporales del motor v1 salían alfabéticos y un gráfico titulado
+    "Evolución ... por Mes" mostraba ABRIL·AGOSTO·JUNIO-JULIO·MAYO·OCTUBRE·
+    SEPTIEMBRE (QA Cálculo Veloz 2026-08-03, H2). Los valores que la config no
+    declara quedan después de los declarados, en orden natural.
+
+    Sin declaración se devuelve `_natural_sort_key` tal cual, o sea el
+    comportamiento histórico: es el correcto para las dimensiones no temporales
+    (Curso) y para las que la config deja con `order: []` porque ya ordenan
+    solas (Año, Versión de IDEL).
+    """
+    declarado = _orden_declarado(columna, temporal_config)
+    if not declarado:
+        return _natural_sort_key
+    indices = {v: i for i, v in enumerate(declarado)}
+
+    def _clave(valor):
+        crudo = '' if valor is None else str(valor)
+        if crudo in indices:
+            return (_TIER_DECLARADO, float(indices[crudo]), ())
+        return (_TIER_NATURAL, 0.0, _clave_natural_estable(crudo))
+
+    return _clave
+
+
 def combinaciones_temporales(records: list, columnas: List[str],
                              temporal_config: Optional[dict] = None) -> List[Dict[str, str]]:
     """Combinaciones temporales presentes en `records`, de la más antigua a la
@@ -702,6 +731,11 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
         except Exception:
             column_roles = {}
 
+    # Orden declarado de las dimensiones temporales. Lo consumen tanto el
+    # filtro de "última combinación" como el orden de las categorías del eje
+    # (`clave_orden_categorias`): sin él los ejes de Mes/Hito salen alfabéticos.
+    temporal_cfg = _temporal_config_de_indicador(indicator)
+
     comp = item.get('component', '')
     # El field SIN resolver se conserva: `records_para_campo_de_valor` acepta
     # tanto el alias de rol ('_logro_1') como la columna resuelta ('_logro').
@@ -783,8 +817,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             records_filtered = records_metrica
             if campos_periodo and gf not in campos_periodo:
                 combos = combinaciones_temporales(
-                    records_metrica, columnas_periodo,
-                    _temporal_config_de_indicador(indicator),
+                    records_metrica, columnas_periodo, temporal_cfg,
                 )
                 if len(combos) >= 2:
                     records_filtered = filtrar_records_por_combinacion(
@@ -799,8 +832,10 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             level_colors = {l.get('name', ''): l.get('color')
                             for l in levels_cfg if l.get('color')}
 
+            # En los layouts históricos `gf` ES la columna de período (_mes,
+            # _hito): el eje X debe seguir el orden declarado, no el alfabético.
             groups = sorted({str(r.get(gf, '')) for r in records_filtered if r.get(gf) is not None},
-                            key=_natural_sort_key)
+                            key=clave_orden_categorias(gf, temporal_cfg))
             observed = {str(r.get(lf, '')) for r in records_filtered
                         if r.get(lf) is not None and str(r.get(lf, '')) != ''}
             # Los achievement_levels solo aplican cuando el campo contado ES el
@@ -874,9 +909,9 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             pf = _periodo_presente_en_records(pf, records_vf, column_roles)
 
             groups = sorted({str(r.get(gf, '')) for r in records_vf if r.get(gf) is not None},
-                            key=_natural_sort_key)
+                            key=clave_orden_categorias(gf, temporal_cfg))
             periods = sorted({str(r.get(pf, '')) for r in records_vf if r.get(pf) is not None},
-                             key=_natural_sort_key)
+                             key=clave_orden_categorias(pf, temporal_cfg))
 
             import numpy as np
             x = np.arange(len(periods))
@@ -943,8 +978,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
             records_local = records
             if campos_periodo and gf not in campos_periodo:
                 combos = combinaciones_temporales(
-                    records, columnas_periodo,
-                    _temporal_config_de_indicador(indicator),
+                    records, columnas_periodo, temporal_cfg,
                 )
                 if len(combos) >= 2:
                     records_local = filtrar_records_por_combinacion(
@@ -952,7 +986,7 @@ def _chart_to_png_b64(item: dict, records: list[dict], indicator=None) -> str:
                     ) or records
 
             groups = sorted({str(r.get(gf, '')) for r in records_local if r.get(gf) is not None},
-                            key=_natural_sort_key)
+                            key=clave_orden_categorias(gf, temporal_cfg))
 
             import numpy as np
             x = np.arange(len(groups))
@@ -1314,7 +1348,12 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
                 elif not combo_actual:
                     buckets[(g, vf)].append(val)
 
-        groups = sorted({k[0] for k in buckets.keys()}, key=_natural_sort_key)
+        # Mismo criterio que los gráficos: si `gf` es una dimensión temporal con
+        # orden declarado, las filas siguen ese orden. Si no, orden natural (el
+        # de siempre, correcto para Curso).
+        groups = sorted({k[0] for k in buckets.keys()},
+                        key=clave_orden_categorias(
+                            gf, _temporal_config_de_indicador(indicator)))
 
         # Headers
         header = [item.get('groupLabel', 'Curso'), 'Alumnos']

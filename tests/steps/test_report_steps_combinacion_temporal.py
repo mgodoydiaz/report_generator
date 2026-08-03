@@ -1,4 +1,7 @@
-"""El "último período" es la última COMBINACIÓN temporal (motor PDF v1).
+"""Orden temporal del motor PDF v1: la combinación snapshot y el eje de los
+gráficos.
+
+Primera mitad — el "último período" es la última COMBINACIÓN temporal.
 
 El rol `evaluacion_num` puede declarar VARIAS columnas: DIA usa Hito + Año,
 SIMCE Mes + Año, Fluidez Lectora N Prueba + Fecha. El filtro snapshot resolvía
@@ -11,6 +14,12 @@ La regla: la última combinación de todas las columnas del rol, ordenando cada
 columna por (1) el orden declarado en `indicator.temporal_config`, (2) la
 semántica de `reports.periodos` (años como int, hitos/meses/versiones por su
 mes representativo), (3) `_natural_sort_key`.
+
+Segunda mitad — el EJE de los gráficos usa el mismo orden declarado
+(`clave_orden_categorias`). Antes ordenaba con `_natural_sort_key` a secas e
+ignoraba `temporal_config`, así que un gráfico titulado "Evolución ... por Mes"
+salía ABRIL·AGOSTO·JUNIO-JULIO·MAYO·OCTUBRE·SEPTIEMBRE (QA Cálculo Veloz
+2026-08-03, H2).
 """
 from __future__ import annotations
 
@@ -21,6 +30,7 @@ from backend.rgenerator.core.report_steps import (
     _chart_to_png_b64,
     _natural_sort_key,
     _table_section,
+    clave_orden_categorias,
     columnas_snapshot_temporal,
     columnas_temporales_del_rol,
     combinaciones_temporales,
@@ -325,3 +335,234 @@ class TestSnapshotNoSumaDosAnios:
                           indicator=self._indicador())
         alturas = [v for _, vals in barras_espiadas for v in vals]
         assert alturas == pytest.approx([0.8])
+
+
+# ═════════════════ orden declarado en el EJE de los gráficos ═════════════════
+#
+# QA Cálculo Veloz 2026-08-03 (H2): los 3 gráficos del informe histórico
+# ordenaban el eje de meses alfabéticamente aunque el indicador ya declaraba el
+# orden correcto en `temporal_config`. `_orden_declarado` existía pero solo lo
+# consumía `combinaciones_temporales`.
+
+# `temporal_config` real del indicador 4 (Cálculo Veloz, org 1). Los meses son
+# el caso patológico: alfabéticamente AGOSTO va segundo y JUNIO-JULIO tercero.
+TEMPORAL_CONFIG_CV = {
+    "levels": [
+        {"label": "Mes", "sort_mode": "custom",
+         "order": ["MARZO", "ABRIL", "MAYO", "JUNIO-JULIO", "AGOSTO",
+                   "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"]},
+        {"label": "N Prueba", "sort_mode": "numeric", "order": []},
+    ],
+}
+
+COLUMN_ROLES_CV = {
+    "logro_1": [{"metric_id": 9, "column": "Nota"}],
+    "nivel_de_logro": [{"metric_id": 9, "column": "Nivel"}],
+    "evaluacion_num": [{"metric_id": 9, "column": "Mes"},
+                       {"metric_id": 9, "column": "N Prueba"}],
+}
+
+# El orden en que los meses llegan a los records: revuelto a propósito, para
+# que ni el orden de inserción ni el alfabético den por casualidad el correcto.
+MESES_CV_DESORDENADOS = ["OCTUBRE", "ABRIL", "SEPTIEMBRE", "JUNIO-JULIO",
+                         "AGOSTO", "MAYO"]
+MESES_CV_CRONOLOGICOS = ["ABRIL", "MAYO", "JUNIO-JULIO", "AGOSTO",
+                         "SEPTIEMBRE", "OCTUBRE"]
+
+
+@pytest.mark.unit
+class TestClaveOrdenCategorias:
+    def test_sin_config_es_el_orden_natural_de_siempre(self):
+        # Identidad, no equivalencia: sin declaración el comportamiento no
+        # cambia en absoluto respecto de antes del fix.
+        assert clave_orden_categorias("Mes", None) is _natural_sort_key
+        assert clave_orden_categorias("Mes", {}) is _natural_sort_key
+
+    def test_order_vacio_cae_al_orden_natural(self):
+        # DIA declara Año y IDEL declara Versión con `order: []` porque ya
+        # ordenan solas. No deben pasar por el tier declarado.
+        cfg = {"levels": [{"label": "Versión", "sort_mode": "numeric", "order": []}]}
+        assert clave_orden_categorias("Versión", cfg) is _natural_sort_key
+
+    def test_columna_no_declarada_cae_al_orden_natural(self):
+        # Curso no es una dimensión temporal: el eje de cursos no se toca.
+        assert clave_orden_categorias("_curso", TEMPORAL_CONFIG_CV) is _natural_sort_key
+
+    def test_meses_de_calculo_veloz_salen_cronologicos(self):
+        clave = clave_orden_categorias("_mes", TEMPORAL_CONFIG_CV)
+        assert sorted(MESES_CV_DESORDENADOS, key=clave) == MESES_CV_CRONOLOGICOS
+        # Y el alfabético (lo que hacía antes) NO es este orden.
+        assert sorted(MESES_CV_DESORDENADOS, key=_natural_sort_key) != MESES_CV_CRONOLOGICOS
+
+    def test_matchea_el_label_del_config_con_el_field_del_layout(self):
+        # El layout trae `_mes`/`_version`; el config trae "Mes"/"Versión".
+        cfg = {"levels": [{"label": "Versión", "order": ["v3", "v1", "v2"]}]}
+        clave = clave_orden_categorias("_version", cfg)
+        assert sorted(["v1", "v2", "v3"], key=clave) == ["v3", "v1", "v2"]
+
+    def test_valores_no_declarados_quedan_despues_y_no_explotan(self):
+        clave = clave_orden_categorias("_mes", TEMPORAL_CONFIG_CV)
+        valores = ["SEPTIEMBRE", "SIN MES", "ABRIL", "2 A"]
+        ordenados = sorted(valores, key=clave)
+        assert ordenados[:2] == ["ABRIL", "SEPTIEMBRE"]
+        assert set(ordenados[2:]) == {"SIN MES", "2 A"}
+
+    def test_hitos_dia_respetan_el_protocolo(self):
+        # Alfabéticamente sería CIERRE·DIAGNOSTICO·INTERMEDIO.
+        clave = clave_orden_categorias("_hito", TEMPORAL_CONFIG_DIA)
+        assert sorted(["INTERMEDIO", "CIERRE", "DIAGNOSTICO"], key=clave) == [
+            "DIAGNOSTICO", "INTERMEDIO", "CIERRE",
+        ]
+
+
+@pytest.fixture
+def ejes_espiados(monkeypatch):
+    """Captura las categorías del eje X: las `x` de `bar` y los xticklabels.
+
+    `StackedCountByGroup` pasa las categorías como `x` de `Axes.bar`;
+    `GroupedBarByPeriod` usa posiciones numéricas y las etiqueta aparte con
+    `set_xticklabels`.
+    """
+    matplotlib = pytest.importorskip("matplotlib")
+    matplotlib.use("Agg")
+    from matplotlib.axes import Axes
+
+    capturado: dict[str, list] = {"bar_x": [], "xticklabels": []}
+    bar_original = Axes.bar
+    labels_original = Axes.set_xticklabels
+
+    def _bar_espia(self, x, height, *args, **kwargs):
+        xs = list(x)
+        if xs and all(isinstance(v, str) for v in xs):
+            capturado["bar_x"] = xs
+        return bar_original(self, x, height, *args, **kwargs)
+
+    def _labels_espia(self, labels, *args, **kwargs):
+        capturado["xticklabels"] = [str(l) for l in labels]
+        return labels_original(self, labels, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "bar", _bar_espia)
+    monkeypatch.setattr(Axes, "set_xticklabels", _labels_espia)
+    return capturado
+
+
+def _records_cv_por_mes():
+    """Un record por mes y curso, con el mes desordenado en la lista."""
+    return [
+        {METRIC_ID_KEY: 9, "_mes": mes, "_n_prueba": str(i + 1),
+         "_curso": curso, "_nivel": NIVELES[i % 3], "_nota": 0.5 + i / 100}
+        for i, mes in enumerate(MESES_CV_DESORDENADOS)
+        for curso in ("1 A", "2 A")
+    ]
+
+
+@pytest.mark.unit
+class TestEjeTemporalRespetaElOrdenDeclarado:
+    def _indicador_cv(self):
+        return _IndicadorFake(
+            column_roles=COLUMN_ROLES_CV,
+            achievement_levels=[{"name": n, "order": i} for i, n in enumerate(NIVELES)],
+            temporal_config=TEMPORAL_CONFIG_CV,
+        )
+
+    def test_grouped_bar_ordena_el_eje_de_meses(self, ejes_espiados):
+        item = {
+            "component": "GroupedBarByPeriod",
+            "groupField": "_curso",
+            "periodField": "_mes",
+            "valueField": "_logro_1",
+        }
+        _chart_to_png_b64(item, _records_cv_por_mes(), indicator=self._indicador_cv())
+        assert ejes_espiados["xticklabels"] == MESES_CV_CRONOLOGICOS
+
+    def test_grouped_bar_sin_temporal_config_conserva_el_alfabetico(self, ejes_espiados):
+        """Fallback: sin declaración, el comportamiento previo intacto."""
+        item = {
+            "component": "GroupedBarByPeriod",
+            "groupField": "_curso",
+            "periodField": "_mes",
+            "valueField": "_logro_1",
+        }
+        indicador = _IndicadorFake(column_roles=COLUMN_ROLES_CV)
+        _chart_to_png_b64(item, _records_cv_por_mes(), indicator=indicador)
+        assert ejes_espiados["xticklabels"] == sorted(
+            MESES_CV_DESORDENADOS, key=_natural_sort_key
+        )
+
+    def test_stacked_ordena_el_eje_cuando_agrupa_por_mes(self, ejes_espiados):
+        """Layout histórico: el groupField ES la columna de período."""
+        item = {
+            "component": "StackedCountByGroup",
+            "groupField": "_mes",
+            "levelField": "_nivel_de_logro",
+        }
+        _chart_to_png_b64(item, _records_cv_por_mes(), indicator=self._indicador_cv())
+        assert ejes_espiados["bar_x"] == MESES_CV_CRONOLOGICOS
+
+    def test_stacked_no_altera_el_eje_de_cursos(self, ejes_espiados):
+        """Curso no está declarado en `temporal_config`: orden natural."""
+        item = {
+            "component": "StackedCountByGroup",
+            "groupField": "_curso",
+            "levelField": "_nivel_de_logro",
+        }
+        _chart_to_png_b64(item, _records_cv_por_mes(), indicator=self._indicador_cv())
+        assert ejes_espiados["bar_x"] == ["1 A", "2 A"]
+
+    def test_stacked_por_hito_sigue_el_protocolo_dia(self, ejes_espiados):
+        """No romper DIA: DIAGNOSTICO→INTERMEDIO→CIERRE, no el alfabético."""
+        records = [
+            {METRIC_ID_KEY: 6, "_ano": "2026", "_hito": hito, "_curso": "1 A",
+             "_nivel_logro": NIVELES[i % 3], "_logro": 0.5}
+            for i, hito in enumerate(["INTERMEDIO", "CIERRE", "DIAGNOSTICO"])
+        ]
+        item = {
+            "component": "StackedCountByGroup",
+            "groupField": "_hito",
+            "levelField": "_nivel_de_logro",
+        }
+        indicador = _IndicadorFake(
+            column_roles=COLUMN_ROLES_DIA,
+            achievement_levels=[{"name": n, "order": i} for i, n in enumerate(NIVELES)],
+            temporal_config=TEMPORAL_CONFIG_DIA,
+        )
+        _chart_to_png_b64(item, records, indicator=indicador)
+        assert ejes_espiados["bar_x"] == ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"]
+
+    def test_stacked_por_version_idel_no_cambia(self, ejes_espiados):
+        """IDEL declara Versión con `order: []` → orden natural, como antes."""
+        roles = {
+            "nivel_de_logro": [{"metric_id": 8, "column": "Nivel"}],
+            "evaluacion_num": [{"metric_id": 8, "column": "Versión"},
+                               {"metric_id": 8, "column": "Año"}],
+        }
+        cfg = {"levels": [{"label": "Año", "sort_mode": "numeric", "order": []},
+                          {"label": "Versión", "sort_mode": "numeric", "order": []}]}
+        records = [
+            {METRIC_ID_KEY: 8, "_ano": "2025", "_version": v, "_nivel": NIVELES[i % 3]}
+            for i, v in enumerate(["3", "1", "2"])
+        ]
+        item = {
+            "component": "StackedCountByGroup",
+            "groupField": "_version",
+            "levelField": "_nivel_de_logro",
+        }
+        indicador = _IndicadorFake(
+            column_roles=roles,
+            achievement_levels=[{"name": n, "order": i} for i, n in enumerate(NIVELES)],
+            temporal_config=cfg,
+        )
+        _chart_to_png_b64(item, records, indicator=indicador)
+        assert ejes_espiados["bar_x"] == ["1", "2", "3"]
+
+    def test_summary_table_ordena_sus_filas_igual_que_los_graficos(self):
+        """Tabla y gráfico en la misma página no pueden discrepar en el orden."""
+        item = {
+            "component": "SummaryTable",
+            "groupField": "_mes",
+            "valueField": ["_logro_1"],
+            "periodField": "_mes",
+        }
+        out = _table_section(item, _records_cv_por_mes(),
+                             indicator=self._indicador_cv())
+        assert [fila[0] for fila in out["rows"]] == MESES_CV_CRONOLOGICOS
