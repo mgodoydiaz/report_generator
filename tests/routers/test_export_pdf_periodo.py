@@ -27,11 +27,6 @@ LAYOUT_HIST = json.dumps({"sections": [{"type": "line"}], "marca": "historico"})
 
 
 @pytest.fixture
-def hoy():
-    return date.today()
-
-
-@pytest.fixture
 def indicador(db_session, org, hoy):
     """Indicador con Curso/Año/Mes/N Prueba y datos del año en curso.
 
@@ -182,7 +177,14 @@ class TestExportPDFPeriodoErrores:
         assert resp.status_code == 400
         assert "dimensión temporal" in resp.json()["detail"]
 
-    def test_anual_sin_datos_del_anio_400(self, client_auth, db_session, org, hoy):
+    def test_anual_de_un_indicador_viejo_ancla_en_su_ultimo_anio(
+        self, client_auth, db_session, org, hoy
+    ):
+        """Antes daba 400 "Sin datos del año en curso"; ahora entrega 2019.
+
+        El 400 quedó reservado para el indicador que no tiene datos —
+        lo cubre `test_indicador_sin_datos_400`.
+        """
         dims = {n: make_dimension(db_session, org, name=n) for n in ("Año", "Mes")}
         metric = make_metric(db_session, org, name="M por Estudiante",
                              data_type="float", dimensions=list(dims.values()))
@@ -192,11 +194,14 @@ class TestExportPDFPeriodoErrores:
         })
         ind = make_indicator(db_session, org, name="Viejo", metrics=[metric],
                             pdf_layout_historico=LAYOUT_HIST)
-        resp, _ = _exportar(client_auth, ind.id_indicator, {
+        resp, mock = _exportar(client_auth, ind.id_indicator, {
             "periodo": {"tipo": "anual"},
         })
-        assert resp.status_code == 400
-        assert "Sin datos del año en curso" in resp.json()["detail"]
+        assert resp.status_code == 200, resp.text
+        assert mock.call_args.kwargs["filters"] == {
+            str(dims["Año"].id_dimension): "2019"
+        }
+        assert mock.call_args.kwargs["pdf_layout_override"]["marca"] == "historico"
 
     def test_indicador_sin_datos_400(self, client_auth, db_session, org):
         ind = make_indicator(db_session, org, name="Sin Datos", pdf_layout=LAYOUT_EVAL)
@@ -240,6 +245,75 @@ class TestExportPDFPeriodoErrores:
             "periodo": {"tipo": "ultima_prueba"},
         })
         assert resp.status_code == 404
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# El período se ancla en los DATOS, no en el calendario
+#
+# Escenario del QA de agosto-2026: la suite corre con `hoy` congelado en
+# 15-06-2026, así que estos tests mueven la fecha de referencia a
+# 03-08-2026 (2º semestre) para reproducir lo que el usuario vio en vivo.
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def en_agosto_2026(monkeypatch):
+    """Mueve `periodos.hoy()` al 2º semestre, después del `_congelar_hoy`."""
+    from backend.rgenerator.reports import periodos
+    monkeypatch.setattr(periodos, "hoy", lambda: date(2026, 8, 3))
+    return date(2026, 8, 3)
+
+
+@pytest.mark.integration
+class TestPeriodoAncladoEnLosDatos:
+    def test_semestral_en_agosto_entrega_el_primer_semestre(
+        self, client_auth, indicador, hoy, en_agosto_2026
+    ):
+        """El indicador solo tiene datos hasta JUNIO 2026 (1er semestre).
+
+        Antes: 400 "Sin datos del 2º semestre 2026". Ahora: el informe del
+        1er semestre 2026, rotulado como tal.
+        """
+        resp, mock = _exportar(client_auth, indicador.id_indicator, {
+            "periodo": {"tipo": "semestral"},
+        })
+        assert resp.status_code == 200, resp.text
+        filtros = mock.call_args.kwargs["filters"]
+        assert filtros[indicador._ident["Año"]] == str(hoy.year)
+        assert filtros[indicador._ident["Mes"]] == [NUMERO_A_MES[hoy.month]]
+        assert mock.call_args.kwargs["pdf_layout_override"]["marca"] == "historico"
+
+    def test_anual_en_agosto_con_datos_solo_del_anio_pasado(
+        self, client_auth, db_session, org, en_agosto_2026
+    ):
+        """Caso Cálculo Veloz: 2025 completo, nada de 2026 ⇒ informe 2025."""
+        dims = {n: make_dimension(db_session, org, name=n) for n in ("Año", "Mes")}
+        metric = make_metric(db_session, org, name="CV por Estudiante",
+                             data_type="float", dimensions=list(dims.values()))
+        for mes in ("AGOSTO", "OCTUBRE"):
+            make_metric_data(db_session, metric, value=1.0, dimensions_json={
+                str(dims["Año"].id_dimension): "2025",
+                str(dims["Mes"].id_dimension): mes,
+            })
+        ind = make_indicator(db_session, org, name="Cálculo Veloz", metrics=[metric],
+                             pdf_layout_historico=LAYOUT_HIST)
+        resp, mock = _exportar(client_auth, ind.id_indicator, {
+            "periodo": {"tipo": "anual"},
+        })
+        assert resp.status_code == 200, resp.text
+        assert mock.call_args.kwargs["filters"] == {
+            str(dims["Año"].id_dimension): "2025"
+        }
+
+    def test_indicador_sin_datos_sigue_dando_400(
+        self, client_auth, db_session, org, en_agosto_2026
+    ):
+        ind = make_indicator(db_session, org, name="Vacío",
+                             pdf_layout_historico=LAYOUT_HIST)
+        resp, _ = _exportar(client_auth, ind.id_indicator, {
+            "periodo": {"tipo": "anual"},
+        })
+        assert resp.status_code == 400
+        assert "Sin datos" in resp.json()["detail"]
 
 
 LAYOUT_CON_HEADER = json.dumps({

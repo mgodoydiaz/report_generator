@@ -9,7 +9,7 @@ Dos caminos, deliberadamente separados:
     al motor único — lo invoca `POST /api/reports/custom/simce`, que nunca
     manda `modo`.
 
-``modo ∈ MODOS``
+``modo ∈ MODOS_SOPORTADOS``
     El piloto del motor único (contrato §4): el módulo arma sus propios
     DataFrames y su propia lista de secciones según el período, y los pasa
     a `runtime.construir_pdf` como esquema EN MEMORIA (N5). No usa el
@@ -65,9 +65,19 @@ REQUIERE_FILTRO_TEMPORAL = ["Mes", "N Prueba", "Numero_Prueba"]
 REQUIERE_ASIGNATURA = True
 FILENAME = "informe_simce.pdf"
 
-#: Modos de período que sabe generar (contrato §4). SIMCE sirve los 4: se
-#: aplica 5 veces al año, así que semestre y año tienen sentido pedagógico.
-MODOS = ["ultima_prueba", "semestral", "anual", "personalizado"]
+#: Modos que el módulo SABE generar (contrato §4). Incluye `semestral`, que
+#: sigue implementado y accesible por API aunque ya no se ofrezca.
+MODOS_SOPORTADOS = ["ultima_prueba", "semestral", "anual", "personalizado"]
+
+#: Modos PÚBLICOS: los que el selector de informes ofrece como tarjeta.
+#: `semestral` fue RETIRADO el 2026-08-03 por decisión del dueño (mismo
+#: patrón que los informes Word): desde que los períodos se anclan en la
+#: última evaluación con datos, semestral y anual devuelven casi siempre el
+#: mismo recorte. El código que lo implementa se conserva íntegro y
+#: `POST /api/indicators/{id}/export-pdf` con `{"periodo":{"tipo":"semestral"}}`
+#: sigue respondiendo 200. Para reactivarlo basta devolver "semestral" a esta
+#: lista y reinsertar la card en `backend/routers/indicators.py`.
+MODOS = ["ultima_prueba", "anual", "personalizado"]
 MOTIVO_MODO_NO_DISPONIBLE: dict[str, str] = {}
 
 #: Título del informe (también es la 1ª línea del encabezado del esquema).
@@ -145,10 +155,10 @@ def generar(
             overrides=overrides,
         )
 
-    if modo not in MODOS:
+    if modo not in MODOS_SOPORTADOS:
         raise ValueError(
             f"El informe SIMCE no genera el modo '{modo}'. "
-            f"Modos disponibles: {', '.join(MODOS)}."
+            f"Modos disponibles: {', '.join(MODOS_SOPORTADOS)}."
         )
 
     return _generar_por_modo(
@@ -694,10 +704,10 @@ def _secciones(
     reconstruye desde las tablas ya publicadas en `dataframes` (queda sin
     la descripción de la última evaluación, que no es un DataFrame).
     """
-    if modo not in MODOS:
+    if modo not in MODOS_SOPORTADOS:
         raise ValueError(
             f"El informe SIMCE no genera el modo '{modo}'. "
-            f"Modos disponibles: {', '.join(MODOS)}."
+            f"Modos disponibles: {', '.join(MODOS_SOPORTADOS)}."
         )
 
     niveles = list(niveles or NIVELES_SIMCE)

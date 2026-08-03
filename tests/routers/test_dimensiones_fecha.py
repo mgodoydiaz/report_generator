@@ -95,13 +95,12 @@ class TestRouterDataType:
 # ─────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture
-def indicador_fluidez(db_session, org):
+def indicador_fluidez(db_session, org, hoy):
     """Indicador SIN dimensión Año: el tiempo vive en "Fecha".
 
     Dos aplicaciones del año en curso (una en cada semestre) y una del año
     anterior, para que semestral y anual no den el mismo recorte.
     """
-    hoy = date.today()
     dims = {n: make_dimension(db_session, org, name=n,
                               data_type="date" if n == "Fecha" else "str")
             for n in ("Curso", "Fecha")}
@@ -138,28 +137,32 @@ class TestReportOptionsConFecha:
     def _cards(self, body):
         return {o["id"]: o for o in body["grupos"]["periodo"]}
 
-    def test_semestral_y_anual_quedan_disponibles(self, client_auth, indicador_fluidez):
+    def test_anual_y_ultima_prueba_quedan_disponibles(self, client_auth, indicador_fluidez):
+        """(La card semestral se retiró del selector el 2026-08-03.)"""
         ind, _ = indicador_fluidez
         r = client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options")
         assert r.status_code == 200
         cards = self._cards(r.json())
         assert cards["periodo_anual"]["disponible"] is True
-        assert cards["periodo_semestral"]["disponible"] is True
         assert cards["periodo_ultima_prueba"]["disponible"] is True
 
-    def test_la_descripcion_del_anual_es_el_anio_en_curso(self, client_auth, indicador_fluidez):
+    def test_la_descripcion_del_anual_es_el_anio_en_curso(
+        self, client_auth, indicador_fluidez, hoy
+    ):
         ind, _ = indicador_fluidez
         r = client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options")
         card = self._cards(r.json())["periodo_anual"]
-        assert str(date.today().year) in card["descripcion"]
+        assert str(hoy.year) in card["descripcion"]
 
-    def test_la_ultima_prueba_muestra_la_fecha_legible(self, client_auth, indicador_fluidez):
+    def test_la_ultima_prueba_muestra_la_fecha_legible(
+        self, client_auth, indicador_fluidez, hoy
+    ):
         ind, _ = indicador_fluidez
         r = client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options")
         card = self._cards(r.json())["periodo_ultima_prueba"]
         # dd-mm-yyyy, sin la hora
         assert "00:00:00" not in card["descripcion"]
-        assert f"15-09-{date.today().year}" in card["descripcion"]
+        assert f"15-09-{hoy.year}" in card["descripcion"]
 
     def test_dimensiones_filtrables_traen_el_data_type(self, client_auth, indicador_fluidez):
         ind, _ = indicador_fluidez
@@ -168,7 +171,9 @@ class TestReportOptionsConFecha:
         assert dims["Fecha"]["data_type"] == "date"
         assert dims["Curso"]["data_type"] == "str"
 
-    def test_export_pdf_anual_resuelve_el_periodo(self, client_auth, indicador_fluidez):
+    def test_export_pdf_anual_resuelve_el_periodo(
+        self, client_auth, indicador_fluidez, hoy
+    ):
         """El período anual se traduce a filtros por id de dimensión."""
         from backend.routers.indicators import _resolver_periodo_a_filtros
         from backend.models import Indicator
@@ -181,7 +186,7 @@ class TestReportOptionsConFecha:
             db, ind, ind.org_id, {"tipo": "anual"}
         )
         assert tipo_layout == "historico"
-        assert descripcion == str(date.today().year)
+        assert descripcion == str(hoy.year)
         clave = str(dims["Fecha"].id_dimension)
         assert clave in filtros
         assert len(filtros[clave]) == 2   # las dos fechas del año en curso
@@ -197,8 +202,9 @@ class TestReportOptionsConFecha:
 
 @pytest.mark.integration
 class TestNoRegresionIndicadorConAnio:
-    def test_las_dimensiones_siguen_saliendo_con_su_tipo(self, client_auth, db_session, org):
-        hoy = date.today()
+    def test_las_dimensiones_siguen_saliendo_con_su_tipo(
+        self, client_auth, db_session, org, hoy
+    ):
         dims = {n: make_dimension(db_session, org, name=n,
                                   data_type="int" if n == "Año" else "str")
                 for n in ("Curso", "Año", "Mes")}

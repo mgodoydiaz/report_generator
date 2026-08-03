@@ -45,6 +45,44 @@ os.environ.setdefault("ENVIRONMENT", "test")
 # ─────────────────────────────────────────────────────────────────────────
 import pytest  # noqa: E402
 
+from datetime import date  # noqa: E402
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# 3b) Fecha de referencia CONGELADA
+#
+# El resolver de períodos (`backend/rgenerator/reports/periodos.py`) decide
+# "año en curso" y "semestre en curso" a partir de un `hoy`. Si ese `hoy`
+# fuera el del reloj, cualquier test que siembre datos de un mes fijo
+# empezaría a fallar apenas el calendario cruza el semestre (pasó al entrar
+# agosto: los datos ABRIL/MAYO quedaron fuera del "2º semestre en curso").
+#
+# Por eso TODA la suite corre con `hoy` = 15-06-2026: 1er semestre del
+# calendario escolar chileno (meses 1–7). Los fixtures que siembran datos
+# usan la fixture `hoy` — nunca `date.today()` — para quedar dentro de ese
+# período.
+# ─────────────────────────────────────────────────────────────────────────
+FECHA_HOY_TEST = date(2026, 6, 15)
+
+
+@pytest.fixture
+def hoy() -> date:
+    """Fecha de referencia congelada de la suite (ver `FECHA_HOY_TEST`)."""
+    return FECHA_HOY_TEST
+
+
+@pytest.fixture(autouse=True)
+def _congelar_hoy(monkeypatch):
+    """Congela `periodos.hoy()`, la única fuente de "hoy" del backend.
+
+    No-op si el backend no está instalado (entorno Python host puro).
+    """
+    try:
+        from backend.rgenerator.reports import periodos
+    except ImportError:
+        return
+    monkeypatch.setattr(periodos, "hoy", lambda: FECHA_HOY_TEST)
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # 4) Fixtures de DB / Cliente / Auth
@@ -345,7 +383,7 @@ def _montar_simce(db_session, org, filas, *, achievement_levels=None, **kwargs):
             ident["Asignatura"]: fila.get("asignatura", "Lenguaje"),
             ident["Mes"]: fila.get("mes", "ABRIL"),
             ident["N Prueba"]: str(fila.get("n_prueba", 1)),
-            ident["Año"]: str(fila.get("anio", 2026)),
+            ident["Año"]: str(fila.get("anio", FECHA_HOY_TEST.year)),
             ident["Logro"]: fila.get("logro", "Insuficiente"),
         }
         make_metric_data(
@@ -378,20 +416,23 @@ def simce_indicator(db_session, org):
     """Indicador SIMCE mínimo con metrics estudiantes + preguntas (1 prueba)."""
     return _montar_simce(
         db_session, org,
-        [{"curso": "II A", "mes": "ABRIL", "n_prueba": 1, "anio": 2026}],
+        [{"curso": "II A", "mes": "ABRIL", "n_prueba": 1,
+          "anio": FECHA_HOY_TEST.year}],
     )
 
 
 @pytest.fixture
-def simce_indicator_historico(db_session, org):
+def simce_indicator_historico(db_session, org, hoy):
     """Indicador SIMCE con 2 meses del año en curso y el año anterior.
 
     Sirve para probar la evolución (≥2 puntos temporales), la comparación
     con el período anterior y el riesgo persistente (mismo alumno en nivel
     Insuficiente en dos meses consecutivos).
+
+    ABRIL y MAYO caen en el 1er semestre de `FECHA_HOY_TEST`: los modos
+    semestral/anual del resolver encuentran datos siempre.
     """
-    from datetime import date
-    anio = date.today().year
+    anio = hoy.year
     filas = []
     for mes, n in (("ABRIL", 1), ("MAYO", 2)):
         for rut, nombre, rend, logro in (

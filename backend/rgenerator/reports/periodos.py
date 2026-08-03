@@ -3,9 +3,17 @@
 El tiempo vive en dimensiones ("Año", "Mes", "Hito", "Versión",
 "N Prueba") y — desde el tipo de dato de dimensión "fecha" — también en
 columnas con fechas reales ("Fecha": "2026-04-07"). Este módulo traduce
-un período declarativo — "la última prueba", "el semestre en curso", "el
-año en curso", "un rango YYYY-MM" — a un dict de filtros por NOMBRE de
-columna que cualquier motor de informes puede aplicar.
+un período declarativo — "la última prueba", "el semestre", "el año", "un
+rango YYYY-MM" — a un dict de filtros por NOMBRE de columna que cualquier
+motor de informes puede aplicar.
+
+Los modos `anual` y `semestral` se anclan en la ÚLTIMA EVALUACIÓN CON
+DATOS del indicador, no en el calendario de hoy: si la última campaña fue
+OCTUBRE 2025, el informe anual es el de 2025 y el semestral el del 2º
+semestre 2025, aunque el reloj marque agosto de 2026. La `descripcion` del
+`ResultadoPeriodo` rotula SIEMPRE el período efectivo, y el estado "no
+disponible" queda reservado para los indicadores que no tienen datos (o
+que no tienen la dimensión temporal que el modo necesita).
 
 Una columna de tipo fecha actúa como fuente de AÑO **y** de MES: por eso
 Fluidez Lectora, que no tiene dimensión "Año", igual puede resolver los
@@ -449,6 +457,22 @@ def _a_entero(valor: Any) -> Optional[int]:
         return int(float(str(valor).strip()))
     except (TypeError, ValueError):
         return None
+
+
+def hoy() -> date:
+    """Fecha de referencia del sistema ("hoy").
+
+    Punto ÚNICO desde donde el backend obtiene la fecha actual para
+    resolver períodos. Existe para que los tests puedan congelarla
+    (`monkeypatch.setattr(periodos, "hoy", lambda: date(...))`) sin
+    depender del reloj: si no, un test que siembra datos del 1er semestre
+    empieza a fallar apenas el calendario cruza a agosto.
+
+    Las funciones del resolver siguen recibiendo `hoy` como PARÁMETRO
+    (siguen siendo puras); esta función solo provee el valor por defecto
+    en los callers (routers).
+    """
+    return date.today()
 
 
 def semestre_de_mes(mes: int) -> int:
@@ -909,6 +933,78 @@ def _ordenar_por_fecha(valores: Iterable[Any]) -> list[str]:
     )
 
 
+# Motivos de los modos anclados. Reservados para el caso "el indicador no
+# tiene NADA que anclar": con datos, `anual` y `semestral` siempre resuelven.
+_SIN_ANCLA_ANUAL = (
+    "Sin datos cargados para este indicador: no hay ninguna evaluación con "
+    "año registrado que sirva de ancla para el informe anual."
+)
+_SIN_ANCLA_SEMESTRAL = (
+    "Sin datos cargados para este indicador: no hay ninguna evaluación "
+    "ubicable en un semestre (falta el año o el mes) que sirva de ancla."
+)
+
+
+def _ancla_temporal(
+    df: pd.DataFrame,
+    cols: Mapping[str, Optional[str]],
+    *,
+    requiere_mes: bool = False,
+) -> tuple[Optional[int], Optional[int]]:
+    """(año, mes) de la ÚLTIMA evaluación con datos de `df`.
+
+    Es el ancla de los modos `anual` y `semestral`: desde 2026-08 el
+    período no se deduce del calendario de hoy sino de los datos, así que
+    un indicador con la última campaña en octubre de 2025 entrega el
+    informe anual DE 2025 en vez de un 400 "sin datos del año en curso".
+
+    Usa la MISMA clave que `_resolver_ultima_prueba`
+    (`clave_temporal_detallada`), así que "última evaluación" significa lo
+    mismo en los tres modos — también cuando el eje temporal es Hito (DIA)
+    o Versión (IDEL), donde el mes lo aporta el protocolo de la fundación
+    (`HITO_A_MES`, `VERSION_A_MES`).
+
+    Args:
+        df: DataFrame del indicador.
+        cols: salida de `detectar_columnas_temporales`.
+        requiere_mes: descarta las filas sin mes identificable. Lo usa
+            `semestral`, que sin mes no puede elegir semestre; `anual` se
+            conforma con el año.
+
+    Returns:
+        `(año, mes)`; cada componente es None si no se pudo determinar.
+        `(None, None)` cuando no hay ninguna fila anclable.
+    """
+    if df is None or len(df) == 0:
+        return (None, None)
+
+    mejor: tuple[int, int, int, int] | None = None
+    for _, row in df.iterrows():
+        clave = clave_temporal_detallada(row, cols)
+        if clave[0] < 0:
+            continue                      # sin año no se puede ubicar
+        if requiere_mes and clave[1] < 0:
+            continue
+        if mejor is None or clave > mejor:
+            mejor = clave
+
+    if mejor is None:
+        return (None, None)
+    return (mejor[0], mejor[1] if mejor[1] >= 0 else None)
+
+
+def _valores_crudos_del_anio(df: pd.DataFrame, col_anio: str, anio: int) -> list[str]:
+    """Valores CRUDOS de `col_anio` que representan el año `anio`.
+
+    Compara por número parseado, no por string: la misma columna puede
+    traer "2025" y "2025.0" según cómo pandas castee la celda, y un
+    `astype(str) == "2025"` dejaría fuera la mitad de las filas.
+    """
+    return sorted({
+        str(v) for v in _valores_de_columna(df, col_anio) if _a_entero(v) == anio
+    })
+
+
 def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
     if not hay_columna_temporal(cols):
         return _no_disponible(
@@ -972,9 +1068,15 @@ def _resolver_ultima_prueba(df: pd.DataFrame, cols: dict) -> ResultadoPeriodo:
 
 
 def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo:
+    """Informe anual del ÚLTIMO año con datos del indicador.
+
+    El año NO sale del calendario (`hoy.year`) sino de la última evaluación
+    registrada: si la última campaña fue OCTUBRE 2025, el informe anual es
+    el de 2025, aunque hoy sea agosto de 2026. `hoy` se mantiene en la
+    firma por compatibilidad con los callers y con `resolver_periodo`.
+    """
     col_anio = cols.get("anio")
     col_fecha = cols.get("fecha")
-    anio = hoy.year
 
     if not col_anio and not col_fecha:
         return _no_disponible(
@@ -985,6 +1087,12 @@ def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo
             tipo_layout="historico",
         )
 
+    anio, _mes = _ancla_temporal(df, cols)
+    if anio is None:
+        return _no_disponible(
+            "anual", _SIN_ANCLA_ANUAL, cols, tipo_layout="historico"
+        )
+
     if not col_anio:
         # Año derivado de la columna fecha: el filtro se materializa como la
         # lista de fechas del año (el loader filtra por valores de columna).
@@ -992,12 +1100,9 @@ def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo
             str(v) for v in _valores_de_columna(df, col_fecha)
             if (f := parsear_fecha(v)) is not None and f.year == anio
         ]
-        if not permitidos:
+        if not permitidos:  # pragma: no cover — el ancla salió de esas fechas
             return _no_disponible(
-                "anual",
-                f"Sin datos del año en curso ({anio}) para este indicador.",
-                cols,
-                tipo_layout="historico",
+                "anual", _SIN_ANCLA_ANUAL, cols, tipo_layout="historico"
             )
         return ResultadoPeriodo(
             tipo="anual",
@@ -1007,18 +1112,15 @@ def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo
             columnas=cols,
         )
 
-    sub = df[df[col_anio].astype(str).str.strip() == str(anio)] if not df.empty else df
-    if sub.empty:
+    crudos = _valores_crudos_del_anio(df, col_anio, anio)
+    if not crudos:  # pragma: no cover — el ancla salió de esa misma columna
         return _no_disponible(
-            "anual",
-            f"Sin datos del año en curso ({anio}) para este indicador.",
-            cols,
-            tipo_layout="historico",
+            "anual", _SIN_ANCLA_ANUAL, cols, tipo_layout="historico"
         )
 
     return ResultadoPeriodo(
         tipo="anual",
-        filtros={col_anio: str(anio)},
+        filtros={col_anio: crudos[0] if len(crudos) == 1 else crudos},
         tipo_layout="historico",
         descripcion=str(anio),
         columnas=cols,
@@ -1026,13 +1128,17 @@ def _resolver_anual(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo
 
 
 def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPeriodo:
+    """Informe del semestre escolar que contiene la ÚLTIMA evaluación.
+
+    Igual que `_resolver_anual`, el período NO sale del calendario: se
+    ancla en la última evaluación con datos y cubre su semestre completo
+    (1º = enero–julio, 2º = agosto–diciembre). Antes, un indicador con
+    datos de abril/mayo devolvía 400 "sin datos del 2º semestre" apenas el
+    reloj cruzaba a agosto. `hoy` sigue en la firma por compatibilidad.
+    """
     col_anio = cols.get("anio")
     col_mes = cols.get("mes_like")
     col_fecha = cols.get("fecha")
-
-    anio = hoy.year
-    semestre = semestre_de_mes(hoy.month)
-    mes_ini, mes_fin = _meses_del_semestre(semestre)
 
     if not col_anio and not col_fecha:
         return _no_disponible(
@@ -1051,6 +1157,15 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
             tipo_layout="historico",
         )
 
+    anio, mes_ancla = _ancla_temporal(df, cols, requiere_mes=True)
+    if anio is None or mes_ancla is None:
+        return _no_disponible(
+            "semestral", _SIN_ANCLA_SEMESTRAL, cols, tipo_layout="historico"
+        )
+
+    semestre = semestre_de_mes(mes_ancla)
+    mes_ini, mes_fin = _meses_del_semestre(semestre)
+
     if not col_anio:
         # Año y mes derivados de la misma columna fecha.
         permitidos = [
@@ -1058,12 +1173,9 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
             if (f := parsear_fecha(v)) is not None
             and f.year == anio and mes_ini <= f.month <= mes_fin
         ]
-        if not permitidos:
+        if not permitidos:  # pragma: no cover — el ancla salió de esas fechas
             return _no_disponible(
-                "semestral",
-                f"Sin datos del {_describir_semestre(anio, semestre)} para este indicador.",
-                cols,
-                tipo_layout="historico",
+                "semestral", _SIN_ANCLA_SEMESTRAL, cols, tipo_layout="historico"
             )
         return ResultadoPeriodo(
             tipo="semestral",
@@ -1073,28 +1185,18 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
             columnas=cols,
         )
 
-    if df.empty:
-        return _no_disponible(
-            "semestral",
-            f"Sin datos del {_describir_semestre(anio, semestre)} para este indicador.",
-            cols,
-            tipo_layout="historico",
-        )
-
     semantica = semantica_columna(col_mes, cols)
-    del_anio = df[df[col_anio].astype(str).str.strip() == str(anio)]
+    crudos_anio = _valores_crudos_del_anio(df, col_anio, anio)
+    del_anio = df[df[col_anio].astype(str).isin(crudos_anio)]
     permitidos: list[str] = []
     for valor in del_anio[col_mes].dropna().unique().tolist():
         mes = a_numero_mes(valor, semantica)
         if mes is not None and mes_ini <= mes <= mes_fin:
             permitidos.append(str(valor))
 
-    if not permitidos:
+    if not permitidos:  # pragma: no cover — el ancla salió de ese semestre
         return _no_disponible(
-            "semestral",
-            f"Sin datos del {_describir_semestre(anio, semestre)} para este indicador.",
-            cols,
-            tipo_layout="historico",
+            "semestral", _SIN_ANCLA_SEMESTRAL, cols, tipo_layout="historico"
         )
 
     # Orden cronológico de los valores permitidos (mejora legibilidad del filtro).
@@ -1102,7 +1204,10 @@ def _resolver_semestral(df: pd.DataFrame, cols: dict, hoy: date) -> ResultadoPer
 
     return ResultadoPeriodo(
         tipo="semestral",
-        filtros={col_anio: str(anio), col_mes: permitidos},
+        filtros={
+            col_anio: crudos_anio[0] if len(crudos_anio) == 1 else crudos_anio,
+            col_mes: permitidos,
+        },
         tipo_layout="historico",
         descripcion=_describir_semestre(anio, semestre),
         columnas=cols,
@@ -1279,7 +1384,10 @@ def resolver_periodo(
             fecha_inicio / fecha_fin: "YYYY-MM" (solo personalizado)
             filtros: {nombre_dim: valor | [valores]} (solo personalizado)
         hoy: fecha de referencia (inyectada para que la función sea pura
-            y testeable).
+            y testeable). Desde el cambio de semántica de `anual` y
+            `semestral` — que se anclan en la última evaluación con datos —
+            ningún modo la usa; se mantiene en la firma porque es parte del
+            contrato público que consumen los routers y los módulos custom.
         tipos: {columna: data_type} del catálogo de dimensiones. Sirve
             para declarar columnas de tipo fecha sin depender del nombre
             ni de la heurística de parseo.

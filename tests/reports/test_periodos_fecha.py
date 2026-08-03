@@ -209,10 +209,19 @@ class TestFluidezLectoraSoloConFecha:
         ]
 
     def test_semestral_deriva_anio_y_mes_de_la_fecha(self, df_fluidez):
+        """El semestre lo ancla la última fecha (15-09-2026), no `hoy`."""
         res = resolver_periodo(df_fluidez, {"tipo": "semestral"}, date(2026, 7, 30))
         assert res.disponible is True
+        assert res.descripcion == "2º semestre 2026 (agosto–diciembre)"
+        assert res.filtros["Fecha"] == ["2026-09-15 00:00:00"]
+
+    def test_semestral_del_primer_semestre_sin_la_ultima_toma(self, df_fluidez):
+        """Sin la aplicación de septiembre el ancla cae en abril."""
+        hasta_abril = df_fluidez[df_fluidez["Fecha"] != "2026-09-15 00:00:00"]
+        res = resolver_periodo(hasta_abril, {"tipo": "semestral"}, date(2026, 7, 30))
+        assert res.disponible is True
         assert res.descripcion == "1er semestre 2026 (enero–julio)"
-        # Abril entra; septiembre 2026 (2º semestre) y octubre 2025 quedan fuera
+        # Abril entra; octubre 2025 queda fuera
         assert res.filtros["Fecha"] == [
             "2026-04-02 00:00:00", "2026-04-09 00:00:00", "2026-04-13 00:00:00",
         ]
@@ -227,10 +236,19 @@ class TestFluidezLectoraSoloConFecha:
         anual = resolver_periodo(df_fluidez, {"tipo": "anual"}, date(2026, 10, 1))
         assert semestral.filtros != anual.filtros
 
-    def test_anual_sin_datos_del_anio_en_curso(self, df_fluidez):
+    def test_anual_ancla_en_el_ultimo_anio_aunque_hoy_este_lejos(self, df_fluidez):
+        """Antes: 400 "sin datos del año en curso (2030)". Ahora: 2026."""
         res = resolver_periodo(df_fluidez, {"tipo": "anual"}, date(2030, 1, 15))
+        assert res.disponible is True
+        assert res.descripcion == "2026"
+        assert "2025-10-23 00:00:00" not in res.filtros["Fecha"]
+
+    def test_anual_sin_ningun_dato_no_disponible(self):
+        df = pd.DataFrame(columns=["Curso", "Fecha"])
+        res = resolver_periodo(df, {"tipo": "anual"}, date(2026, 8, 3),
+                               tipos={"Fecha": "date"})
         assert res.disponible is False
-        assert "2030" in res.motivo
+        assert "Sin datos cargados" in res.motivo
 
     def test_personalizado_con_rango_usa_la_fecha(self, df_fluidez):
         res = resolver_periodo(df_fluidez, {

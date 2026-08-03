@@ -139,7 +139,7 @@ def _indicator_to_dict(ind: Indicator) -> dict:
 # Catálogo de informes (report-options)
 # ─────────────────────────────────────────────────────────────────────────
 
-# Las 4 cards de período. `layout` indica qué pdf_layout necesitan:
+# Las 3 cards de período. `layout` indica qué pdf_layout necesitan:
 #   "evaluacion" → pdf_layout.sections
 #   "historico"  → pdf_layout_historico.sections
 #   "cualquiera" → basta con uno de los dos
@@ -153,20 +153,14 @@ _CARDS_PERIODO = (
         "descripcion_generica": "PDF de la evaluación más reciente registrada.",
     },
     {
-        "id": "periodo_semestral",
-        "tipo": "semestral",
-        "label": "Informe semestral",
-        "layout": "historico",
-        "descripcion_base": "Evolución del",
-        "descripcion_generica": "PDF con la evolución del semestre en curso.",
-    },
-    {
         "id": "periodo_anual",
         "tipo": "anual",
         "label": "Informe Anual",
         "layout": "historico",
         "descripcion_base": "Evolución del año",
-        "descripcion_generica": "PDF con la evolución del año en curso.",
+        "descripcion_generica": (
+            "PDF con la evolución del último año con evaluaciones registradas."
+        ),
     },
     {
         "id": "periodo_personalizado",
@@ -179,6 +173,27 @@ _CARDS_PERIODO = (
         ),
     },
 )
+
+# Card RETIRADA del selector el 2026-08-03 (decisión del dueño), mismo patrón
+# que los informes Word: desde que los períodos se anclan en la ÚLTIMA
+# EVALUACIÓN CON DATOS (`periodos.py`), el semestral y el anual devuelven casi
+# siempre el mismo recorte y la elección dejó de aportar.
+# La API sigue VIVA: `POST /api/indicators/{id}/export-pdf` con
+# `{"periodo": {"tipo": "semestral"}}` responde 200 y el resolver
+# `periodos._resolver_semestral` + `custom/simce.py` siguen intactos. Para
+# reactivar la tarjeta basta con volver a insertar este dict en
+# `_CARDS_PERIODO` (entre `ultima_prueba` y `anual`) y devolver "semestral" a
+# `simce.MODOS`.
+_CARD_PERIODO_RETIRADA_SEMESTRAL = {
+    "id": "periodo_semestral",
+    "tipo": "semestral",
+    "label": "Informe semestral",
+    "layout": "historico",
+    "descripcion_base": "Evolución del",
+    "descripcion_generica": (
+        "PDF con la evolución del semestre de la última evaluación registrada."
+    ),
+}
 
 _MOTIVO_SIN_LAYOUT = {
     "evaluacion": (
@@ -379,9 +394,12 @@ def report_options(
     Fuente única para el selector de "Generar informe" del frontend.
     Respuesta:
 
-        grupos.periodo         4 cards de período (última prueba, semestral,
-                               anual, personalizado) resueltas contra los
-                               datos reales del indicador.
+        grupos.periodo         3 cards de período (última prueba, anual,
+                               personalizado) resueltas contra los datos
+                               reales del indicador. La card `semestral`
+                               fue retirada el 2026-08-03 (ver
+                               `_CARD_PERIODO_RETIRADA_SEMESTRAL`); el
+                               endpoint sigue aceptando ese tipo.
         grupos.especializados  informes hardcodeados del registro
                                `reports/custom/` aplicables al engine_type.
                                (Los informes Word están pospuestos y no se
@@ -406,6 +424,7 @@ def report_options(
     Con 0 ó 1 asignatura el campo se OMITE (IDEL, Fluidez Lectora y
     Cálculo Veloz no se ven afectados).
     """
+    from backend.rgenerator.reports import periodos as periodos_mod
     from backend.rgenerator.reports.engine_types import resolver_engine_type
     from backend.rgenerator.reports.periodos import resolver_periodo_multi
 
@@ -429,7 +448,9 @@ def report_options(
     dataframes, error_datos = _cargar_dataframes_best_effort(
         db, indicator_id, user.org_id
     )
-    hoy = date.today()
+    # `periodos.hoy()` (no `date.today()`) para que los tests puedan
+    # congelar la fecha de referencia en un punto único.
+    hoy = periodos_mod.hoy()
 
     # Los datos del indicador pueden traer varias asignaturas: en ese caso
     # todas las cards PDF exigen elegir una (ver `_descriptor_asignatura`).
@@ -798,6 +819,7 @@ def _resolver_periodo_a_filtros(
             dimensión temporal, sin datos del año/semestre) o si alguna
             columna resuelta no corresponde a una dimensión del indicador.
     """
+    from backend.rgenerator.reports import periodos as periodos_mod
     from backend.rgenerator.reports.periodos import (
         aplicar_filtros_a_dataframes,
         resolver_periodo_multi,
@@ -814,7 +836,7 @@ def _resolver_periodo_a_filtros(
         dataframes = aplicar_filtros_a_dataframes(dataframes, filtros_usuario)
 
     resultado = resolver_periodo_multi(
-        dataframes, periodo, date.today(),
+        dataframes, periodo, periodos_mod.hoy(),
         _tipos_de_columna(db, record.id_indicator, org_id),
     )
     if not resultado.disponible:

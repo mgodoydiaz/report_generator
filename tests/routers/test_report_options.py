@@ -4,23 +4,26 @@ Contrato vigente (Fase 2 del selector de informes):
 
     {
       "indicator_id", "engine_type", "engine_type_origen",
-      "grupos": {"periodo": [4 cards], "especializados": [custom]},
+      "grupos": {"periodo": [3 cards], "especializados": [custom]},
       "dimensiones_filtrables": [{"id_dimension", "name", "values"}],
       "opciones": [...]   # plano periodo + especializados (compat)
     }
 
-Las 4 cards de período se resuelven contra los datos REALES del indicador
+Las 3 cards de período se resuelven contra los datos REALES del indicador
 (ver `backend/rgenerator/reports/periodos.py`), por eso los fixtures cargan
 `metric_data` con el año en curso.
+
+La card `semestral` fue RETIRADA del selector el 2026-08-03 (patrón de los
+informes Word): el endpoint `export-pdf` sigue aceptando ese tipo, pero
+report-options ya no lo ofrece.
 """
 from __future__ import annotations
 
 import json
-from datetime import date
 
 import pytest
 
-from backend.rgenerator.reports.periodos import NUMERO_A_MES, semestre_de_mes
+from backend.rgenerator.reports.periodos import NUMERO_A_MES
 from tests.factories import (
     make_dimension, make_indicator, make_metric, make_metric_data, make_org,
 )
@@ -38,16 +41,11 @@ def _cards_por_id(body):
 
 
 @pytest.fixture
-def hoy():
-    return date.today()
-
-
-@pytest.fixture
 def indicador_con_datos(db_session, org, hoy):
     """Indicador SIMCE con Curso/Año/Mes/N Prueba y datos del año en curso.
 
     Dos filas: una del año pasado (ABRIL, prueba 1) y una del mes actual
-    (prueba 3) — así `ultima_prueba`, `semestral` y `anual` resuelven.
+    (prueba 3) — así `ultima_prueba` y `anual` resuelven.
     """
     dims = {n: make_dimension(db_session, org, name=n)
             for n in ("Curso", "Año", "Mes", "N Prueba")}
@@ -105,19 +103,34 @@ class TestReportOptionsEstructura:
         esperado = body["grupos"]["periodo"] + body["grupos"]["especializados"]
         assert body["opciones"] == esperado
 
-    def test_las_cuatro_cards_con_labels_exactos(self, client_auth, indicador_con_datos):
+    def test_las_tres_cards_con_labels_exactos(self, client_auth, indicador_con_datos):
         body = client_auth.get(
             f"/api/indicators/{indicador_con_datos.id_indicator}/report-options"
         ).json()
         cards = body["grupos"]["periodo"]
         assert [c["id"] for c in cards] == [
-            "periodo_ultima_prueba", "periodo_semestral",
-            "periodo_anual", "periodo_personalizado",
+            "periodo_ultima_prueba", "periodo_anual", "periodo_personalizado",
         ]
         assert [c["label"] for c in cards] == [
-            "Informe última prueba", "Informe semestral",
-            "Informe Anual", "Informe Personalizado",
+            "Informe última prueba", "Informe Anual", "Informe Personalizado",
         ]
+
+    def test_la_card_semestral_esta_retirada(self, client_auth, indicador_con_datos):
+        """Retiro del 2026-08-03: el selector ya no ofrece el informe semestral.
+
+        Ni siquiera deshabilitada — la card no existe, igual que los informes
+        Word. El endpoint `export-pdf` con `{"periodo": {"tipo": "semestral"}}`
+        sigue vivo (lo cubre `tests/routers/test_export_pdf_periodo.py`).
+        """
+        body = client_auth.get(
+            f"/api/indicators/{indicador_con_datos.id_indicator}/report-options"
+        ).json()
+        assert "periodo_semestral" not in {c["id"] for c in body["grupos"]["periodo"]}
+        assert not any(
+            (o.get("periodo") or {}).get("tipo") == "semestral"
+            for o in body["opciones"]
+        )
+        assert not any("semestral" in o["label"].lower() for o in body["opciones"])
 
     def test_invocacion_de_las_cards_manda_periodo(self, client_auth, indicador_con_datos):
         iid = indicador_con_datos.id_indicator
@@ -126,7 +139,6 @@ class TestReportOptionsEstructura:
         )
         for card_id, tipo in (
             ("periodo_ultima_prueba", "ultima_prueba"),
-            ("periodo_semestral", "semestral"),
             ("periodo_anual", "anual"),
             ("periodo_personalizado", "personalizado"),
         ):
@@ -148,8 +160,8 @@ class TestReportOptionsEstructura:
             ).json()
         )
         assert cards["periodo_personalizado"]["requiere_configuracion"] is True
-        # las otras tres NO lo declaran
-        for cid in ("periodo_ultima_prueba", "periodo_semestral", "periodo_anual"):
+        # las otras dos NO lo declaran
+        for cid in ("periodo_ultima_prueba", "periodo_anual"):
             assert "requiere_configuracion" not in cards[cid]
 
 
@@ -178,9 +190,6 @@ class TestReportOptionsDisponibilidad:
 
         assert cards["periodo_anual"]["descripcion"] == f"Evolución del año {hoy.year}."
 
-        semestre = "1er" if semestre_de_mes(hoy.month) == 1 else "2º"
-        assert f"{semestre} semestre {hoy.year}" in cards["periodo_semestral"]["descripcion"]
-
     def test_tipo_layout_resuelto_por_card(self, client_auth, indicador_con_datos):
         cards = _cards_por_id(
             client_auth.get(
@@ -188,7 +197,6 @@ class TestReportOptionsDisponibilidad:
             ).json()
         )
         assert cards["periodo_ultima_prueba"]["tipo_layout"] == "evaluacion"
-        assert cards["periodo_semestral"]["tipo_layout"] == "historico"
         assert cards["periodo_anual"]["tipo_layout"] == "historico"
 
     def test_sin_layouts_todas_no_disponibles_con_motivo_accionable(
@@ -210,15 +218,14 @@ class TestReportOptionsDisponibilidad:
         assert cards["periodo_ultima_prueba"]["disponible"] is False
         assert "por evaluación" in cards["periodo_ultima_prueba"]["motivo_no_disponible"]
 
-    def test_semestral_y_anual_requieren_layout_historico(self, client_auth, db_session, org):
+    def test_anual_requiere_layout_historico(self, client_auth, db_session, org):
         ind = make_indicator(db_session, org, name="Solo Evaluacion",
                              pdf_layout=LAYOUT_EVAL)
         cards = _cards_por_id(
             client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options").json()
         )
-        for cid in ("periodo_semestral", "periodo_anual"):
-            assert cards[cid]["disponible"] is False
-            assert "histórico" in cards[cid]["motivo_no_disponible"]
+        assert cards["periodo_anual"]["disponible"] is False
+        assert "histórico" in cards["periodo_anual"]["motivo_no_disponible"]
 
     def test_personalizado_basta_con_un_layout(self, client_auth, db_session, org):
         ind = make_indicator(db_session, org, name="Solo Evaluacion",
@@ -234,11 +241,45 @@ class TestReportOptionsDisponibilidad:
         cards = _cards_por_id(
             client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options").json()
         )
-        for cid in ("periodo_ultima_prueba", "periodo_semestral", "periodo_anual"):
+        for cid in ("periodo_ultima_prueba", "periodo_anual"):
             assert cards[cid]["disponible"] is False
             assert cards[cid]["motivo_no_disponible"] == "Sin datos cargados para este indicador."
         # El personalizado no depende de los datos (el usuario elige el rango)
         assert cards["periodo_personalizado"]["disponible"] is True
+
+    def test_las_cards_se_anclan_en_los_datos_no_en_el_calendario(
+        self, client_auth, db_session, org, monkeypatch
+    ):
+        """Agosto-2026 con datos solo de 2025 (QA: Cálculo Veloz).
+
+        Antes la card anual salía deshabilitada con "Sin datos del año en
+        curso (2026)". Ahora resuelve el último período con datos y lo rotula.
+        """
+        from datetime import date
+        from backend.rgenerator.reports import periodos
+        monkeypatch.setattr(periodos, "hoy", lambda: date(2026, 8, 3))
+
+        dims = {n: make_dimension(db_session, org, name=n) for n in ("Año", "Mes")}
+        metric = make_metric(
+            db_session, org, name="Cálculo Veloz por Estudiante",
+            data_type="object", fields=[{"name": "Puntaje", "type": "float"}],
+            dimensions=list(dims.values()),
+        )
+        for mes in ("AGOSTO", "OCTUBRE"):
+            make_metric_data(db_session, metric, value={"Puntaje": 30},
+                             dimensions_json={
+                                 str(dims["Año"].id_dimension): "2025",
+                                 str(dims["Mes"].id_dimension): mes,
+                             })
+        ind = make_indicator(db_session, org, name="Cálculo Veloz", metrics=[metric],
+                             pdf_layout=LAYOUT_EVAL, pdf_layout_historico=LAYOUT_HIST)
+
+        cards = _cards_por_id(
+            client_auth.get(f"/api/indicators/{ind.id_indicator}/report-options").json()
+        )
+        anual = cards["periodo_anual"]
+        assert anual["disponible"] is True, anual["motivo_no_disponible"]
+        assert anual["descripcion"] == "Evolución del año 2025."
 
     def test_sin_dimension_temporal_motivo_explicativo(self, client_auth, db_session, org):
         dim = make_dimension(db_session, org, name="Curso")

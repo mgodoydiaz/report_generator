@@ -203,17 +203,38 @@ class TestUltimaPrueba:
 
 @pytest.mark.unit
 class TestAnual:
-    def test_anio_en_curso(self, df_simce):
+    """El anual se ancla en el ÚLTIMO año con datos, no en `hoy.year`."""
+
+    def test_ultimo_anio_con_datos(self, df_simce):
         res = resolver_periodo(df_simce, {"tipo": "anual"}, date(2026, 7, 29))
         assert res.disponible is True
         assert res.filtros == {"Año": "2026"}
         assert res.tipo_layout == "historico"
         assert res.descripcion == "2026"
 
-    def test_sin_datos_del_anio_en_curso(self, df_simce):
+    def test_el_calendario_no_manda_sobre_los_datos(self, df_simce):
+        """Antes devolvía 400 "sin datos del año en curso (2030)"."""
         res = resolver_periodo(df_simce, {"tipo": "anual"}, date(2030, 1, 15))
+        assert res.disponible is True
+        assert res.filtros == {"Año": "2026"}     # la última evaluación es 2026
+        assert res.descripcion == "2026"          # y así se rotula
+        assert res.tipo_layout == "historico"
+
+    def test_indicador_que_solo_tiene_el_anio_pasado(self, df_simce):
+        """Cálculo Veloz en agosto-2026: 2025 completo y nada de 2026."""
+        solo_2025 = df_simce[df_simce["Año"] == "2025"]
+        res = resolver_periodo(solo_2025, {"tipo": "anual"}, date(2026, 8, 3))
+        assert res.disponible is True
+        assert res.filtros == {"Año": "2025"}
+        assert res.descripcion == "2025"
+
+    def test_sin_ningun_dato_no_disponible(self):
+        """El 400 queda reservado para el indicador sin datos."""
+        df = pd.DataFrame(columns=["Año", "Mes"])
+        res = resolver_periodo(df, {"tipo": "anual"}, date(2026, 8, 3))
         assert res.disponible is False
-        assert "Sin datos del año en curso" in res.motivo
+        assert res.filtros == {}
+        assert "Sin datos cargados" in res.motivo
         assert res.tipo_layout == "historico"
 
     def test_sin_columna_de_anio(self, df_solo_ordinal):
@@ -228,6 +249,8 @@ class TestAnual:
 
 @pytest.mark.unit
 class TestSemestral:
+    """El semestral se ancla en el semestre de la ÚLTIMA evaluación."""
+
     def test_primer_semestre_con_datos(self, df_simce):
         res = resolver_periodo(df_simce, {"tipo": "semestral"}, date(2026, 5, 10))
         assert res.disponible is True
@@ -236,18 +259,33 @@ class TestSemestral:
         assert res.filtros["Mes"] == ["MARZO"]
         assert res.descripcion == "1er semestre 2026 (enero–julio)"
 
-    def test_segundo_semestre_sin_datos(self, df_simce):
-        # 2026 solo tiene MARZO (1er semestre) → el 2º semestre no aplica
+    def test_en_agosto_sigue_dando_el_semestre_de_los_datos(self, df_simce):
+        """Antes: 400 "Sin datos del 2º semestre 2026…" apenas entraba agosto.
+
+        La última evaluación es MARZO 2026 ⇒ el informe es del 1er semestre
+        2026 y la descripción lo dice, en vez de fingir el semestre en curso.
+        """
         res = resolver_periodo(df_simce, {"tipo": "semestral"}, date(2026, 9, 1))
-        assert res.disponible is False
-        assert "2º semestre 2026" in res.motivo
+        assert res.disponible is True
+        assert res.filtros["Año"] == "2026"
+        assert res.filtros["Mes"] == ["MARZO"]
+        assert res.descripcion == "1er semestre 2026 (enero–julio)"
 
     def test_segundo_semestre_de_2025_agrupa_agosto_y_noviembre(self, df_simce):
-        res = resolver_periodo(df_simce, {"tipo": "semestral"}, date(2025, 12, 1))
+        """Última evaluación NOVIEMBRE 2025 ⇒ 2º semestre 2025 completo."""
+        solo_2025 = df_simce[df_simce["Año"] == "2025"]
+        res = resolver_periodo(solo_2025, {"tipo": "semestral"}, date(2026, 8, 3))
         assert res.disponible is True
         assert res.filtros["Año"] == "2025"
         assert res.filtros["Mes"] == ["AGOSTO", "NOVIEMBRE"]
         assert res.descripcion == "2º semestre 2025 (agosto–diciembre)"
+
+    def test_sin_ningun_dato_no_disponible(self):
+        df = pd.DataFrame(columns=["Año", "Mes"])
+        res = resolver_periodo(df, {"tipo": "semestral"}, date(2026, 8, 3))
+        assert res.disponible is False
+        assert res.filtros == {}
+        assert "Sin datos cargados" in res.motivo
 
     def test_sin_mes_like_no_disponible(self):
         df = pd.DataFrame([{"Año": "2026", "N Prueba": "1", "Logro": 1}])
@@ -262,13 +300,26 @@ class TestSemestral:
         assert "dimensión de año" in res.motivo
 
     def test_hito_dia_cuenta_como_mes(self):
+        """DIA: el ancla es el HITO más reciente, igual que en última prueba."""
         df = pd.DataFrame([
             {"Año": "2026", "Hito": "INICIO", "Logro": 1},     # mes 3 → 1er sem
             {"Año": "2026", "Hito": "CIERRE", "Logro": 2},     # mes 11 → 2º sem
         ])
         res = resolver_periodo(df, {"tipo": "semestral"}, date(2026, 5, 10))
         assert res.disponible is True
-        assert res.filtros["Hito"] == ["INICIO"]
+        assert res.filtros["Hito"] == ["CIERRE"]
+        assert res.descripcion == "2º semestre 2026 (agosto–diciembre)"
+
+    def test_hito_dia_con_solo_el_diagnostico_es_primer_semestre(self):
+        """Mismo indicador antes de rendir el CIERRE: 1er semestre."""
+        df = pd.DataFrame([
+            {"Año": "2026", "Hito": "INICIO", "Logro": 1},
+            {"Año": "2026", "Hito": "INTERMEDIO", "Logro": 2},   # mes 6
+        ])
+        res = resolver_periodo(df, {"tipo": "semestral"}, date(2026, 9, 30))
+        assert res.disponible is True
+        assert res.filtros["Hito"] == ["INICIO", "INTERMEDIO"]
+        assert res.descripcion == "1er semestre 2026 (enero–julio)"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -541,11 +592,18 @@ class TestSemanticaDeVersion:
         return df
 
     def test_semestral_solo_toma_v1_en_el_primer_semestre(self, df_idel):
-        res = resolver_periodo(df_idel, {"tipo": "semestral"}, date(2026, 5, 10))
+        """Año en curso con solo la v1 rendida ⇒ 1er semestre.
+
+        El semestre lo ancla la ÚLTIMA versión con datos, así que hay que
+        recortar el df a lo que existiría a mitad de año.
+        """
+        hasta_v1 = df_idel[(df_idel["Año"] == "2025") | (df_idel["Versión"] == "1")]
+        res = resolver_periodo(hasta_v1, {"tipo": "semestral"}, date(2026, 5, 10))
         assert res.disponible is True
         assert res.filtros["Versión"] == ["1"], (
             "v1 → abril: es la única versión del 1er semestre"
         )
+        assert res.descripcion == "1er semestre 2026 (enero–julio)"
 
     def test_semestral_toma_v2_y_v3_en_el_segundo(self, df_idel):
         res = resolver_periodo(df_idel, {"tipo": "semestral"}, date(2026, 9, 10))
@@ -559,7 +617,10 @@ class TestSemanticaDeVersion:
         assert "Versión" not in anual.filtros  # el anual no acota la versión
 
     def test_funciona_igual_con_el_prefijo_v(self, df_idel_con_v):
-        res = resolver_periodo(df_idel_con_v, {"tipo": "semestral"}, date(2026, 5, 10))
+        hasta_v1 = df_idel_con_v[
+            (df_idel_con_v["Año"] == "2025") | (df_idel_con_v["Versión"] == "v1")
+        ]
+        res = resolver_periodo(hasta_v1, {"tipo": "semestral"}, date(2026, 5, 10))
         assert res.filtros["Versión"] == ["v1"]
         res2 = resolver_periodo(df_idel_con_v, {"tipo": "semestral"}, date(2026, 9, 10))
         assert res2.filtros["Versión"] == ["v2", "v3"]

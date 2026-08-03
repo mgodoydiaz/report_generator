@@ -16,7 +16,6 @@ Lectora / Cálculo Veloz, que tienen una sola.
 from __future__ import annotations
 
 import json
-from datetime import date
 from unittest.mock import patch
 
 import pytest
@@ -29,11 +28,6 @@ from tests.factories import (
 FAKE_PDF = b"%PDF-1.4 asignatura\n"
 LAYOUT_EVAL = json.dumps({"sections": [{"type": "kpi"}], "marca": "evaluacion"})
 LAYOUT_HIST = json.dumps({"sections": [{"type": "line"}], "marca": "historico"})
-
-
-@pytest.fixture
-def hoy():
-    return date.today()
 
 
 def _indicador_dia(db_session, org, hoy, asignaturas: list[str]):
@@ -112,7 +106,7 @@ def _exportar(client_auth, indicator_id, body):
 class TestReportOptionsConAsignatura:
     def test_las_cards_de_periodo_traen_el_campo(self, client_auth, indicador_multi):
         cards = _report_options(client_auth, indicador_multi)["grupos"]["periodo"]
-        assert len(cards) == 4
+        assert len(cards) == 3   # semestral retirado del selector el 2026-08-03
         for card in cards:
             assert card["asignatura"] == {
                 "requerida": True,

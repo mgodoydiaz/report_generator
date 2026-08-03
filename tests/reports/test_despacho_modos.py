@@ -34,7 +34,7 @@ def _cards(client_auth, indicator_id) -> dict:
 
 
 @pytest.fixture
-def indicador_sin_modulo(db_session, org):
+def indicador_sin_modulo(db_session, org, hoy):
     """Indicador genérico (sin engine_type ni nombre que lo infiera)."""
     dims = {n: make_dimension(db_session, org, name=n)
             for n in ("Curso", "Año", "Mes")}
@@ -43,9 +43,7 @@ def indicador_sin_modulo(db_session, org):
         fields=[{"name": "Logro", "type": "float"}], dimensions=list(dims.values()),
     )
     ident = {n: str(d.id_dimension) for n, d in dims.items()}
-    from datetime import date
     from backend.rgenerator.reports.periodos import NUMERO_A_MES
-    hoy = date.today()
     make_metric_data(db_session, metric, value={"Logro": 0.5}, dimensions_json={
         ident["Curso"]: "II A", ident["Año"]: str(hoy.year),
         ident["Mes"]: NUMERO_A_MES[hoy.month],
@@ -58,11 +56,13 @@ def indicador_sin_modulo(db_session, org):
 
 @pytest.fixture
 def modulo_parcial(monkeypatch):
-    """Registro custom reemplazado por un módulo que NO sirve `semestral`.
+    """Registro custom reemplazado por un módulo que NO sirve todos los modos.
 
-    Es el caso de IDEL (decisión 7): 3 versiones anuales que no se reparten
-    por semestre. Se simula acá porque en el piloto solo SIMCE declara
-    `MODOS`.
+    Es el caso de IDEL (decisión 7): un instrumento cuyo calendario no admite
+    ciertos cortes temporales. Se simula acá porque en el piloto solo SIMCE
+    declara `MODOS`. Deja fuera `anual` (que SÍ tiene card, para probar el
+    motivo pedagógico en el selector) y `semestral` (que ya no tiene card,
+    para probar el 400 de `export-pdf`).
     """
     from backend.rgenerator.reports import custom as custom_reports
 
@@ -71,9 +71,10 @@ def modulo_parcial(monkeypatch):
     stub.DESCRIPCION = "stub"
     stub.FORMATO = "pdf"
     stub.ENGINE_TYPES = ["simce"]
-    stub.MODOS = ["ultima_prueba", "anual", "personalizado"]
+    stub.MODOS = ["ultima_prueba", "personalizado"]
     stub.MOTIVO_MODO_NO_DISPONIBLE = {
         "semestral": "Este instrumento no se reparte por semestre.",
+        "anual": "Este instrumento no se acumula por año.",
     }
     stub.generar = lambda *a, **k: FAKE_PDF
 
@@ -109,29 +110,29 @@ class TestReportOptionsConModulo:
         assert cards["periodo_ultima_prueba"]["disponible"] is False
         assert "Editor de Layout" in cards["periodo_ultima_prueba"]["motivo_no_disponible"]
 
-    def test_con_modulo_las_4_cards_salen_sin_pdf_layout(
+    def test_con_modulo_las_3_cards_salen_sin_pdf_layout(
         self, client_auth, simce_indicator_historico, db_session
     ):
-        """Regresión del hueco 0/4 del inventario: el módulo trae sus secciones."""
+        """Regresión del hueco del inventario: el módulo trae sus secciones."""
         simce_indicator_historico.pdf_layout = "{}"
         simce_indicator_historico.pdf_layout_historico = "{}"
         db_session.commit()
         cards = _cards(client_auth, simce_indicator_historico.id_indicator)
-        for cid in ("periodo_ultima_prueba", "periodo_semestral",
-                    "periodo_anual", "periodo_personalizado"):
+        for cid in ("periodo_ultima_prueba", "periodo_anual",
+                    "periodo_personalizado"):
             assert cards[cid]["disponible"] is True, cards[cid]["motivo_no_disponible"]
 
     def test_modo_no_declarado_deshabilita_la_card_con_motivo(
         self, client_auth, simce_indicator_historico, modulo_parcial
     ):
         cards = _cards(client_auth, simce_indicator_historico.id_indicator)
-        semestral = cards["periodo_semestral"]
-        assert semestral["motor"] == "custom:stub_parcial"
-        assert semestral["disponible"] is False
-        assert semestral["motivo_no_disponible"] == (
-            modulo_parcial.MOTIVO_MODO_NO_DISPONIBLE["semestral"]
+        anual = cards["periodo_anual"]
+        assert anual["motor"] == "custom:stub_parcial"
+        assert anual["disponible"] is False
+        assert anual["motivo_no_disponible"] == (
+            modulo_parcial.MOTIVO_MODO_NO_DISPONIBLE["anual"]
         )
-        assert cards["periodo_anual"]["disponible"] is True
+        assert cards["periodo_ultima_prueba"]["disponible"] is True
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -160,10 +161,9 @@ class TestExportPDFDelegaAlModulo:
         assert mock.call_args.kwargs["modo"] == "anual"
 
     def test_los_filtros_van_por_nombre_de_columna(
-        self, client_auth, simce_indicator_historico
+        self, client_auth, simce_indicator_historico, hoy
     ):
         """§2.3: con ids de dimensión el informe saldría vacío en silencio."""
-        from datetime import date
         _, mock = self._exportar(
             client_auth, simce_indicator_historico.id_indicator,
             {"periodo": {"tipo": "ultima_prueba",
@@ -172,7 +172,7 @@ class TestExportPDFDelegaAlModulo:
         filtros = mock.call_args.kwargs["filtros"]
         assert filtros["Asignatura"] == "Lenguaje"
         assert filtros["Mes"] == "MAYO"
-        assert filtros["Año"] == str(date.today().year)
+        assert filtros["Año"] == str(hoy.year)
         # Ninguna clave es un id de dimensión
         assert not [k for k in filtros if str(k).isdigit()]
 
@@ -305,10 +305,9 @@ class TestPersonalizadoRangoAdversarial:
         assert not mock.called
 
     def test_rango_invertido_da_400_y_no_llega_al_modulo(
-        self, client_auth, simce_indicator_historico
+        self, client_auth, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         resp, mock = self._exportar(client_auth, simce_indicator_historico, {
             "tipo": "personalizado",
             "fecha_inicio": f"{anio}-12-01", "fecha_fin": f"{anio}-01-01",
@@ -319,10 +318,9 @@ class TestPersonalizadoRangoAdversarial:
         assert not mock.called
 
     def test_rango_valido_sigue_generando_con_recorte_temporal(
-        self, client_auth, simce_indicator_historico
+        self, client_auth, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         resp, mock = self._exportar(client_auth, simce_indicator_historico, {
             "tipo": "personalizado",
             "fecha_inicio": f"{anio}-01-01", "fecha_fin": f"{anio}-07-31",
@@ -343,10 +341,9 @@ class TestPersonalizadoRangoAdversarial:
 @pytest.mark.integration
 class TestPeriodoDescEsFuenteUnica:
     def test_el_despacho_inyecta_periodo_desc(
-        self, client_auth, simce_indicator_historico
+        self, client_auth, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         with patch(
             "backend.rgenerator.reports.custom.simce.generar",
             return_value=FAKE_PDF,
@@ -363,12 +360,11 @@ class TestPeriodoDescEsFuenteUnica:
         assert params["periodo_desc"] == f"ENERO {anio} – JULIO {anio}"
 
     def test_titulo_y_encabezado_dicen_lo_mismo_en_personalizado(
-        self, client_auth, simce_indicator_historico, db_session
+        self, client_auth, simce_indicator_historico, db_session, hoy
     ):
         """El defecto exacto de `05_personalizado`: título "2025" vs
         encabezado "ENERO 2025 – JULIO 2025"."""
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         simce_indicator_historico.pdf_layout_historico = LAYOUT
         db_session.commit()
         with patch(
@@ -455,7 +451,9 @@ class TestRetrocompatFormatoOficial:
     def test_metadata_suma_las_dos_claves_nuevas(self):
         from backend.rgenerator.reports import custom as custom_reports
         meta = custom_reports.metadata("simce")
-        assert meta["modos"] == ["ultima_prueba", "semestral", "anual", "personalizado"]
+        # `modos` es la lista PÚBLICA: `semestral` fue retirado del selector
+        # el 2026-08-03 (sigue generable, ver TestModoRetiradoSigueVivo).
+        assert meta["modos"] == ["ultima_prueba", "anual", "personalizado"]
         assert meta["motivos_modo"] == {}
 
     def test_modulo_sin_modos_no_cambia_de_comportamiento(self):
@@ -465,6 +463,49 @@ class TestRetrocompatFormatoOficial:
         assert custom_reports.soporta_modo(
             custom_reports.obtener_modulo("dia"), "anual"
         ) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Modo retirado del selector pero vivo en la API (patrón informes Word)
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.integration
+class TestModoRetiradoSigueVivo:
+    """`semestral` salió del selector el 2026-08-03; el endpoint no cambió.
+
+    Se retiró la CARD, no la capacidad: `export-pdf` con
+    `{"periodo": {"tipo": "semestral"}}` sigue delegando en el módulo y
+    devolviendo 200.
+    """
+
+    def test_export_pdf_semestral_sigue_devolviendo_200(
+        self, client_auth, simce_indicator_historico
+    ):
+        with patch(
+            "backend.rgenerator.reports.custom.simce.generar",
+            return_value=FAKE_PDF,
+        ) as mock:
+            resp = client_auth.post(
+                f"/api/indicators/{simce_indicator_historico.id_indicator}/export-pdf",
+                json={"periodo": {"tipo": "semestral",
+                                  "filtros": {"Asignatura": "Lenguaje"}}},
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.content == FAKE_PDF
+        assert mock.call_args.kwargs["modo"] == "semestral"
+
+    def test_el_registro_lo_declara_soportado_pero_no_publico(self):
+        from backend.rgenerator.reports import custom as custom_reports
+        from backend.rgenerator.reports.custom import simce
+        assert "semestral" not in custom_reports.modos(simce)
+        assert "semestral" in custom_reports.modos_soportados(simce)
+        assert custom_reports.soporta_modo(simce, "semestral") is True
+
+    def test_modulo_sin_modos_soportados_cae_a_modos(self, modulo_parcial):
+        from backend.rgenerator.reports import custom as custom_reports
+        assert not hasattr(modulo_parcial, "MODOS_SOPORTADOS")
+        assert custom_reports.modos_soportados(modulo_parcial) == modulo_parcial.MODOS
+        assert custom_reports.soporta_modo(modulo_parcial, "semestral") is False
 
 
 @pytest.mark.unit

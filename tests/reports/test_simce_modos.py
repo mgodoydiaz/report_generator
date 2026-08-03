@@ -57,11 +57,26 @@ def _titulos(secciones) -> list[str]:
 @pytest.mark.unit
 class TestModosDeclarados:
     def test_modos_son_tipos_de_periodo_validos(self):
-        assert set(simce.MODOS) <= set(periodos.TIPOS_PERIODO)
+        assert set(simce.MODOS_SOPORTADOS) <= set(periodos.TIPOS_PERIODO)
+        assert set(simce.MODOS) <= set(simce.MODOS_SOPORTADOS)
 
-    def test_simce_sirve_los_cuatro(self):
-        assert simce.MODOS == ["ultima_prueba", "semestral", "anual", "personalizado"]
+    def test_simce_genera_los_cuatro(self):
+        """El módulo sigue SABIENDO generar los 4 modos (semestral incluido)."""
+        assert simce.MODOS_SOPORTADOS == [
+            "ultima_prueba", "semestral", "anual", "personalizado",
+        ]
         assert simce.MOTIVO_MODO_NO_DISPONIBLE == {}
+
+    def test_semestral_retirado_de_la_lista_publica(self):
+        """Retiro del selector el 2026-08-03 (patrón informes Word).
+
+        `MODOS` es lo que report-options convierte en cards; `semestral`
+        salió de ahí pero sigue en `MODOS_SOPORTADOS`, así que `export-pdf`
+        lo acepta y `_secciones` lo arma igual que antes.
+        """
+        assert simce.MODOS == ["ultima_prueba", "anual", "personalizado"]
+        assert "semestral" not in simce.MODOS
+        assert "semestral" in simce.MODOS_SOPORTADOS
 
     def test_modo_desconocido_levanta_valueerror(self):
         with pytest.raises(ValueError) as exc:
@@ -139,7 +154,7 @@ class TestEstructuraDeSecciones:
         dfs = _dataframes()
         dfs["riesgo_persistente"] = pd.DataFrame([{"Curso": "II A"}])
         dfs["riesgo_sin_evaluacion_reciente"] = pd.DataFrame([{"Curso": "II B"}])
-        for modo in simce.MODOS:
+        for modo in simce.MODOS_SOPORTADOS:
             fijas, dinamicas = simce._secciones(modo, dfs)
             secciones = list(fijas) + list(dinamicas.get("secciones", []))
             for s in secciones:
@@ -153,7 +168,7 @@ class TestEstructuraDeSecciones:
         dfs["resumen_logro_comparado"] = pd.DataFrame()
         dfs["riesgo_persistente"] = pd.DataFrame([{"Curso": "II A"}])
         dfs["riesgo_sin_evaluacion_reciente"] = pd.DataFrame([{"Curso": "II B"}])
-        for modo in simce.MODOS:
+        for modo in simce.MODOS_SOPORTADOS:
             fijas, dinamicas = simce._secciones(modo, dfs)
             secciones = list(fijas) + list(dinamicas.get("secciones", []))
             for s in secciones:
@@ -559,12 +574,11 @@ class TestGenerarPorModo:
         return mock.call_args
 
     def test_ultima_prueba_pasa_esquema_en_memoria(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
-        from datetime import date
         args = self._generar(
             db_session, simce_indicator_historico, "ultima_prueba",
-            {"Asignatura": "Lenguaje", "Mes": "MAYO", "Año": str(date.today().year)},
+            {"Asignatura": "Lenguaje", "Mes": "MAYO", "Año": str(hoy.year)},
         )
         esquema = args.kwargs["esquema"]
         assert args.kwargs["df_principal"] == "estudiantes_prueba"
@@ -575,11 +589,12 @@ class TestGenerarPorModo:
             s.get("tipo") == "page_break" for s in esquema["secciones_fijas"]
         )
 
-    def test_anual_usa_el_periodo_completo(self, db_session, simce_indicator_historico):
-        from datetime import date
+    def test_anual_usa_el_periodo_completo(
+        self, db_session, simce_indicator_historico, hoy
+    ):
         args = self._generar(
             db_session, simce_indicator_historico, "anual",
-            {"Asignatura": "Lenguaje", "Año": str(date.today().year)},
+            {"Asignatura": "Lenguaje", "Año": str(hoy.year)},
         )
         assert args.kwargs["df_principal"] == "estudiantes_periodo"
         dataframes = args.args[1]
@@ -589,12 +604,11 @@ class TestGenerarPorModo:
         assert len(dataframes["estudiantes_periodo"]) == 4
 
     def test_anual_calcula_el_riesgo_persistente(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
-        from datetime import date
         args = self._generar(
             db_session, simce_indicator_historico, "anual",
-            {"Asignatura": "Lenguaje", "Año": str(date.today().year)},
+            {"Asignatura": "Lenguaje", "Año": str(hoy.year)},
         )
         riesgo = args.args[1]["riesgo_persistente"]
         assert list(riesgo["Estudiante"]) == ["Alumno Uno"]
@@ -607,10 +621,9 @@ class TestGenerarPorModo:
         assert fijas[-1]["df_input"] == "riesgo_persistente"
 
     def test_anual_compara_con_el_anio_anterior(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         args = self._generar(
             db_session, simce_indicator_historico, "anual",
             {"Asignatura": "Lenguaje", "Año": str(anio)},
@@ -619,11 +632,12 @@ class TestGenerarPorModo:
         assert f"Promedio {anio - 1}" in comparado.columns
         assert comparado.loc[0, f"Promedio {anio - 1}"] == "40%"
 
-    def test_el_pie_es_la_organizacion(self, db_session, simce_indicator_historico, org):
-        from datetime import date
+    def test_el_pie_es_la_organizacion(
+        self, db_session, simce_indicator_historico, org, hoy
+    ):
         args = self._generar(
             db_session, simce_indicator_historico, "ultima_prueba",
-            {"Asignatura": "Lenguaje", "Año": str(date.today().year)},
+            {"Asignatura": "Lenguaje", "Año": str(hoy.year)},
         )
         assert args.kwargs["overrides"]["branding"]["left_footer"] == org.name
 
@@ -664,10 +678,9 @@ class TestFuenteUnicaDelPeriodo(TestGenerarPorModo):
         return args.kwargs["overrides"]["branding"]["center_header"][-1]
 
     def test_periodo_desc_inyectado_manda_sobre_el_calculo_propio(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         desc = f"ENERO {anio} – JULIO {anio}"
         args = self._generar(
             db_session, simce_indicator_historico, "personalizado",
@@ -678,10 +691,9 @@ class TestFuenteUnicaDelPeriodo(TestGenerarPorModo):
         assert self._ultima_linea_header(args) == desc
 
     def test_titulo_y_encabezado_coinciden_en_todos_los_modos(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         for modo, desc in (
             ("ultima_prueba", f"MAYO {anio} (prueba 2)"),
             ("anual", str(anio)),
@@ -696,11 +708,10 @@ class TestFuenteUnicaDelPeriodo(TestGenerarPorModo):
             assert self._ultima_linea_header(args) == desc, modo
 
     def test_sin_periodo_desc_cae_al_calculo_propio(
-        self, db_session, simce_indicator_historico
+        self, db_session, simce_indicator_historico, hoy
     ):
         """Invocación directa del módulo: el fallback sigue vivo."""
-        from datetime import date
-        anio = date.today().year
+        anio = hoy.year
         args = self._generar(
             db_session, simce_indicator_historico, "anual",
             {"Asignatura": "Lenguaje", "Año": str(anio)},

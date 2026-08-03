@@ -20,7 +20,8 @@ Contrato del módulo (ver `_ejemplo.py` para la plantilla comentada):
     REQUIERE_FILTRO_TEMPORAL = []            # ej ["Mes", "N Prueba"]
     REQUIERE_ASIGNATURA = False              # True → el informe es por asignatura
     FILENAME = "informe_pdl_idel.pdf"        # opcional
-    MODOS = ["ultima_prueba", "anual"]       # modos de período que sabe generar
+    MODOS = ["ultima_prueba", "anual"]       # modos de período PÚBLICOS (cards)
+    MODOS_SOPORTADOS = [...]                 # opcional: generables por API
     MOTIVO_MODO_NO_DISPONIBLE = {...}        # {modo: motivo pedagógico}
 
     def generar(db, *, indicator_id, org_id, modo=None, filtros=None,
@@ -39,7 +40,8 @@ API pública:
     aplica_a(modulo, engine_type)→ bool (filtro por ENGINE_TYPES)
     requiere_asignatura(modulo)  → bool (lee REQUIERE_ASIGNATURA)
     metadata(nombre|modulo)      → dict de UN informe
-    modos(modulo)                → list[str] de modos declarados
+    modos(modulo)                → list[str] de modos PÚBLICOS (cards)
+    modos_soportados(modulo)     → list[str] de modos generables (API)
     soporta_modo(modulo, modo)   → bool
     motivo_modo(modulo, modo)    → motivo pedagógico del modo no servido
     nombre_de(modulo)            → nombre público del módulo
@@ -184,8 +186,25 @@ def modos(mod: ModuleType) -> list[str]:
     return list(getattr(mod, "MODOS", []) or [])
 
 
+def modos_soportados(mod: ModuleType) -> list[str]:
+    """Modos que el módulo SABE generar, ofrecidos o no en el selector.
+
+    Es `MODOS_SOPORTADOS` cuando el módulo lo declara y `MODOS` en caso
+    contrario. La distinción existe para poder RETIRAR una card del selector
+    sin romper la API (patrón de los informes Word): `MODOS` es lo que ve el
+    usuario, `MODOS_SOPORTADOS` lo que acepta `export-pdf`.
+    """
+    declarados = getattr(mod, "MODOS_SOPORTADOS", None)
+    if declarados:
+        return list(declarados)
+    return modos(mod)
+
+
 def soporta_modo(mod: ModuleType, modo: Optional[str]) -> bool:
-    """True si `modo` está en `MODOS`.
+    """True si `modo` está en `MODOS_SOPORTADOS` (o en `MODOS` si no existe).
+
+    Se consulta la lista SOPORTADA, no la pública: un modo retirado del
+    selector debe seguir generándose por API.
 
     `modo=None` devuelve False a propósito: `None` es el informe "formato
     oficial" clásico (`POST /api/reports/custom/{nombre}`), no un modo de
@@ -193,7 +212,7 @@ def soporta_modo(mod: ModuleType, modo: Optional[str]) -> bool:
     """
     if not modo:
         return False
-    return modo in modos(mod)
+    return modo in modos_soportados(mod)
 
 
 def motivo_modo(mod: ModuleType, modo: str) -> str:
