@@ -1193,12 +1193,34 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
     const [metricLogro, setMetricLogro] = useState('logro');
     const [metricBoxplot, setMetricBoxplot] = useState('logro');
 
+    // Firma del set de tabs del layout actual. Cambia cuando se cambia de
+    // indicador (o se reconfigura su layout), tanto si varía la cantidad de
+    // tabs como si solo cambian sus ids.
+    const tabsSignature = useMemo(
+        () => (layout?.tabs || []).map((t, i) => t?.id || `#${i}`).join('|'),
+        [layout]
+    );
+
+    // Al cambiar de indicador el índice de tab activa quedaba apuntando a la
+    // posición anterior: pasar de un dashboard de 5 tabs (DIA) a uno de 3
+    // (IDEL) dejaba `tabs[activeTab] === undefined` y la página en blanco, sin
+    // error de consola. Se vuelve a la primera tab cuando cambia el set.
+    useEffect(() => {
+        setActiveTab(0);
+    }, [tabsSignature]);
+
+    // Red de seguridad para el render del mismo ciclo en que cambia el layout
+    // (el efecto de arriba corre después de pintar): si el índice se salió de
+    // rango, se clampa a la primera tab.
+    const tabsCount = layout?.tabs?.length || 0;
+    const safeActiveTab = activeTab < tabsCount ? activeTab : 0;
+
     // S2.6: limpiar filtros scoped (curso / subprueba) al cambiar de tab.
     // Los filtros item-level (filter) son estáticos por item, no se tocan.
     useEffect(() => {
         setCursoActivo?.(null);
         setSubpruebaActiva?.(null);
-    }, [activeTab]);
+    }, [safeActiveTab]);
 
     // Aplicar columnas derivadas del indicador sobre los records
     const enrichedEstudiantes = useMemo(
@@ -1246,25 +1268,26 @@ export function DashboardRenderer({ layout, computed, datosCurso, cursoActivo, s
         <div>
             <div className="flex gap-1 border-b border-slate-200 dark:border-slate-800">
                 {resolvedLayout.tabs.map((tab, idx) => (
-                    <button key={tab.id || idx} className={tabStyle(activeTab === idx)} onClick={() => setActiveTab(idx)}>
+                    <button key={tab.id || idx} className={tabStyle(safeActiveTab === idx)} onClick={() => setActiveTab(idx)}>
                         {tab.id === 'curso' && cursoActivo ? 'Detalle Curso ' + cursoActivo : tab.label}
                     </button>
                 ))}
             </div>
 
             <div className="bg-white dark:bg-slate-900 rounded-b-3xl rounded-tr-3xl border border-t-0 border-slate-200 dark:border-slate-800 p-6 shadow-sm">
-                {resolvedLayout.tabs[activeTab] && (() => {
+                {resolvedLayout.tabs[safeActiveTab] && (() => {
+                    const tabActiva = resolvedLayout.tabs[safeActiveTab];
                     const tabContext = {
-                        hasSubpruebaSelector: resolvedLayout.tabs[activeTab].rows.some(
+                        hasSubpruebaSelector: (tabActiva.rows || []).some(
                             r => r.items.some(i => i.type === 'subprueba_selector')
                         ),
                     };
                     return (
                     <div className="space-y-8">
-                        {resolvedLayout.tabs[activeTab].rows.map((row, rowIdx) => (
+                        {(tabActiva.rows || []).map((row, rowIdx) => (
                             <RowRenderer key={rowIdx} row={row} ctx={ctxWithCursoClick} tabContext={tabContext} />
                         ))}
-                        {resolvedLayout.tabs[activeTab].rows.some(r => r.items.some(i => i.type === 'course_selector')) && !cursoActivo && (
+                        {(tabActiva.rows || []).some(r => r.items.some(i => i.type === 'course_selector')) && !cursoActivo && (
                             <div className="text-center py-8 text-slate-400 text-sm">
                                 Selecciona un curso desde la tabla de resumen para ver el detalle.
                             </div>

@@ -50,6 +50,11 @@ export default function GenerateReportModal({
 
     const [engines, setEngines] = useState([]);
     const [selectedEngine, setSelectedEngine] = useState('weasyprint');
+    // ¿El usuario tocó el selector de motor? Solo entonces el `engine` viaja en
+    // el body. Mandarlo siempre apagaba el motor único del backend (que solo
+    // entra `if modo_periodo and not engine_override`) y devolvía un informe
+    // mutilado. Sin elección explícita, el backend resuelve por sí mismo.
+    const [engineTouched, setEngineTouched] = useState(false);
     const [tipo, setTipo] = useState('evaluacion'); // 'evaluacion' | 'historico'
     const [filters, setFilters] = useState({});
     const [branding, setBranding] = useState({});
@@ -105,6 +110,8 @@ export default function GenerateReportModal({
         if (!open || !indicator) return;
         setBranding({ ...(activeLayout.branding || {}) });
         setSelectedEngine((initialEngine || activeLayout.engine || 'weasyprint').toLowerCase());
+        // El valor mostrado es solo el default sugerido, no una elección.
+        setEngineTouched(false);
     }, [open, indicator, tipo, activeLayout, initialEngine]);
 
     // Limpiar filtros temporales al cambiar a histórico (no aplican)
@@ -157,6 +164,14 @@ export default function GenerateReportModal({
     const clearFilters = () => setFilters({});
     const hasActiveFilters = Object.keys(filters).length > 0;
 
+    // Motor que viaja en el body: la elección del usuario si tocó el selector,
+    // o el que la card del catálogo declaró explícitamente (ej. `pdl_idel`).
+    // Si no hay ninguno, el campo se omite y el backend resuelve por
+    // `report_engine_type` / `pdf_layout.engine`.
+    const engineExplicito = engineTouched
+        ? selectedEngine
+        : (initialEngine ? String(initialEngine).toLowerCase() : null);
+
     const handleGenerate = async () => {
         if (!indicator || generating) return;
         setGenerating(true);
@@ -167,7 +182,7 @@ export default function GenerateReportModal({
                     method: 'POST',
                     body: JSON.stringify({
                         filters,
-                        engine: selectedEngine,
+                        ...(engineExplicito ? { engine: engineExplicito } : {}),
                         branding_override: branding,
                         save_as_default: saveAsDefault,
                         tipo, // 'evaluacion' | 'historico' — ignorado si va `periodo`
@@ -317,7 +332,7 @@ export default function GenerateReportModal({
                         </label>
                         <select
                             value={selectedEngine}
-                            onChange={(e) => setSelectedEngine(e.target.value)}
+                            onChange={(e) => { setSelectedEngine(e.target.value); setEngineTouched(true); }}
                             className="w-full text-sm rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                         >
                             {engines.length === 0 && (
@@ -333,7 +348,12 @@ export default function GenerateReportModal({
                                 </option>
                             ))}
                         </select>
-                        {currentEngineMeta?.description && (
+                        {!engineExplicito ? (
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
+                                Automático — el motor lo elige el servidor según el indicador.
+                                Cambia esta opción solo si quieres forzar uno.
+                            </p>
+                        ) : currentEngineMeta?.description && (
                             <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5">
                                 {currentEngineMeta.description}
                             </p>

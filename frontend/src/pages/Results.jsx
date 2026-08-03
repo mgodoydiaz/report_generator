@@ -335,16 +335,22 @@ export default function Results() {
                 });
                 fallbackName = `informe_${op.tipo_v2}.pdf`;
             } else if (periodo) {
-                // Informes del período — motor único (weasyprint). `tipo` va como
+                // Informes del período — el backend resuelve el motor por sí solo
+                // (módulo del motor único declarado en `report_engine_type`, si
+                // existe; si no, weasyprint sobre el pdf_layout). `tipo` va como
                 // placeholder por retrocompatibilidad del contrato: el backend lo
                 // ignora cuando `periodo` está presente.
+                //
+                // NO se manda `engine`: en el backend el módulo del motor único
+                // solo entra `if modo_periodo and not engine_override`, así que
+                // cualquier override apagaría el informe completo (SIMCE quedaba
+                // en 2 páginas mutiladas en vez de 14).
                 resp = await fetchAuth(`${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filters: filtrosId,
                         tipo: 'evaluacion',
-                        engine: 'weasyprint',
                         periodo,
                     }),
                 });
@@ -362,13 +368,16 @@ export default function Results() {
                 });
                 fallbackName = `informe_${nombreCustom}.${op.formato === 'word' ? 'docx' : 'pdf'}`;
             } else if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
+                // `engine` viaja solo cuando la card declara un motor distinto
+                // del default: para 'weasyprint' el backend ya resuelve igual
+                // (pdf_layout.engine → weasyprint) y mandarlo solo estorba.
                 resp = await fetchAuth(`${API_BASE_URL}/indicators/${selectedIndicator}/export-pdf`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         filters: filtrosId,
                         tipo: op.invocacion?.params?.tipo || 'evaluacion',
-                        engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+                        ...(op.motor === 'pdl_idel' ? { engine: 'pdl_idel' } : {}),
                     }),
                 });
                 fallbackName = 'informe.pdf';
@@ -445,7 +454,11 @@ export default function Results() {
         if (periodo) {
             setReportV1Context({
                 tipo: 'evaluacion',
-                engine: 'weasyprint',
+                // Sin `engine`: el modal no debe preseleccionar un motor para los
+                // informes del período (el backend los resuelve con su módulo).
+                // Si el usuario toca el selector del modal, ahí sí viaja su
+                // elección explícita.
+                engine: null,
                 periodo,
                 periodoLabel: op.label,
                 filters: filtrosExtra ? filtrosPorIdConExtra(filtrosExtra) : null,
@@ -457,7 +470,9 @@ export default function Results() {
         if (op.motor === 'weasyprint' || op.motor === 'pdl_idel') {
             setReportV1Context({
                 tipo: op.invocacion?.params?.tipo || 'evaluacion',
-                engine: op.motor === 'pdl_idel' ? 'pdl_idel' : 'weasyprint',
+                // Solo los motores declarados explícitamente por la card se
+                // preseleccionan; 'weasyprint' es el default del backend.
+                engine: op.motor === 'pdl_idel' ? 'pdl_idel' : null,
                 filters: filtrosExtra ? filtrosPorIdConExtra(filtrosExtra) : null,
             });
             setShowReportSelector(false);
