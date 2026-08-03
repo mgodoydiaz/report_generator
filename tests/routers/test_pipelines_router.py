@@ -311,21 +311,21 @@ class TestDeletePipeline:
     def test_sin_auth_401(self, client, pipeline_simple):
         assert client.delete(f"/api/pipelines/{pipeline_simple.pipeline_id}").status_code == 401
 
-    def test_inexistente_devuelve_error(self, client_auth):
-        r = client_auth.delete("/api/pipelines/99999")
+    def test_inexistente_devuelve_error(self, client_auth_admin):
+        r = client_auth_admin.delete("/api/pipelines/99999")
         assert r.status_code == 200
         assert "error" in r.json()
 
-    def test_otra_org_devuelve_error(self, client_auth, pipeline_de_otra_org):
+    def test_otra_org_devuelve_error(self, client_auth_admin, pipeline_de_otra_org):
         _, p = pipeline_de_otra_org
-        r = client_auth.delete(f"/api/pipelines/{p.pipeline_id}")
+        r = client_auth_admin.delete(f"/api/pipelines/{p.pipeline_id}")
         assert r.status_code == 200
         assert "error" in r.json()
 
-    def test_delete_success(self, client_auth, pipeline_simple, db_session):
+    def test_delete_success(self, client_auth_admin, pipeline_simple, db_session):
         from backend.models import Pipeline
         pid = pipeline_simple.pipeline_id
-        r = client_auth.delete(f"/api/pipelines/{pid}")
+        r = client_auth_admin.delete(f"/api/pipelines/{pid}")
         assert r.status_code == 200
         # No tiene "error" key
         assert "error" not in r.json()

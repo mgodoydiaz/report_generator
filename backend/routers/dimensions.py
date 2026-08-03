@@ -5,7 +5,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin, require_editor
 from backend.logging_config import get_logger
 from backend.models import User, Dimension, DimensionValue
 
@@ -97,7 +97,7 @@ async def get_dimensions(
 async def create_dimension(
     dim: DimensionCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         new_dim = Dimension(
@@ -134,7 +134,7 @@ async def update_dimension(
     dim_id: int,
     dim: DimensionUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(Dimension).filter(
@@ -177,7 +177,7 @@ async def update_dimension(
 async def delete_dimension(
     dim_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         record = db.query(Dimension).filter(
@@ -234,7 +234,7 @@ async def add_dimension_value(
     dim_id: int,
     val: DimensionValueCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         # Verify dimension belongs to org
@@ -275,7 +275,7 @@ async def add_dimension_value(
 async def delete_dimension_value(
     val_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(DimensionValue).filter(DimensionValue.id_value == val_id).first()

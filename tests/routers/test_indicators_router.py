@@ -116,9 +116,9 @@ class TestUpdateIndicator:
 
 @pytest.mark.integration
 class TestDeleteIndicator:
-    def test_delete_funciona(self, client_auth, db_session, org):
+    def test_delete_funciona(self, client_auth_admin, db_session, org):
         ind = make_indicator(db_session, org, name="Borrame")
-        r = client_auth.delete(f"/api/indicators/{ind.id_indicator}")
+        r = client_auth_admin.delete(f"/api/indicators/{ind.id_indicator}")
         assert r.status_code == 200
         # Verificar borrado
         from backend.models import Indicator
@@ -127,10 +127,10 @@ class TestDeleteIndicator:
         ).count()
         assert n == 0
 
-    def test_delete_de_otra_org_404(self, client_auth, db_session):
+    def test_delete_de_otra_org_404(self, client_auth_admin, db_session):
         other = make_org(db_session)
         ind = make_indicator(db_session, other, name="X")
-        r = client_auth.delete(f"/api/indicators/{ind.id_indicator}")
+        r = client_auth_admin.delete(f"/api/indicators/{ind.id_indicator}")
         assert r.status_code == 404
 
 

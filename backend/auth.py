@@ -98,11 +98,33 @@ def get_current_user(
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
-    """Dependency: solo permite acceso a role=admin."""
-    if user.role != "admin":
+    """Dependency: permite acceso a role=admin y a cualquier superadmin.
+
+    El superadmin pasa aunque su `role` no sea "admin": está por encima de
+    admin en toda la jerarquía. Esto replica el `_check_admin` que vivía en
+    el cuerpo de organizations.py, para no degradar ese acceso al mover el
+    chequeo a la firma del endpoint.
+    """
+    if user.role != "admin" and not getattr(user, "is_superadmin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Se requiere rol de administrador",
+        )
+    return user
+
+
+def require_editor(user: User = Depends(get_current_user)) -> User:
+    """Dependency: permite escritura de dominio a admin y editor.
+
+    `viewer` es un rol de solo lectura: puede hacer GET, previsualizar y
+    descargar informes, pero no crear, modificar ni borrar. Las operaciones
+    destructivas (borrado de entidades, vaciados masivos) usan `require_admin`,
+    no esta dependency.
+    """
+    if user.role not in ("admin", "editor"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tu usuario es de solo lectura: se requiere rol de editor o administrador",
         )
     return user
 

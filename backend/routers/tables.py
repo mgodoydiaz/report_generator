@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import event
 from sqlalchemy.orm import Session
 
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_editor
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Indicator, Metric, MetricData, MetricDimension, Dimension, Spec, User
@@ -354,7 +354,7 @@ def list_tables(
 def create_table(
     payload: TableCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     meta = {
         "description": payload.description,
@@ -390,7 +390,7 @@ def update_table(
     table_id: int,
     payload: TableUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, table_id, user.org_id)
     meta = _parse_meta(spec)
@@ -413,7 +413,7 @@ def update_table(
 def delete_table(
     table_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, table_id, user.org_id)
     db.delete(spec)
@@ -425,7 +425,7 @@ def delete_table(
 def duplicate_table(
     table_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, table_id, user.org_id)
     new = Spec(

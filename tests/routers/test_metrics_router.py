@@ -195,21 +195,21 @@ class TestDeleteMetric:
     def test_sin_auth_401(self, client, metric_simple):
         assert client.delete(f"/api/metrics/{metric_simple.id_metric}").status_code == 401
 
-    def test_delete_existente(self, client_auth, metric_simple, db_session):
+    def test_delete_existente(self, client_auth_admin, metric_simple, db_session):
         from backend.models import Metric
         mid = metric_simple.id_metric
-        r = client_auth.delete(f"/api/metrics/{mid}")
+        r = client_auth_admin.delete(f"/api/metrics/{mid}")
         assert r.status_code == 200
         db_session.expire_all()
         assert db_session.get(Metric, mid) is None
 
-    def test_delete_otra_org_no_borra_pero_responde_200(self, client_auth, metric_de_otra_org, db_session):
+    def test_delete_otra_org_no_borra_pero_responde_200(self, client_auth_admin, metric_de_otra_org, db_session):
         """El endpoint hace silent-skip si la metric no es de tu org (no borra,
         no levanta 404). Quizás debería ser 404, pero el comportamiento actual
         es 200 con `status: success` y la metric intacta."""
         from backend.models import Metric
         _, m = metric_de_otra_org
-        r = client_auth.delete(f"/api/metrics/{m.id_metric}")
+        r = client_auth_admin.delete(f"/api/metrics/{m.id_metric}")
         assert r.status_code == 200
         db_session.expire_all()
         # La metric sigue existiendo (no fue borrada porque no era de mi org)
@@ -312,17 +312,17 @@ class TestAddDataPoint:
 
 @pytest.mark.integration
 class TestClearMetricData:
-    def test_404_no_existe(self, client_auth):
-        assert client_auth.post("/api/metrics/99999/clear").status_code == 404
+    def test_404_no_existe(self, client_auth_admin):
+        assert client_auth_admin.post("/api/metrics/99999/clear").status_code == 404
 
-    def test_404_otra_org(self, client_auth, metric_de_otra_org):
+    def test_404_otra_org(self, client_auth_admin, metric_de_otra_org):
         _, m = metric_de_otra_org
-        assert client_auth.post(f"/api/metrics/{m.id_metric}/clear").status_code == 404
+        assert client_auth_admin.post(f"/api/metrics/{m.id_metric}/clear").status_code == 404
 
-    def test_clear_borra_todos(self, client_auth, metric_con_dims_y_datos, db_session):
+    def test_clear_borra_todos(self, client_auth_admin, metric_con_dims_y_datos, db_session):
         from backend.models import MetricData
         metric, _ = metric_con_dims_y_datos
-        r = client_auth.post(f"/api/metrics/{metric.id_metric}/clear")
+        r = client_auth_admin.post(f"/api/metrics/{metric.id_metric}/clear")
         assert r.status_code == 200
         assert r.json()["cleared_count"] == 3
         db_session.expire_all()
@@ -395,7 +395,7 @@ class TestBatchDelete:
         r = client.post("/api/metrics/data/batch-delete", json={"ids": [1, 2]})
         assert r.status_code == 401
 
-    def test_borra_solo_los_de_mi_org(self, client_auth, db_session, metric_con_dims_y_datos):
+    def test_borra_solo_los_de_mi_org(self, client_auth_admin, db_session, metric_con_dims_y_datos):
         """Borra los IDs que SÍ son de mi org; ignora los de otras orgs."""
         from backend.models import MetricData
         m_mio, _ = metric_con_dims_y_datos
@@ -407,8 +407,8 @@ class TestBatchDelete:
         m_other = make_metric(db_session, other, name="X")
         d_ajeno = make_metric_data(db_session, m_other, value="9.9")
         # Lista mixta: 3 míos + 1 ajeno
-        r = client_auth.post("/api/metrics/data/batch-delete",
-                             json={"ids": ids_mios + [d_ajeno.id_data]})
+        r = client_auth_admin.post("/api/metrics/data/batch-delete",
+                                   json={"ids": ids_mios + [d_ajeno.id_data]})
         assert r.status_code == 200
         # Solo 3 borrados (los míos), el ajeno sigue
         assert r.json()["deleted_count"] == 3

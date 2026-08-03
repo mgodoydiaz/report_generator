@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin, require_editor
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Pipeline, User
@@ -143,7 +143,7 @@ async def upload_pipeline_files(
     input_key: str = Form(...),
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         # Verify pipeline belongs to org
@@ -208,7 +208,7 @@ async def upload_pipeline_files(
 async def execute_pipeline(
     pipeline_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         _cleanup_stale_runners()
@@ -262,7 +262,7 @@ async def submit_pipeline_input(
     pipeline_id: int,
     input_data: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     """Recibe input del usuario para reanudar un pipeline pausado."""
     try:
@@ -316,7 +316,7 @@ async def submit_pipeline_input(
 async def execute_pipeline_step(
     pipeline_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         _cleanup_stale_runners()
@@ -358,7 +358,7 @@ async def execute_pipeline_step(
 async def reset_pipeline_session(
     pipeline_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     _drop_runner(_key(user, pipeline_id))
     return {"status": "success"}
@@ -494,7 +494,7 @@ async def get_pipeline_config(
 async def create_pipeline_config(
     config: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     return await _save_pipeline_config_logic(pipeline_id=0, config=config, db=db, user=user)
 
@@ -560,7 +560,7 @@ async def save_pipeline_config_endpoint(
     pipeline_id: int,
     config: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     return await _save_pipeline_config_logic(pipeline_id, config, db, user)
 
@@ -570,7 +570,7 @@ async def toggle_pipeline_hidden(
     pipeline_id: int,
     body: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         row = db.query(Pipeline).filter(
@@ -593,7 +593,7 @@ async def toggle_pipeline_hidden(
 async def delete_pipeline(
     pipeline_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         row = db.query(Pipeline).filter(

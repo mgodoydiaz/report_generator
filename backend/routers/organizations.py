@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin
 from backend.models import User, Organization, OrganizationAsset
 from backend.config import BASE_DIR
 
@@ -64,7 +64,7 @@ async def upload_asset(
     kind: str = Query("logo"),
     name: str = Query(None),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     if user.org_id != org_id and not user.is_superadmin:
         raise HTTPException(status_code=403, detail="Sin acceso a esta organización")
@@ -129,7 +129,7 @@ async def delete_asset(
     org_id: int,
     asset_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     if user.org_id != org_id and not user.is_superadmin:
         raise HTTPException(status_code=403, detail="Sin acceso a esta organización")

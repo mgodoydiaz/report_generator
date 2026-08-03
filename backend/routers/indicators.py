@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Dict
 from sqlalchemy.orm import Session, selectinload
 
 from backend.database import get_db
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin, require_editor
 from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
 from backend.models import User, Indicator, IndicatorMetric, Metric
@@ -601,7 +601,7 @@ def get_indicators(
 def create_indicator(
     indicator: IndicatorCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         new_ind = Indicator(
@@ -649,7 +649,7 @@ def update_indicator(
     indicator_id: int,
     indicator: IndicatorUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(Indicator).filter(
@@ -719,7 +719,7 @@ def upsert_layout(
     indicator_id: int,
     body: LayoutUpsert,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     """Actualiza dashboard_layout, pdf_layout y/o pdf_layout_historico de un
     indicador en una sola request. Solo actualiza los campos que se pasan
@@ -1217,7 +1217,7 @@ def export_pdf(
 def delete_indicator(
     indicator_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         record = db.query(Indicator).filter(

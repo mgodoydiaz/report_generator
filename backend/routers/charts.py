@@ -25,7 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_editor
 from backend.database import get_db
 from backend.logging_config import get_logger
 from backend.models import Spec, User
@@ -599,7 +599,7 @@ def list_charts(
 def create_chart(
     payload: ChartCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     meta = {
         "description": payload.description,
@@ -635,7 +635,7 @@ def update_chart(
     chart_id: int,
     payload: ChartUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, chart_id, user.org_id)
     meta = _parse_meta(spec)
@@ -658,7 +658,7 @@ def update_chart(
 def delete_chart(
     chart_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, chart_id, user.org_id)
     db.delete(spec)
@@ -670,7 +670,7 @@ def delete_chart(
 def duplicate_chart(
     chart_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, chart_id, user.org_id)
     new = Spec(

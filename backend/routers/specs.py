@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_editor
 from backend.logging_config import get_logger
 from backend.models import User, Spec
 
@@ -77,7 +77,7 @@ async def get_spec_config(
 async def create_spec_config(
     config: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     return await _save_spec_config_logic(spec_id=0, config=config, db=db, user=user)
 
@@ -136,7 +136,7 @@ async def save_spec_config_endpoint(
     spec_id: int,
     config: dict,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     return await _save_spec_config_logic(spec_id, config, db, user)
 
@@ -145,7 +145,7 @@ async def save_spec_config_endpoint(
 async def duplicate_spec(
     spec_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         spec = db.query(Spec).filter(
@@ -173,7 +173,7 @@ async def duplicate_spec(
 async def delete_spec(
     spec_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         spec = db.query(Spec).filter(

@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin
 from backend.database import get_db
 from backend.models import Dimension, Metric, MetricData, MetricDimension, Spec, User
 from backend.routers.mappings import apply_mapping
@@ -209,7 +209,7 @@ class ReplaceRequest(BaseModel):
 async def replace_values(
     payload: ReplaceRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     metric = _get_metric_or_404(db, payload.metric_id, user.org_id)
     col_info = _resolve_column(db, metric, payload.column_name)
@@ -324,7 +324,7 @@ def _load_mapping_config(db: Session, org_id: int, mapping_id: int) -> MappingCo
 async def recalculate_column(
     payload: RecalculateRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     metric = _get_metric_or_404(db, payload.metric_id, user.org_id)
     src_info = _resolve_column(db, metric, payload.source_column)

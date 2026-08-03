@@ -34,7 +34,10 @@ class TestDataOpsTenancy:
     def _setup_orgs(self, db_session):
         org_a = make_org(db_session, name="Org A", slug="org-a")
         org_b = make_org(db_session, name="Org B", slug="org-b")
-        user_a = make_user(db_session, org_a, role="editor")
+        # admin: /api/data-ops/replace exige `require_admin`. Lo que se prueba
+        # acá es el aislamiento entre orgs, no el gate de rol — con un editor
+        # el 403 taparía el 404 de tenancy que queremos verificar.
+        user_a = make_user(db_session, org_a, role="admin")
         # Métrica + dato en la Org B (víctima potencial)
         metric_b = make_metric(
             db_session, org_b, name="Metric B", data_type="object",

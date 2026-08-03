@@ -12,7 +12,7 @@ from sqlalchemy import func, or_, cast, literal
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_admin, require_editor
 from backend.auditing import client_ip, make_metric_data
 from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
@@ -249,7 +249,7 @@ def get_metrics(
 def create_metric(
     metric: MetricCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         new_m = Metric(
@@ -283,7 +283,7 @@ def update_metric(
     metric_id: int,
     metric: MetricUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(Metric).filter(
@@ -323,7 +323,7 @@ def update_metric(
 def delete_metric(
     metric_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         record = db.query(Metric).filter(
@@ -502,7 +502,7 @@ def add_metric_data_point(
     point: MetricDataPoint,
     request: Request,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         metric = db.query(Metric).filter(
@@ -560,7 +560,7 @@ def add_metric_data_point(
 def clear_metric_data(
     metric_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         metric = db.query(Metric).filter(
@@ -590,7 +590,7 @@ def clear_metric_data(
 def delete_data_point(
     data_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(MetricData).filter(MetricData.id_data == data_id).first()
@@ -619,7 +619,7 @@ def update_metric_data(
     data_id: int,
     point: MetricDataPoint,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         record = db.query(MetricData).filter(MetricData.id_data == data_id).first()
@@ -657,7 +657,7 @@ def update_metric_data(
 def delete_metric_data_batch(
     req: BatchDeleteRequest,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_admin),
 ):
     try:
         # Only delete data points that belong to metrics owned by this org
@@ -889,7 +889,7 @@ async def import_metric_data(
     request: Request,
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     try:
         metric = db.query(Metric).filter(

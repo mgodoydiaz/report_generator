@@ -26,7 +26,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from backend.auth import get_current_user
+from backend.auth import get_current_user, require_editor
 from backend.database import get_db
 from backend.models import Spec, User
 from backend.schemas_mapping import (
@@ -233,7 +233,7 @@ async def list_mappings(
 async def create_mapping(
     payload: MappingCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     meta = {
         "description": payload.description,
@@ -270,7 +270,7 @@ async def update_mapping(
     mapping_id: int,
     payload: MappingUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, mapping_id, user.org_id)
     meta = _parse_meta(spec)
@@ -293,7 +293,7 @@ async def update_mapping(
 async def delete_mapping(
     mapping_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, mapping_id, user.org_id)
     db.delete(spec)
@@ -305,7 +305,7 @@ async def delete_mapping(
 async def duplicate_mapping(
     mapping_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_editor),
 ):
     spec = _get_spec_or_404(db, mapping_id, user.org_id)
     new = Spec(

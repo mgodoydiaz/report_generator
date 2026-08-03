@@ -213,6 +213,89 @@ def client_auth(client, auth_headers):
     return client
 
 
+@pytest.fixture
+def admin_user(db_session, org):
+    """Usuario **admin** vinculado a `org` (misma org que `user`).
+
+    Para endpoints protegidos con `require_admin`, donde el `user` editor
+    por defecto recibe 403.
+    """
+    from backend.auth import hash_password
+    from backend.models import User
+    u = User(
+        name="Test Admin",
+        email="admin@example.com",
+        password_hash=hash_password("test123"),
+        org_id=org.id,
+        role="admin",
+        is_active=True,
+        is_superadmin=False,
+    )
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    return u
+
+
+@pytest.fixture
+def viewer_user(db_session, org):
+    """Usuario **viewer** (solo lectura) vinculado a `org`."""
+    from backend.auth import hash_password
+    from backend.models import User
+    u = User(
+        name="Test Viewer",
+        email="viewer@example.com",
+        password_hash=hash_password("test123"),
+        org_id=org.id,
+        role="viewer",
+        is_active=True,
+        is_superadmin=False,
+    )
+    db_session.add(u)
+    db_session.commit()
+    db_session.refresh(u)
+    return u
+
+
+@pytest.fixture
+def auth_headers_admin(admin_user):
+    """`{"Authorization": "Bearer <jwt>"}` válido para `admin_user`."""
+    from backend.auth import create_access_token
+    token = create_access_token(
+        user_id=admin_user.id, org_id=admin_user.org_id, role=admin_user.role
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def auth_headers_viewer(viewer_user):
+    """`{"Authorization": "Bearer <jwt>"}` válido para `viewer_user`."""
+    from backend.auth import create_access_token
+    token = create_access_token(
+        user_id=viewer_user.id, org_id=viewer_user.org_id, role=viewer_user.role
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def client_auth_admin(client, auth_headers_admin):
+    """TestClient autenticado como **admin** de `org`.
+
+    NOTA: comparte la instancia de `client` con `client_auth` /
+    `client_auth_viewer`; no pedir dos de estos fixtures en el mismo test
+    (el último en resolverse pisa el header Authorization).
+    """
+    client.headers.update(auth_headers_admin)
+    return client
+
+
+@pytest.fixture
+def client_auth_viewer(client, auth_headers_viewer):
+    """TestClient autenticado como **viewer** de `org` (ver nota en `client_auth_admin`)."""
+    client.headers.update(auth_headers_viewer)
+    return client
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # Indicadores SIMCE de prueba
 #

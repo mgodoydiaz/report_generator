@@ -210,13 +210,14 @@ class TestCacheInvalidacion:
         # La entrada de esa métrica ya no está
         assert not any(k[1] == metric.id_metric for k in tables_mod._METRIC_DF_CACHE)
 
-    def test_clear_invalida_cache(self, client_auth, db_session, org):
+    def test_clear_invalida_cache(self, client_auth_admin, db_session, org):
         from backend.routers import tables as tables_mod
 
         metric = make_metric(db_session, org, name="Metric Clear Test", data_type="float")
         clave = tables_mod._metric_df_cache_key(org.id, metric.id_metric, None)
         tables_mod._METRIC_DF_CACHE[clave] = (time.time(), __import__("pandas").DataFrame())
 
-        res = client_auth.post(f"/api/metrics/{metric.id_metric}/clear")
+        # POST /clear exige `require_admin`; el fixture `client_auth` es editor.
+        res = client_auth_admin.post(f"/api/metrics/{metric.id_metric}/clear")
         assert res.status_code == 200, res.text
         assert not any(k[1] == metric.id_metric for k in tables_mod._METRIC_DF_CACHE)
