@@ -3,6 +3,7 @@ import { X, Play, CheckCircle2, AlertCircle, RefreshCcw, Loader2, FastForward, S
 import { toast } from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import StepRenderer from './pipeline-steps/StepRenderer';
 import '../assets/pipeline-execution.css';
 
@@ -70,8 +71,8 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
         setStatus('loading');
         try {
             const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/config`);
+            await lanzarSiFalla(response);
             const data = await response.json();
-            if (data.error) throw new Error(data.error);
 
             const pipelineSteps = data.pipeline || [];
             setSteps(pipelineSteps);
@@ -146,6 +147,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                     data: userData
                 })
             });
+            await lanzarSiFalla(response);
             const result = await response.json();
 
             if (result.status === 'waiting_input') {
@@ -214,7 +216,10 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                         return fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/upload`, {
                             method: 'POST',
                             body: formData
-                        }).then(res => res.json());
+                        }).then(async (res) => {
+                            await lanzarSiFalla(res);
+                            return res.json();
+                        });
                     });
 
                     await Promise.all(uploadPromises);
@@ -248,6 +253,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                 // que aún no terminaban (ej. extracción de PDFs DIA tarda
                 // varios segundos).
                 const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/run`, { method: 'POST' });
+                await lanzarSiFalla(response);
                 result = await response.json();
 
                 // Si el pipeline se detuvo porque necesita input del usuario
@@ -265,6 +271,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
             } else {
                 // Modo paso a paso
                 const response = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
+                await lanzarSiFalla(response);
                 result = await response.json();
 
                 // Caso especial: Backend pide input
@@ -286,6 +293,7 @@ const PipelineExecutionModal = ({ isOpen, onClose, pipelineId, pipelineName }) =
                         setCurrentStepIndex(result.next_index);
                     }
                     const nextResponse = await fetchAuth(`${API_BASE_URL}/pipelines/${pipelineId}/step`, { method: 'POST' });
+                    await lanzarSiFalla(nextResponse);
                     result = await nextResponse.json();
                 }
 

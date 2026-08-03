@@ -3,6 +3,7 @@ import { Layers, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, 
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import NewDimensionDrawer from '../components/NewDimensionDrawer';
 
 // Badge por tipo de dato. Los tipos numéricos comparten estilo; "date"
@@ -32,9 +33,8 @@ export default function Dimensions() {
         setLoading(true);
         try {
             const response = await fetchAuth(`${API_BASE_URL}/dimensions`);
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            setDimensions(data);
+            await lanzarSiFalla(response);
+            setDimensions(await response.json());
         } catch (err) {
             toast.error("Error al cargar dimensiones: " + err.message);
         } finally {
@@ -67,8 +67,7 @@ export default function Dimensions() {
 
         try {
             const res = await fetchAuth(`${API_BASE_URL}/dimensions/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+            await lanzarSiFalla(res);
             toast.success("Dimensión eliminada");
             fetchDimensions();
         } catch (err) {

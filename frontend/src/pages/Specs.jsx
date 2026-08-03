@@ -3,6 +3,7 @@ import { Settings, Trash2, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, Re
 import toast from 'react-hot-toast';
 import NewSpecDrawer from '../components/NewSpecDrawer';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import { API_BASE_URL } from '../constants';
 
 export default function Specs() {
@@ -26,10 +27,8 @@ export default function Specs() {
         setLoading(true);
         try {
             const response = await fetchAuth(`${API_BASE_URL}/specs`);
-            if (!response.ok) throw new Error('Error al conectar con el servidor');
-            const data = await response.json();
-            if (data.error) throw new Error(data.error);
-            setSpecs(data);
+            await lanzarSiFalla(response);
+            setSpecs(await response.json());
             setError(null);
         } catch (err) {
             console.error(err);
@@ -45,8 +44,8 @@ export default function Specs() {
         setLoading(true);
         try {
             const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}/config`);
+            await lanzarSiFalla(response);
             const data = await response.json();
-            if (data.error) throw new Error(data.error);
 
             setDrawerData({ ...data, id: specId });
             setIsDrawerOpen(true);
@@ -66,6 +65,7 @@ export default function Specs() {
             const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}`, {
                 method: 'DELETE'
             });
+            await lanzarSiFalla(response);
             const data = await response.json();
 
             if (data.status === 'success') {
@@ -89,6 +89,7 @@ export default function Specs() {
             const response = await fetchAuth(`${API_BASE_URL}/specs/${specId}/duplicate`, {
                 method: 'POST'
             });
+            await lanzarSiFalla(response);
             const data = await response.json();
 
             if (data.status === 'success') {
@@ -123,6 +124,7 @@ export default function Specs() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
             });
+            await lanzarSiFalla(response);
             const data = await response.json();
 
             if (data.status === 'success') {

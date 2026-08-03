@@ -3,6 +3,7 @@ import { X, Save, Box, Type, Hash, Variable, Plus, Trash2, CheckSquare, Square, 
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 
 export default function NewMetricDrawer({ isOpen, onClose, title, initialData, onSave }) {
     const { fetchAuth } = useAuth();
@@ -48,8 +49,8 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
     const fetchDimensions = async () => {
         try {
             const res = await fetchAuth(`${API_BASE_URL}/dimensions`);
-            const data = await res.json();
-            if (!data.error) setAvailableDimensions(data);
+            await lanzarSiFalla(res);
+            setAvailableDimensions(await res.json());
         } catch (error) {
             console.error("Error loading dimensions:", error);
         }
@@ -117,8 +118,8 @@ export default function NewMetricDrawer({ isOpen, onClose, title, initialData, o
                 body: JSON.stringify(formData)
             });
 
+            await lanzarSiFalla(response);
             const result = await response.json();
-            if (result.error) throw new Error(result.error);
 
             toast.success(isEditing ? "Métrica actualizada" : "Métrica creada");
             onSave(result.data);

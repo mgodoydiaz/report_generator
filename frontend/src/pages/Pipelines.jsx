@@ -5,6 +5,7 @@ import NewPipelineDrawer from '../components/NewPipelineDrawer';
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 
 export default function Pipelines() {
   const { fetchAuth } = useAuth();
@@ -30,9 +31,8 @@ export default function Pipelines() {
     setLoading(true);
     try {
       const response = await fetchAuth(`${API_BASE_URL}/pipelines`);
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-      setPipelines(data);
+      await lanzarSiFalla(response);
+      setPipelines(await response.json());
     } catch (err) {
       setError(err.message);
     } finally {
@@ -58,8 +58,8 @@ export default function Pipelines() {
     setDrawerTitle("Editar Proceso");
     try {
       const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}/config`);
+      await lanzarSiFalla(response);
       const configData = await response.json();
-      if (configData.error) throw new Error(configData.error);
       setEditingData(configData);
       setIsDrawerOpen(true);
     } catch (err) {
@@ -70,8 +70,8 @@ export default function Pipelines() {
   const handleDuplicatePipeline = async (id) => {
     try {
       const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}/config`);
+      await lanzarSiFalla(response);
       const configData = await response.json();
-      if (configData.error) throw new Error(configData.error);
 
       const newConfig = {
         ...configData,
@@ -86,8 +86,7 @@ export default function Pipelines() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newConfig)
       });
-      const result = await saveResponse.json();
-      if (result.error) throw new Error(result.error);
+      await lanzarSiFalla(saveResponse);
 
       toast.success("Proceso duplicado correctamente");
       fetchPipelines();
@@ -115,8 +114,7 @@ export default function Pipelines() {
         body: JSON.stringify(config)
       });
 
-      const result = await response.json();
-      if (result.error) throw new Error(result.error);
+      await lanzarSiFalla(response);
 
       toast.success(editingPipelineId ? "Configuración actualizada" : "Nuevo proceso creado");
       setIsDrawerOpen(false);
@@ -135,8 +133,7 @@ export default function Pipelines() {
       const response = await fetchAuth(`${API_BASE_URL}/pipelines/${id}`, {
         method: 'DELETE'
       });
-      const result = await response.json();
-      if (result.error) throw new Error(result.error);
+      await lanzarSiFalla(response);
 
       toast.success("Proceso eliminado");
       fetchPipelines();
@@ -153,8 +150,7 @@ export default function Pipelines() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ hidden: newHidden })
       });
-      const result = await response.json();
-      if (result.error) throw new Error(result.error);
+      await lanzarSiFalla(response);
       fetchPipelines();
     } catch (err) {
       toast.error("Error al cambiar visibilidad: " + err.message);

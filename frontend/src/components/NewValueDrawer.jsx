@@ -3,6 +3,7 @@ import { X, Save, Layers, Hash } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 
 export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap, onSave, initialData = null }) {
     const { fetchAuth } = useAuth();
@@ -52,10 +53,8 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                 const dimDef = dimensionsMap[dimId];
                 if (dimDef && dimDef.validation_mode === 'list') {
                     const res = await fetchAuth(`${API_BASE_URL}/dimensions/${dimId}/values`);
-                    const data = await res.json();
-                    if (!data.error) {
-                        optionsMap[dimId] = data;
-                    }
+                    await lanzarSiFalla(res);
+                    optionsMap[dimId] = await res.json();
                 }
             });
 
@@ -126,8 +125,8 @@ export default function NewValueDrawer({ isOpen, onClose, metric, dimensionsMap,
                 body: JSON.stringify(body)
             });
 
+            await lanzarSiFalla(res);
             const result = await res.json();
-            if (result.error) throw new Error(result.error);
 
             toast.success(initialData ? "Valor actualizado" : "Valor registrado");
             onSave();

@@ -9,6 +9,7 @@ import ImportModal from '../components/ImportModal';
 import ConfirmModal from '../components/ConfirmModal';
 import MultiSelectFilters from '../components/MultiSelectFilters';
 import { sanitizeDisplayValue } from '../tooling/dataProcessing';
+import { lanzarSiFalla } from '../tooling/apiError';
 import {
     FILTROS_VACIOS,
     construirParamsDatos,
@@ -112,10 +113,10 @@ export default function Values() {
                 fetchAuth(`${API_BASE_URL}/dimensions`)
             ]);
 
+            await lanzarSiFalla(metricsRes);
             const metricsList = await metricsRes.json();
+            await lanzarSiFalla(dimsRes);
             const dimsList = await dimsRes.json();
-
-            if (metricsList.error) throw new Error(metricsList.error);
 
             setMetrics(metricsList);
 
@@ -157,8 +158,8 @@ export default function Values() {
                 q: dataSearchApplied,
             });
             const res = await fetchAuth(`${API_BASE_URL}/metrics/${metricId}/data?${params}`);
+            await lanzarSiFalla(res);
             const data = await res.json();
-            if (data.error) throw new Error(data.error);
             if (reqId !== dataReqRef.current) return; // respuesta obsoleta
             setMetricData(data.items);
             setTotalRecords(data.total);
@@ -222,7 +223,8 @@ export default function Values() {
     const handleDeleteValue = async (dataId) => {
         if (!confirm("¿Eliminar este registro?")) return;
         try {
-            await fetchAuth(`${API_BASE_URL}/metrics/data/${dataId}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/metrics/data/${dataId}`, { method: 'DELETE' });
+            await lanzarSiFalla(res);
             setMetricData(prev => prev.filter(d => d.id_data !== dataId));
             toast.success("Eliminado");
         } catch (error) {
@@ -280,8 +282,8 @@ export default function Values() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
             });
+            await lanzarSiFalla(res);
             const data = await res.json();
-            if (data.error) throw new Error(data.error);
 
             toast.success(`Eliminados ${data.deleted_count} registros`);
             loadMetricData(selectedMetric.id_metric, currentPage);
@@ -302,8 +304,7 @@ export default function Values() {
             const res = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/clear`, {
                 method: 'POST'
             });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+            await lanzarSiFalla(res);
 
             toast.success("Métrica vaciada correctamente");
             handleClearFilters();
@@ -326,7 +327,7 @@ export default function Values() {
         try {
             const auditParam = includeAudit ? '&include_audit=true' : '';
             const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/export?format=${format}${auditParam}`);
-            if (!response.ok) throw new Error("Error en la exportación");
+            await lanzarSiFalla(response);
 
             // Convertir respuesta a Blob y descargar
             const blob = await response.blob();
@@ -364,9 +365,8 @@ export default function Values() {
                 method: 'POST',
                 body: formData
             });
+            await lanzarSiFalla(res);
             const data = await res.json();
-
-            if (data.error) throw new Error(data.error || "Error importing data");
 
             toast.success(`Importados ${data.imported} registros correctamente`);
             setCurrentPage(1);
@@ -381,7 +381,7 @@ export default function Values() {
     const handleDownloadTemplate = async () => {
         try {
             const response = await fetchAuth(`${API_BASE_URL}/metrics/${selectedMetric.id_metric}/template`);
-            if (!response.ok) throw new Error("Error generando plantilla");
+            await lanzarSiFalla(response);
 
             const blob = await response.blob();
             const url = window.URL.createObjectURL(blob);

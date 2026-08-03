@@ -3,6 +3,7 @@ import { X, Plus, Trash2, Save, Check, ShieldCheck, List, Type, Hash, Calendar }
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 
 // Tipos de dato de una dimensión. "date" no es cosmético: el resolver de
 // períodos deriva el año y el mes de esa columna (ver periodos.py).
@@ -47,8 +48,8 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
         if (!dimId) return;
         try {
             const res = await fetchAuth(`${API_BASE_URL}/dimensions/${dimId}/values`);
-            const data = await res.json();
-            if (!data.error) setValues(data);
+            await lanzarSiFalla(res);
+            setValues(await res.json());
         } catch (error) {
             console.error(error);
         }
@@ -74,8 +75,8 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
+            await lanzarSiFalla(response);
             const result = await response.json();
-            if (result.error) throw new Error(result.error);
 
             toast.success(isEditing ? "Dimensión actualizada" : "Dimensión guardada");
 
@@ -98,6 +99,7 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ value: newValue, is_active: true })
             });
+            await lanzarSiFalla(res);
             const result = await res.json();
             if (result.status === 'success') {
                 setValues([...values, result.data]);
@@ -105,17 +107,18 @@ export default function NewDimensionDrawer({ isOpen, onClose, title, initialData
                 toast.success("Valor agregado");
             }
         } catch (error) {
-            toast.error("Error al agregar valor");
+            toast.error(error.message || "Error al agregar valor");
         }
     };
 
     const handleDeleteValue = async (valId) => {
         try {
-            await fetchAuth(`${API_BASE_URL}/dimensions/values/${valId}`, { method: 'DELETE' });
+            const res = await fetchAuth(`${API_BASE_URL}/dimensions/values/${valId}`, { method: 'DELETE' });
+            await lanzarSiFalla(res);
             setValues(values.filter(v => v.id_value !== valId));
             toast.success("Valor eliminado");
         } catch (error) {
-            toast.error("Error al eliminar");
+            toast.error(error.message || "Error al eliminar");
         }
     };
 

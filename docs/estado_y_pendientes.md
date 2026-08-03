@@ -1,6 +1,8 @@
 # Estado del proyecto y pendientes
 
-**Última actualización**: 2026-07-30 · **Versión desplegada**: `v0.7.0` (commit `167cf5a`) · **Producción**: Railway + Supabase `us-east-1`, operativa y verificada.
+**Última actualización**: 2026-07-31 · **Versión desplegada**: `v0.7.0` (commit `167cf5a`) · **Producción**: Railway + Supabase `us-east-1`, operativa y verificada.
+
+> **En `dev`, sin commitear y sin mergear**: el P0 de autorización por rol y el fix del falso "guardado" del frontend (ver §2.5). Requieren GO explícito para pasar a `main`.
 
 Documento vivo. Complementa a [ROADMAP.md](../ROADMAP.md) (backlog histórico) y a [diagnostico_general_2026-07-30.md](./reportes/diagnostico_general_2026-07-30.md) (estado por área).
 
@@ -107,8 +109,9 @@ Los endpoints y el registro siguen vivos; solo se retiraron las tarjetas del sel
 
 | # | Pendiente | Notas |
 |---|---|---|
-| **P0** | **Autorización laxa en los routers de dominio** | Solo `/users`, `/api-keys` y `/superadmin` exigen rol. Pipelines, dimensiones, métricas, indicadores, specs, tablas y gráficos solo piden usuario autenticado: **un `viewer` puede crear y borrar cualquier cosa**. Es el pendiente más serio del proyecto. |
-| P1 | P1s del QA maestro sin cerrar | Páginas que tragan errores de API; 5 archivos con cliente HTTP propio sin manejo de 401; estados vacíos engañosos; ReDoS en `/data-ops/replace`; XSS por SVG en assets; `except: pass` en `SaveToMetric`. |
+| ~~P0~~ | ~~**Autorización laxa en los routers de dominio**~~ · **RESUELTO en `dev` el 2026-07-31, pendiente de merge** | Se creó `require_editor` en `backend/auth.py` y se aplicó control de rol a **45 endpoints de escritura** en 11 routers: 35 con `require_editor` y 10 con `require_admin` (borrado de métrica/indicador/dimensión/pipeline, `metrics/clear`, `metrics/data/batch-delete`, `data-ops/replace` y `recalculate`, assets de organización). Quedan deliberadamente en `get_current_user` 8 endpoints que son **lecturas con POST** (los 3 `preview`, `data-ops/distinct`, `indicators/export-pdf` y los 3 de `reports`): un `viewer` debe poder previsualizar y descargar informes. `require_admin` ahora acepta también superadmin, para no degradar el `_check_admin` que vivía en el cuerpo de `organizations.py`. Verificado con 145 tests nuevos de matriz de roles + smoke sobre la app levantada. `ingest.py` se auditó aparte: sin hallazgos altos ni medios. |
+| P1 | P1s del QA maestro sin cerrar | Páginas que tragan errores de API — **parcialmente resuelto** (ver fila siguiente); 5 archivos con cliente HTTP propio sin manejo de 401; estados vacíos engañosos; ReDoS en `/data-ops/replace`; XSS por SVG en assets; `except: pass` en `SaveToMetric`. |
+| ~~P0~~ | ~~**Falso "guardado" ante cualquier error de API**~~ · **RESUELTO en `dev` el 2026-07-31, pendiente de merge** | Hallazgo del smoke del P0 anterior, y más grave que él: 12 archivos del frontend hacían `if (result.error) throw` sin comprobar `response.ok`. Como FastAPI responde `{"detail": ...}` y no `{"error": ...}`, la condición nunca se cumplía y la app mostraba **"Guardado" ante un 403, 401, 400 o 500**, cerrando el modal como si hubiera funcionado. Se agregó el helper `frontend/src/tooling/apiError.js` y se aplicó en los 12 archivos. De paso se eliminaron dos *mocks de éxito* heredados: `NewIndicatorDrawer` fabricaba un indicador falso con `id: Date.now()` ante cualquier error, e `Indicators.jsx` mostraba "Indicador eliminado (Mocked)" borrando de la vista un indicador que seguía existiendo. |
 | P2 | `/results-recharts` es una ruta huérfana | Dashboard legacy con lógica duplicada, alcanzable solo tecleando la URL. Candidata a eliminarse. |
 | P2 | `/live-tracking` es un placeholder comercial | No hace tracking de nada. |
 
@@ -119,6 +122,8 @@ Los endpoints y el registro siguen vivos; solo se retiraron las tarjetas del sel
 | P2 | Selector de rango de fechas en el modal cuando la dimensión es tipo `date` | El backend ya está listo (`data_type` viaja en `dimensiones_filtrables`); falta la UI. |
 | P2 | El botón **Exportar** de `/values` ignora los filtros activos | Exporta la métrica completa. |
 | P2 | Comparativa de establecimientos (DIA) | Decidido: gráfico aparte, **no** dentro del PDF por colegio. |
+| P2 | Ocultar o deshabilitar los botones de escritura para el rol `viewer` | Hoy un viewer ve "Nueva Dimensión", "Editar" y "Eliminar" en todas las páginas; al usarlos recibe un 403 con mensaje claro (ya no un falso éxito), pero es ruido evitable. Cosmético: el backend ya está blindado. |
+| P2 | 6 tests de frontend rotos en `tests/frontend/dataProcessing.test.js` | Preexistentes y ajenos al sprint de autorización: llaman a `processDataForDashboard` con una firma que ya no coincide y revientan en `dataProcessing.js:229` (`data[mid]` con `data` undefined). Los otros 29 tests de frontend pasan. |
 
 ### 2.7 Documentación y operación
 

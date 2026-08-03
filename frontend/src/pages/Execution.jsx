@@ -3,6 +3,7 @@ import { Play, Search, RefreshCcw, Rocket, Activity, CheckCircle2, Clock, ArrowR
 import PipelineExecutionModal from '../components/PipelineExecutionModal';
 import { API_BASE_URL, getFormatStyle } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 
 export default function Execution() {
     const { fetchAuth } = useAuth();
@@ -21,8 +22,8 @@ export default function Execution() {
         setLoading(true);
         try {
             const response = await fetchAuth(`${API_BASE_URL}/pipelines`);
+            await lanzarSiFalla(response);
             const data = await response.json();
-            if (data.error) throw new Error(data.error);
             setPipelines(Array.isArray(data) ? data : data.items ?? []);
         } catch (err) {
             console.error("Error loading pipelines:", err);

@@ -3,6 +3,7 @@ import { X, Save, Box, CheckSquare, Square, Microscope, AlertTriangle, BookOpen,
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import { getLevelPalette } from '../tooling/plotly-charts/constants';
 
 // Orden cronológico de meses en español. Soporta valores como "OCTUBRE 2"
@@ -142,8 +143,8 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
     const fetchMetrics = async () => {
         try {
             const res = await fetchAuth(`${API_BASE_URL}/metrics`);
-            const data = await res.json();
-            if (!data.error) setAvailableMetrics(data);
+            await lanzarSiFalla(res);
+            setAvailableMetrics(await res.json());
         } catch (error) {
             console.error("Error loading metrics:", error);
         }
@@ -497,32 +498,21 @@ export default function NewIndicatorDrawer({ isOpen, onClose, title, initialData
 
             // We mimic a successful response if the endpoint doesn't exist yet, 
             // since the user is in the process of building it.
-            let result;
-            try {
-                const response = await fetchAuth(url, {
-                    method: method,
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        ...formData,
-                        column_roles: Object.fromEntries(
-                            Object.entries(formData.column_roles || {})
-                                .map(([k, v]) => [k, Array.isArray(v) ? v.filter(e => e.metric_id && e.column) : v])
-                                .filter(([, v]) => Array.isArray(v) ? v.length > 0 : !!v)
-                        )
-                    })
-                });
+            const response = await fetchAuth(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...formData,
+                    column_roles: Object.fromEntries(
+                        Object.entries(formData.column_roles || {})
+                            .map(([k, v]) => [k, Array.isArray(v) ? v.filter(e => e.metric_id && e.column) : v])
+                            .filter(([, v]) => Array.isArray(v) ? v.length > 0 : !!v)
+                    )
+                })
+            });
 
-                if (!response.ok && response.status === 404) {
-                    throw new Error("mock");
-                }
-
-                result = await response.json();
-                if (result.error) throw new Error(result.error);
-            } catch (err) {
-                // Mock success for UI interaction if backend is not yet ready
-                console.warn("Backend for indicators might not be ready. Mocking success.");
-                result = { data: { ...formData, id_indicator: isEditing ? initialData.id_indicator : Date.now() } };
-            }
+            await lanzarSiFalla(response);
+            const result = await response.json();
 
             toast.success(isEditing ? "Indicador actualizado" : "Indicador creado");
             const savedData = result.data || {

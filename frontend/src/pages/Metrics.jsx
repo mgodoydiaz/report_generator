@@ -3,6 +3,7 @@ import { Box, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshCcw, Tra
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import NewMetricDrawer from '../components/NewMetricDrawer';
 
 export default function Metrics() {
@@ -29,17 +30,16 @@ export default function Metrics() {
                 fetchAuth(`${API_BASE_URL}/dimensions`)
             ]);
 
+            await lanzarSiFalla(metricsRes);
             const metricsData = await metricsRes.json();
+            await lanzarSiFalla(dimsRes);
             const dimsData = await dimsRes.json();
 
-            if (metricsData.error) throw new Error(metricsData.error);
             setMetrics(metricsData);
 
             // Crear mapa de dimensiones {id: nombre}
             const dMap = {};
-            if (!dimsData.error) {
-                dimsData.forEach(d => dMap[d.id_dimension] = d.name);
-            }
+            dimsData.forEach(d => dMap[d.id_dimension] = d.name);
             setDimensionsMap(dMap);
 
         } catch (err) {
@@ -74,8 +74,7 @@ export default function Metrics() {
 
         try {
             const res = await fetchAuth(`${API_BASE_URL}/metrics/${id}`, { method: 'DELETE' });
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+            await lanzarSiFalla(res);
             toast.success("Métrica eliminada");
             fetchData();
         } catch (err) {

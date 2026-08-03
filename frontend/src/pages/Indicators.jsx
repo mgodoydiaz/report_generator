@@ -3,6 +3,7 @@ import { Microscope, Plus, Search, ArrowUpDown, ChevronUp, ChevronDown, RefreshC
 import toast from 'react-hot-toast';
 import { API_BASE_URL } from '../constants';
 import { useAuth } from '../context/AuthContext';
+import { lanzarSiFalla } from '../tooling/apiError';
 import NewIndicatorDrawer from '../components/NewIndicatorDrawer';
 import LayoutEditorModal from '../components/LayoutEditorModal';
 import AssistantChat from '../components/AssistantChat';
@@ -33,18 +34,11 @@ export default function Indicators() {
                 fetchAuth(`${API_BASE_URL}/metrics`).catch(() => ({ ok: false, status: 404 }))
             ]);
 
-            // Handling the case where indicators endpoint is not ready
-            let indicatorsData = [];
-            if (indicatorsRes.ok) {
-                indicatorsData = await indicatorsRes.json();
-                if (indicatorsData.error) throw new Error(indicatorsData.error);
-            }
+            await lanzarSiFalla(indicatorsRes);
+            const indicatorsData = await indicatorsRes.json();
 
-            let metricsData = [];
-            if (metricsRes.ok) {
-                metricsData = await metricsRes.json();
-                if (metricsData.error) throw new Error(metricsData.error);
-            }
+            await lanzarSiFalla(metricsRes);
+            const metricsData = await metricsRes.json();
 
             setIndicators(indicatorsData);
 
@@ -88,14 +82,7 @@ export default function Indicators() {
 
         try {
             const res = await fetchAuth(`${API_BASE_URL}/indicators/${id}`, { method: 'DELETE' });
-            if (!res.ok) {
-                // If endpoint doesn't exist yet, we mock deletion
-                setIndicators(prev => prev.filter(i => i.id_indicator !== id));
-                toast.success("Indicador eliminado (Mocked)");
-                return;
-            }
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
+            await lanzarSiFalla(res);
             toast.success("Indicador eliminado");
             fetchData();
         } catch (err) {
