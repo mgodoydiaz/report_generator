@@ -33,10 +33,10 @@ A cualquier persona de la fundación que necesite cargar datos de una evaluació
 
 ![Captura: pantalla de inicio de sesión](pendiente)
 
-### Paso 2: Ve a la sección "Pipelines"
+### Paso 2: Ve a la sección "Ejecución"
 
-1. En el menú lateral, haz clic en **Pipelines**. Ahí aparece la lista de procesos de carga configurados para tu organización (por ejemplo, "SIMCE Lenguaje", "DIA Matemáticas", "IDEL", etc.).
-2. Busca el proceso que corresponde a la evaluación que quieres cargar y haz clic en el botón con el ícono de **Play** ("Ejecutar") en su fila.
+1. En el menú lateral, haz clic en **Ejecución**. Ahí aparece el **Centro de Ejecución** con la lista de procesos de carga configurados para tu organización (por ejemplo, "SIMCE Lenguaje", "DIA Matemáticas", "IDEL", etc.).
+2. Busca la tarjeta del proceso que corresponde a la evaluación que quieres cargar y haz clic en **Ejecutar Proceso**.
 
 ![Captura: listado de pipelines con el botón Ejecutar](pendiente)
 
@@ -60,7 +60,7 @@ Cuando el proceso llega a un paso que necesita archivos, verás una o más zonas
 1. Arrastra el archivo a la zona correspondiente, o haz clic sobre ella para elegirlo desde tu computador.
 2. Repite para cada archivo solicitado. Los recuadros marcados como obligatorios deben completarse antes de continuar; los que dicen "opcional" puedes dejarlos vacíos.
 3. Cuando un archivo queda cargado, la zona muestra un chip verde "Listo" y el nombre del archivo.
-4. Haz clic en **Siguiente** (o **Continuar**) para subir los archivos y avanzar.
+4. Haz clic en **Siguiente** para subir los archivos y avanzar. Cuando el proceso está esperando algo de ti, ese mismo botón dice **Continuar**.
 
 ![Captura: zonas de carga de archivos con un archivo ya seleccionado](pendiente)
 
@@ -194,7 +194,7 @@ Junto a cada tarjeta (salvo las de informes especializados con motor propio) hay
 Si una tarjeta aparece atenuada (gris, no se puede hacer clic), el sistema explica el motivo directamente en su descripción. Los motivos más comunes son:
 
 - **"Sin datos cargados para este indicador"** — todavía no se ha cargado información (ver Parte 1).
-- **"Este informe aún no está configurado"** — falta que el administrador defina el diseño del informe en el editor de layout.
+- **"Este informe aún no está configurado"** — falta que el administrador defina el diseño del informe en el editor de layout. El mensaje en pantalla continúa indicando qué debe hacer el administrador.
 
 ![Captura: tarjeta de informe deshabilitada con el motivo visible](pendiente)
 
