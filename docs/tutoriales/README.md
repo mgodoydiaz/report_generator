@@ -5,8 +5,9 @@ Guías paso a paso dirigidas al personal no técnico de la fundación que usa la
 ## Contenido
 
 - [`guia_rapida_usuario.md`](./guia_rapida_usuario.md) — versión corta en 4 secciones (entrar, cargar datos, dashboard, informe), con pantallazos reales de la organización de demostración. Es la que se entrega a usuarios nuevos. La carga de datos tiene dos caminos: proceso configurado en **Ejecución**, o **Valores → Importar** con plantilla descargable.
-- [`anexo_carga_pipelines.md`](./anexo_carga_pipelines.md) — detalle de la sección 2 de la guía rápida: un capítulo por proceso de carga real (SIMCE, DIA, EMN Aptus) con los archivos que pide cada uno, los datos extra y los errores frecuentes. La guía no repite este detalle, solo lo enlaza.
-- [`tutorial_usuario.md`](./tutorial_usuario.md) — flujo completo: subir datos de una evaluación, revisar el dashboard de Resultados y descargar el informe (PDF/Word).
+- [`descarga_informes_aptus.html`](./descarga_informes_aptus.html) / [`.docx`](./descarga_informes_aptus.docx) / [`.pdf`](./descarga_informes_aptus.pdf) — guía visual de una sola tarea: cómo descargar los dos informes (por Estudiante y por Habilidad) desde la plataforma Aptus y subirlos. Incluye reproducciones dibujadas de las pantallas de Aptus (no capturas: la pantalla real muestra nombres y RUT de estudiantes). Es la que se entrega a quien hace la carga de SIMCE Panguipulli. Fuente editable: el `.html`. El PDF se regenera con `python -m weasyprint descarga_informes_aptus.html descarga_informes_aptus.pdf`; el Word con `scripts/generar_tutorial_aptus_docx.py` (usa la plantilla de Miguel e incrusta las pantallas como PNG).
+- [`anexo_carga_pipelines.md`](./anexo_carga_pipelines.md) — detalle de la sección 2 de la guía rápida: un capítulo por proceso de carga real (SIMCE, DIA, SIMCE Panguipulli) con los archivos que pide cada uno, los datos extra y los errores frecuentes. La guía no repite este detalle, solo lo enlaza.
+- [`tutorial_usuario.md`](./tutorial_usuario.md) — flujo completo: subir datos de una evaluación, revisar el dashboard de Resultados y descargar el informe (PDF/Word). Versión entregable en `tutorial_usuario.pdf` / `.docx` (10 páginas, con índice y las capturas de `img/` que aplican).
 
 ## Cómo mantenerlo al día
 

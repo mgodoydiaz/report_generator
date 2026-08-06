@@ -131,9 +131,7 @@ del PDF, el de abajo y el nombre del archivo.
 
 Las tarjetas grises no se pueden descargar y la razón está escrita en la misma tarjeta. Si
 dice *Sin datos cargados para este indicador*, vuelve a la sección 2. Si dice *Este
-informe aún no está configurado*, avísale al administrador. Así se ve el PDF que descargas:
-
-![Primera página del informe descargado](img/informe_pdf.png)
+informe aún no está configurado*, avísale al administrador.
 
 > 💡 Algunos informes especializados necesitan que primero dejes una sola prueba a la
 > vista, filtrando por Mes o por N° de prueba. El sistema te lo avisa antes de generarlo.
@@ -150,7 +148,8 @@ hay que modificarle.
   Temático — [ver detalle](./anexo_carga_pipelines.md#1-simce)
 - **DIA**: PDF de resultados · Excel con resultados por alumno —
   [ver detalle](./anexo_carga_pipelines.md#2-dia)
-- **SIMCE Panguipulli**: *Pendiente: cómo se obtiene el archivo de Aptus* —
+- **SIMCE Panguipulli**: Informe de logros por Estudiante · por Habilidad, los dos
+  descargados de Aptus (**Ver Resultados → EMN**) —
   [ver detalle](./anexo_carga_pipelines.md#3-simce-panguipulli-ensayos-aptus)
 
 Las evaluaciones que no aparecen en esta lista se cargan por el camino 2.2.

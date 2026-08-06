@@ -292,6 +292,8 @@ Tareas recurrentes documentadas en **[.agents/workflows/](./.agents/workflows/)*
 - `/add-metric` — Crear una nueva métrica (API REST o SQLAlchemy)
 - `/new-pipeline` — Construir un nuevo pipeline JSON desde cero
 - `/add-chart` — Agregar un gráfico o tabla al sistema de dashboards
+- `/descargar-informes-aptus` — Bajar desde Aptus, con Chrome MCP, los 2 informes de SIMCE Panguipulli
+- `/cargar-simce-panguipulli` — Cargar esos informes al sistema (pipeline 26) y todo el detalle de mapeos y datos
 
 ## Roadmap
 

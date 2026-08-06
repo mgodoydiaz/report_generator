@@ -1,0 +1,575 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cómo descargar los informes de SIMCE Panguipulli desde Aptus</title>
+</head>
+<body>
+
+
+<style>
+  :root {
+    --paper:    #ffffff;
+    --wash:     #eef3f7;
+    --ink:      #16202a;
+    --ink-soft: #55636f;
+    --ink-faint:#8494a1;
+    --rule:     #d8e2ea;
+    --accent:   #1f6f8b;
+    --accent-w: #e4eef2;
+    --ok:       #2c6e49;
+    --warn:     #8a5a09;
+    --warn-w:   #fdf6e6;
+    --warn-b:   #e9d59b;
+
+    --serif: Georgia, "DejaVu Serif", "Liberation Serif", "Times New Roman", serif;
+    --sans:  "Segoe UI", "DejaVu Sans", "Liberation Sans", system-ui, sans-serif;
+    --mono:  Consolas, "Cascadia Mono", "DejaVu Sans Mono", "Liberation Mono", monospace;
+
+    --measure: 40rem;
+    --wide:    52rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#131b22; --wash:#0d1419; --ink:#e6edf3; --ink-soft:#a3b1bd;
+      --ink-faint:#6f8090; --rule:#26333d; --accent:#6cb6cf; --accent-w:#17303b;
+      --ok:#6bbf8a; --warn:#d9a640; --warn-w:#241d0d; --warn-b:#5a4416;
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper:#131b22; --wash:#0d1419; --ink:#e6edf3; --ink-soft:#a3b1bd;
+    --ink-faint:#6f8090; --rule:#26333d; --accent:#6cb6cf; --accent-w:#17303b;
+    --ok:#6bbf8a; --warn:#d9a640; --warn-w:#241d0d; --warn-b:#5a4416;
+  }
+  :root[data-theme="light"] {
+    --paper:#ffffff; --wash:#eef3f7; --ink:#16202a; --ink-soft:#55636f;
+    --ink-faint:#8494a1; --rule:#d8e2ea; --accent:#1f6f8b; --accent-w:#e4eef2;
+    --ok:#2c6e49; --warn:#8a5a09; --warn-w:#fdf6e6; --warn-b:#e9d59b;
+  }
+
+  /* ================= document shell ================= */
+  .tut {
+    background: var(--wash);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.65;
+    padding: 3rem 1.25rem 5rem;
+  }
+  .tut-col { max-width: var(--measure); margin: 0 auto; }
+  .tut-col-wide { max-width: var(--wide); margin: 0 auto; }
+
+  .tut p, .tut li { color: var(--ink-soft); }
+  .tut strong, .tut b { color: var(--ink); font-weight: 600; }
+  /* reproductions carry their own colours — keep the document rules out */
+  .tut .tut-screen p, .tut .tut-screen li { color: inherit; }
+  .tut code {
+    font-family: var(--mono); font-size: 0.86em;
+    background: var(--accent-w); color: var(--ink);
+    padding: 0.12em 0.36em; border-radius: 3px; word-break: break-word;
+  }
+
+  /* ---- masthead ---- */
+  .tut-rule { height: 3px; background: var(--accent); width: 3.5rem; border-radius: 2px; }
+  .tut-eyebrow {
+    font-size: 0.72rem; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; margin: 0.8rem 0 0.5rem;
+  }
+  .tut-head h1 {
+    font-family: var(--serif); font-size: 2.5rem; line-height: 1.12;
+    font-weight: 700; color: var(--ink); margin: 0 0 0.7rem;
+  }
+  .tut-standfirst { font-size: 1.06rem; margin: 0; }
+
+  /* ---- thesis ---- */
+  .tut-thesis {
+    background: var(--paper); border: 1px solid var(--rule);
+    border-left: 4px solid var(--accent); border-radius: 4px;
+    padding: 1.3rem 1.5rem; margin: 2.4rem auto;
+  }
+  .tut-thesis h2 {
+    font-family: var(--sans); font-size: 0.74rem; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 0.7rem; font-weight: 700;
+  }
+  .tut-thesis ul { margin: 0; padding-left: 1.15rem; }
+  .tut-thesis li { margin-bottom: 0.4rem; }
+  .tut-thesis li:last-child { margin-bottom: 0; }
+
+  /* ---- steps ---- */
+  .tut-step { margin: 2.4rem auto; }
+  .tut-step-hd { margin: 0 0 0.85rem; }
+  .tut-num {
+    display: inline-block; vertical-align: middle;
+    font-family: var(--serif); font-size: 0.98rem; font-weight: 700;
+    color: #fff; background: var(--accent);
+    width: 1.75rem; height: 1.75rem; line-height: 1.75rem;
+    border-radius: 50%; text-align: center;
+    font-variant-numeric: tabular-nums; margin-right: 0.7rem;
+  }
+  .tut-step-hd h2 {
+    display: inline; font-family: var(--serif); font-size: 1.4rem;
+    font-weight: 700; color: var(--ink); margin: 0;
+  }
+  .tut-step p { margin: 0 0 0.8rem; }
+  .tut-step ul { margin: 0 0 0.9rem; padding-left: 1.15rem; }
+  .tut-step li { margin-bottom: 0.35rem; }
+
+  .tut-note {
+    background: var(--warn-w); border: 1px solid var(--warn-b);
+    border-radius: 4px; padding: 0.85rem 1.1rem; font-size: 0.95rem;
+    margin: 1rem 0 0;
+  }
+  .tut-key {
+    background: var(--paper); border: 1px solid var(--rule);
+    border-left: 4px solid var(--ok); border-radius: 4px;
+    padding: 0.85rem 1.1rem; font-size: 0.95rem; margin: 1rem 0 0;
+  }
+  .tut-note p, .tut-key p { margin: 0; }
+
+  /* ---- screen frame (reproductions: locked light) ---- */
+  .tut-figure { margin: 1.2rem auto 0; }
+  .tut-screen {
+    background: #ffffff; border: 1px solid #c3cfd8; border-radius: 6px;
+    color: #2b3a45; font-family: var(--sans); font-size: 13px; line-height: 1.45;
+  }
+  .tut .tut-caption {
+    font-size: 0.83rem; color: var(--ink-faint); font-style: italic;
+    text-align: center; margin: 0.55rem 0 0;
+  }
+  .tut .tut-standfirst { font-size: 1.06rem; color: var(--ink-soft); margin: 0; }
+
+  /* generic table-layout helpers (WeasyPrint-safe) */
+  .ap-t  { display: table; width: 100%; border-collapse: collapse; }
+  .ap-c  { display: table-cell; vertical-align: middle; }
+  .ap-ct { display: table-cell; vertical-align: top; }
+
+  /* Aptus navbar */
+  .ap-nav { background: #3f7fa8; color: #fff; padding: 0.7rem 1rem; font-size: 12.5px; }
+  .ap-logo { font-weight: 700; font-size: 15px; margin-right: 1.3rem; }
+  .ap-logo svg { vertical-align: -2px; margin-right: 0.3rem; }
+  .ap-nav-item { display: inline-block; margin-right: 1.1rem; }
+  .ap-hl { border: 2px solid #ffd166; border-radius: 3px; padding: 0.1rem 0.35rem; margin-left: -0.35rem; }
+
+  .ap-menu-wrap { padding: 0 0 0 7.5rem; background: #fff; }
+  .ap-menu {
+    display: inline-block; background: #fff; border: 1px solid #cfd8de;
+    border-top: 0; border-radius: 0 0 3px 3px; min-width: 15rem;
+  }
+  .ap-menu-i { padding: 0.45rem 0.9rem; border-bottom: 1px solid #eceff1; }
+  .ap-menu-i:last-child { border-bottom: 0; }
+  .ap-menu-on { background: #e8f4f8; color: #14607a; font-weight: 700; }
+
+  .ap-body { padding: 1.1rem 1rem 1.3rem; background: #fff; }
+  .tut .tut-screen .ap-title {
+    color: #e8792b; font-family: var(--serif); font-size: 22px;
+    text-align: center; font-weight: 700; margin: 0 0 0.15rem;
+  }
+  .tut .tut-screen .ap-sub { text-align: center; color: #6b7a85; font-size: 12px; margin: 0 0 1rem; }
+
+  /* tabs */
+  .ap-tabs { margin-bottom: 1rem; }
+  .ap-tab {
+    display: table-cell; background: #2bb5c4; color: #fff; padding: 0.55rem 0.5rem;
+    font-size: 11px; text-align: center; border: 1px solid #2bb5c4;
+    border-bottom: 0; border-radius: 3px 3px 0 0;
+  }
+  .ap-tab-on { background: #fff; color: #17808f; font-weight: 700; }
+
+  /* fields */
+  .ap-fcell { display: table-cell; vertical-align: top; padding-right: 0.7rem; }
+  .ap-fcell:last-child { padding-right: 0; }
+  .ap-lab { font-size: 11px; color: #6b7a85; margin-bottom: 0.2rem; }
+  .ap-lab i { color: #9aa7b0; font-style: normal; }
+  .ap-input {
+    border: 1px solid #b9c5cd; border-radius: 3px; background: #fff;
+    padding: 0.35rem 0.5rem; font-size: 12px; color: #2b3a45;
+  }
+  .ap-input .ap-car { float: right; color: #7d8b95; margin-left: 0.4rem; }
+  .ap-muted { background: #eceff1; color: #8b98a2; }
+  .ap-fill { border-color: #4a9ab5; border-width: 2px; }
+
+  .ap-drop { border: 1px solid #b9c5cd; border-top: 0; background: #fff; font-size: 12px; }
+  .ap-drop-i { padding: 0.35rem 0.55rem; }
+  .ap-opt-on { background: #4a9ab5; color: #fff; font-weight: 600; }
+
+  .ap-chip {
+    display: inline-block; background: #eceff1; border: 1px solid #c8d2d9;
+    border-radius: 2px; padding: 0.05rem 0.3rem; font-size: 11px; margin: 0.1rem 0.15rem 0.1rem 0;
+  }
+
+  .ap-side { border: 1px solid #dde3e7; border-radius: 3px; margin-bottom: 0.8rem; }
+  .ap-side-on { background: #2bb5c4; color: #fff; padding: 0.5rem 0.7rem; font-weight: 700; }
+  .ap-side-off { padding: 0.5rem 0.7rem; color: #9aa7b0; }
+
+  /* the Informes panel — key visual */
+  .ap-panel { border: 1px solid #dde3e7; border-radius: 3px; }
+  .ap-panel-hd { background: #eef1f3; color: #17808f; font-weight: 700; padding: 0.6rem 0.8rem; font-size: 13px; }
+  .ap-panel-hd .ap-car { float: right; }
+  .ap-link { border-top: 1px solid #eceff1; color: #d9531e; font-size: 12.5px; }
+  .ap-link-c { padding: 0.6rem 0.5rem 0.6rem 0.8rem; }
+  .ap-link-ico { display: table-cell; vertical-align: middle; width: 1.6rem; padding-left: 0.8rem; }
+  .ap-link-txt { display: table-cell; vertical-align: middle; padding: 0.6rem 0.5rem; text-decoration: underline; }
+  .ap-link-tagc { display: table-cell; vertical-align: middle; text-align: right; padding: 0.6rem 0.8rem 0.6rem 0.3rem; width: 5.5rem; }
+  .ap-tag {
+    display: inline-block; font-size: 10px; font-weight: 700;
+    letter-spacing: 0.05em; text-transform: uppercase;
+    padding: 0.1rem 0.4rem; border-radius: 2px;
+  }
+  .ap-tag-yes { background: #e3f1e8; color: #1e6b3f; border: 1px solid #b7dcc5; }
+  .ap-tag-no  { background: #f2f4f5; color: #7d8b95; border: 1px solid #dbe2e6; }
+  .ap-link-off { color: #9aa7b0; }
+  .ap-mark { background: #fffdf6; border-left: 3px solid #f0a01e; }
+
+  /* ---- document tables ---- */
+  .tut-tablewrap { overflow-x: auto; }
+  .tut table { border-collapse: collapse; width: 100%; font-size: 0.9rem; background: var(--paper); }
+  .tut th, .tut td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  .tut th {
+    font-size: 0.7rem; letter-spacing: 0.09em; text-transform: uppercase;
+    color: var(--accent); font-weight: 700; border-bottom: 2px solid var(--accent);
+  }
+  .tut td:first-child { color: var(--ink); font-weight: 600; }
+  .tut tr:last-child td { border-bottom: 0; }
+
+  /* ---- checklist ---- */
+  .tut-check {
+    background: var(--paper); border: 1px solid var(--rule); border-radius: 4px;
+    padding: 1.25rem 1.5rem; margin: 2.4rem auto 0;
+  }
+  .tut-check h2 { font-family: var(--serif); font-size: 1.25rem; margin: 0 0 0.8rem; color: var(--ink); }
+  .tut-check ul { list-style: none; margin: 0; padding: 0; }
+  .tut-check li { margin-bottom: 0.5rem; padding-left: 1.5rem; text-indent: -1.5rem; }
+  .tut-check li:last-child { margin-bottom: 0; }
+  .tut-check .tut-box {
+    display: inline-block; width: 0.8rem; height: 0.8rem;
+    border: 1.5px solid var(--accent); border-radius: 2px;
+    margin-right: 0.6rem; vertical-align: -1px;
+  }
+
+  .tut-foot {
+    border-top: 1px solid var(--rule); padding-top: 1rem; margin: 2.6rem auto 0;
+    font-size: 0.82rem; color: var(--ink-faint);
+  }
+
+  /* ---- print ---- */
+  @page { size: A4; margin: 15mm 14mm 16mm; }
+  @media print {
+    .tut { background: #fff; padding: 0; font-size: 10.5pt; }
+    .tut-col, .tut-col-wide { max-width: 100%; }
+    /* keep the screen reproductions and callouts whole; let prose flow freely */
+    .tut-figure, .tut-thesis, .tut-check, .tut-note, .tut-key { break-inside: avoid; }
+    .tut-step-hd { break-after: avoid; }
+    .tut-step { margin: 1.7rem auto; }
+    .tut table { break-inside: avoid; }
+    .tut-foot { margin-top: 1.1rem; padding-top: 0.6rem; font-size: 7.8pt; }
+    .tut-check { padding: 1rem 1.2rem; margin-top: 1.2rem; }
+    .tut-note, .tut-key { padding: 0.7rem 1rem; margin-top: 0.8rem; }
+    .tut-figure { margin-top: 0.9rem; }
+    .tut-head h1 { font-size: 23pt; }
+    .tut-step-hd h2 { font-size: 13.5pt; }
+    .tut-standfirst { font-size: 11pt; }
+    .tut-screen { font-size: 8.4pt; }
+    .ap-title { font-size: 15pt; }
+    .ap-logo { font-size: 10.5pt; }
+    .tut table { font-size: 8.6pt; }
+    .tut-tablewrap { overflow: visible; }
+  }
+</style>
+
+<article class="tut">
+
+  <header class="tut-head tut-col">
+    <div class="tut-rule"></div>
+    <p class="tut-eyebrow">Report Generator · Guía de carga</p>
+    <h1>Cómo descargar los informes de SIMCE Panguipulli desde Aptus</h1>
+    <p class="tut-standfirst">
+      Los ensayos SIMCE que aplica Aptus en Panguipulli. Esta guía muestra exactamente cuáles
+      son los dos archivos que hay que bajar, de qué pantalla salen y qué hacer con ellos
+      después.
+    </p>
+  </header>
+
+  <section class="tut-thesis tut-col">
+    <h2>Lo esencial en tres líneas</h2>
+    <ul>
+      <li>Son <strong>dos archivos Excel</strong>: logros <strong>por Estudiante</strong> y logros <strong>por Habilidad</strong>.</li>
+      <li>Los dos salen de <strong>la misma pantalla</strong>, de un panel plegado que dice <strong>Informes</strong>.</li>
+      <li><strong>Un archivo por mes alcanza.</strong> Cada Excel ya trae todos los cursos y todas
+        las asignaturas de ese mes, así que no hay que repetir la descarga.</li>
+    </ul>
+  </section>
+
+  <section class="tut-step tut-col">
+    <div class="tut-step-hd"><span class="tut-num">1</span><h2>Entrar a Aptus</h2></div>
+    <p>
+      Anda a <code>web.aptus.org</code> e inicia sesión. Necesitas una cuenta con acceso a los
+      resultados del establecimiento; si no ves la opción del paso 2, es que tu cuenta no tiene
+      ese permiso.
+    </p>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">2</span><h2>Abrir «Ver Resultados»</h2></div>
+    <p>
+      En el menú azul de arriba, entra a <strong>Recursos Pedagógicos</strong> y elige
+      <strong>Ver Resultados</strong>, la última opción de la lista.
+    </p>
+    <div class="tut-figure">
+      <div class="tut-screen">
+        <div class="ap-nav">
+          <span class="ap-logo"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0.6l2.1 4.6 5 .5-3.7 3.4 1 4.9L8 11.6 3.6 14l1-4.9L.9 5.7l5-.5z" fill="#ffffff"/></svg>Aptus</span>
+          <span class="ap-nav-item">Libros ▾</span>
+          <span class="ap-nav-item ap-hl">Recursos Pedagógicos ▾</span>
+          <span class="ap-nav-item">Buscador de material</span>
+          <span class="ap-nav-item">Apoyo al usuario</span>
+        </div>
+        <div class="ap-menu-wrap">
+          <div class="ap-menu">
+            <div class="ap-menu-i">Administrar Colegios</div>
+            <div class="ap-menu-i">Administrar Planificaciones</div>
+            <div class="ap-menu-i">Administrar Evaluaciones</div>
+            <div class="ap-menu-i">Administrar EPLA</div>
+            <div class="ap-menu-i ap-menu-on">Ver Resultados</div>
+          </div>
+        </div>
+      </div>
+      <p class="tut-caption">El menú superior desplegado. «Ver Resultados» es la última opción.</p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">3</span><h2>Elegir el año y el colegio</h2></div>
+    <p>
+      Arriba hay cuatro filtros, pero solo dos importan: <strong>Periodo</strong>, que es el año
+      de la evaluación, y <strong>Colegio</strong>. Los otros dos dicen «no es obligatorio» y así
+      se quedan.
+    </p>
+    <div class="tut-figure">
+      <div class="tut-screen">
+        <div class="ap-body">
+          <p class="ap-title">Resultados</p>
+          <p class="ap-sub">Observa, analiza y descarga los resultados de tus evaluaciones.</p>
+          <div class="ap-t ap-tabs">
+            <div class="ap-tab">Administrar Colegios</div>
+            <div class="ap-tab">Administrar Planificaciones</div>
+            <div class="ap-tab">Administrar Evaluaciones</div>
+            <div class="ap-tab ap-tab-on">Ver Resultados</div>
+          </div>
+          <div class="ap-t">
+            <div class="ap-fcell" style="width:16%">
+              <div class="ap-lab">Periodo</div>
+              <div class="ap-input ap-fill"><span class="ap-car">✕ ▾</span>2025</div>
+            </div>
+            <div class="ap-fcell" style="width:25%">
+              <div class="ap-lab">Proyectos</div>
+              <div class="ap-input ap-muted"><span class="ap-car">▾</span>no es obligatorio</div>
+            </div>
+            <div class="ap-fcell" style="width:25%">
+              <div class="ap-lab">Sostenedor</div>
+              <div class="ap-input ap-muted"><span class="ap-car">▾</span>no es obligatorio</div>
+            </div>
+            <div class="ap-fcell" style="width:34%">
+              <div class="ap-lab">Colegio</div>
+              <div class="ap-input ap-fill"><span class="ap-car">✕ ▾</span>016843 · Liceo Bicentenario … de Panguipulli</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tut-caption">Se llenan Periodo y Colegio; Proyectos y Sostenedor quedan en blanco.</p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">4</span><h2>Elegir EMN y el mes</h2></div>
+    <p>
+      En la columna de la izquierda, deja marcado <strong>Evaluaciones</strong> (no
+      <em>Seguimiento</em>). Abajo aparecen dos selectores que sí importan:
+      <strong>Tipo de proceso</strong>, donde eliges <code>EMN</code>, y <strong>Proceso</strong>,
+      donde eliges el mes.
+    </p>
+    <p>
+      Aptus escribe los meses de forma despareja — <code>EMN Abril</code> y <code>EMN Mayo</code>
+      con mayúscula, <code>EMN agosto</code> con minúscula. Es normal, no es un error.
+    </p>
+    <div class="tut-figure">
+      <div class="tut-screen">
+        <div class="ap-body">
+          <div class="ap-t">
+            <div class="ap-ct" style="width:42%; padding-right:1rem">
+              <div class="ap-side">
+                <div class="ap-side-on">Evaluaciones</div>
+                <div class="ap-side-off">Seguimiento</div>
+              </div>
+              <div class="ap-lab">Tipo de proceso</div>
+              <div class="ap-input ap-fill" style="margin-bottom:.6rem"><span class="ap-car">✕ ▾</span>EMN</div>
+              <div class="ap-lab">Proceso</div>
+              <div class="ap-input ap-fill"><span class="ap-car">▴</span>EMN Mayo</div>
+              <div class="ap-drop">
+                <div class="ap-drop-i">EMN Abril</div>
+                <div class="ap-drop-i ap-opt-on">EMN Mayo</div>
+                <div class="ap-drop-i">EMN agosto</div>
+                <div class="ap-drop-i">EMN Septiembre</div>
+              </div>
+            </div>
+            <div class="ap-ct" style="width:58%">
+              <div class="ap-lab">Nivel <i>— no cambia los Excel</i></div>
+              <div class="ap-input" style="margin-bottom:.7rem">
+                <span class="ap-chip">4° básico ✕</span><span class="ap-chip">8° básico ✕</span>
+              </div>
+              <div class="ap-lab">Asignatura <i>— no cambia los Excel</i></div>
+              <div class="ap-input">
+                <span class="ap-chip">Lenguaje y Comunicación ✕</span><span class="ap-chip">Matemática ✕</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="tut-caption">La columna izquierda con «EMN» y el mes elegido. Nivel y Asignatura pueden quedar como estén.</p>
+    </div>
+    <div class="tut-key">
+      <p>
+        <b>Nivel y Asignatura no cambian los Excel.</b> Aunque filtres por un curso o por una
+        asignatura, el archivo que baja Aptus trae <b>siempre el mes completo</b>: todos los
+        niveles y todas las asignaturas. Esos filtros solo cambian la tabla que se ve en
+        pantalla. Por eso basta una sola descarga de cada informe por mes.
+      </p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">5</span><h2>Abrir «Informes» y bajar los dos Excel</h2></div>
+    <p>
+      Sobre la tabla de resultados hay una barra gris plegada que dice <strong>Informes</strong>.
+      Hazle clic para desplegarla: aparecen cuatro enlaces y
+      solo <strong>dos son los que necesitas</strong>: <strong>por Estudiante</strong> y
+      <strong>por Habilidad</strong>. Los otros dos —el PDF de comparación y el informe por OA—
+      no se usan.
+    </p>
+    <div class="tut-figure">
+      <div class="tut-screen">
+        <div class="ap-body">
+          <div class="ap-panel">
+            <div class="ap-panel-hd"><span class="ap-car">▴</span>Informes</div>
+
+            <div class="ap-t ap-link ap-link-off">
+              <span class="ap-link-ico"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1" width="13" height="14" rx="1.6" fill="#b9c5cd"/><text x="8" y="11.4" font-size="7" font-family="sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">P</text></svg></span>
+              <span class="ap-link-txt">Descargar informe (comparación muestra de colegios)</span>
+              <span class="ap-link-tagc"><span class="ap-tag ap-tag-no">no se usa</span></span>
+            </div>
+
+            <div class="ap-t ap-link ap-link-off">
+              <span class="ap-link-ico"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1" width="13" height="14" rx="1.6" fill="#b9c5cd"/><text x="8" y="11.4" font-size="7" font-family="sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">X</text></svg></span>
+              <span class="ap-link-txt">Descargar informe de logros por OA</span>
+              <span class="ap-link-tagc"><span class="ap-tag ap-tag-no">no se usa</span></span>
+            </div>
+
+            <div class="ap-t ap-link ap-mark">
+              <span class="ap-link-ico"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1" width="13" height="14" rx="1.6" fill="#1e7145"/><text x="8" y="11.4" font-size="7" font-family="sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">X</text></svg></span>
+              <span class="ap-link-txt">Descargar informe de logros por Habilidad</span>
+              <span class="ap-link-tagc"><span class="ap-tag ap-tag-yes">bajar</span></span>
+            </div>
+
+            <div class="ap-t ap-link ap-mark">
+              <span class="ap-link-ico"><svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.5" y="1" width="13" height="14" rx="1.6" fill="#1e7145"/><text x="8" y="11.4" font-size="7" font-family="sans-serif" font-weight="bold" fill="#fff" text-anchor="middle">X</text></svg></span>
+              <span class="ap-link-txt">Descargar informe de logros por Estudiante</span>
+              <span class="ap-link-tagc"><span class="ap-tag ap-tag-yes">bajar</span></span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+      <p class="tut-caption">El panel «Informes» desplegado. Los dos enlaces marcados en amarillo son los que hay que descargar.</p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">6</span><h2>Ponerle el mes al nombre</h2></div>
+    <p>
+      Aptus entrega los archivos con la fecha en que los bajaste y <strong>sin el mes</strong>,
+      así que descargas de meses distintos se ven casi iguales. Renómbralos apenas los bajes:
+    </p>
+    <div class="tut-tablewrap">
+      <table>
+        <thead><tr><th>Como lo entrega Aptus</th><th>Cómo conviene dejarlo</th></tr></thead>
+        <tbody>
+          <tr><td><code>Informe_logro_por_estudiante (04-05-2026).xlsx</code></td><td><code>Informe_logro_por_estudiante MAYO.xlsx</code></td></tr>
+          <tr><td><code>Informe_logro_por_habilidad (04-05-2026).xlsx</code></td><td><code>Informe_logro_por_habilidad MAYO.xlsx</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tut-note">
+      <p>
+        <b>El nombre es solo para ti.</b> El sistema no lee el mes del nombre del archivo — lo
+        saca de una columna de adentro. Renombrar es para que no te equivoques al subirlos, no un
+        requisito técnico.
+      </p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col-wide">
+    <div class="tut-step-hd"><span class="tut-num">7</span><h2>Subirlos al sistema</h2></div>
+    <p>
+      En Report Generator, anda a <strong>Ejecución</strong> y abre el proceso
+      <strong>SIMCE Panguipulli (Aptus)</strong>. No te va a preguntar ningún dato: el mes, el
+      curso y la asignatura los saca de los propios archivos. Se detiene <strong>dos veces</strong>,
+      una por archivo, en este orden:
+    </p>
+    <div class="tut-tablewrap">
+      <table>
+        <thead><tr><th>Pausa</th><th>Qué dice el recuadro</th><th>Qué archivo va</th></tr></thead>
+        <tbody>
+          <tr><td>1ª</td><td>Informe de logros por Estudiante</td><td><code>Informe_logro_por_estudiante</code></td></tr>
+          <tr><td>2ª</td><td>Informe de logros por Habilidad</td><td><code>Informe_logro_por_habilidad</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tut-note">
+      <p>
+        <b>Un mes por ejecución, y nunca dos veces el mismo.</b> Si tienes que cargar abril y
+        mayo, corre el proceso dos veces. Y ojo: la carga <b>suma</b>, no reemplaza — si repites
+        un mes ya cargado, sus datos quedan duplicados y los promedios salen mal. Revisa en
+        <b>Valores</b> antes de volver a ejecutar.
+      </p>
+    </div>
+  </section>
+
+  <section class="tut-step tut-col">
+    <div class="tut-step-hd"><span class="tut-num">8</span><h2>Qué no hacerle a los archivos</h2></div>
+    <ul>
+      <li><strong>No cambies los títulos de las columnas.</strong> Vienen en mayúsculas
+        (<code>NOMBRE PROCESO</code>, <code>AÑO</code>, <code>NIVEL</code>, <code>CURSO</code>,
+        <code>ASIGNATURA</code>, <code>PORCENTAJE LOGRO</code>…) y el sistema los busca tal cual,
+        con tildes incluidas.</li>
+      <li><strong>No toques la columna <code>NOMBRE PROCESO</code>.</strong> De ahí sale el mes:
+        el sistema lee <code>EMN Mayo</code> y guarda <code>MAYO</code>. Si la editas, el mes se
+        pierde.</li>
+      <li><strong>No arregles los decimales a mano.</strong> Vienen con coma
+        (<code>0,444444</code>) y el sistema los convierte solo.</li>
+      <li><strong>No abras y vuelvas a guardar el archivo</strong> «para ordenarlo». Súbelo tal
+        como lo bajaste.</li>
+    </ul>
+  </section>
+
+  <section class="tut-check tut-col">
+    <h2>Antes de cerrar, revisa</h2>
+    <ul>
+      <li><span class="tut-box"></span>Bajé los <strong>dos</strong> Excel del mes: Estudiante y Habilidad.</li>
+      <li><span class="tut-box"></span>Cada archivo tiene el mes en el nombre.</li>
+      <li><span class="tut-box"></span>El mes que voy a cargar <strong>no</strong> estaba cargado ya.</li>
+      <li><span class="tut-box"></span>Después de cargar, en <strong>Valores</strong> aparecen el año y el mes nuevos.</li>
+      <li><span class="tut-box"></span>En el dashboard del indicador, el mes nuevo se ve en la pestaña de tendencia.</li>
+    </ul>
+  </section>
+
+  <footer class="tut-foot tut-col">
+    Las pantallas son reproducciones dibujadas, no capturas: la pantalla real muestra nombres y
+    RUT de estudiantes. Los textos y los nombres de los enlaces sí son los reales, verificados en
+    agosto de 2026. Si Aptus cambia su interfaz, manda lo que veas en pantalla.
+  </footer>
+
+</article>
+
+</body>
+</html>

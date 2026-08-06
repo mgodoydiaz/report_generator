@@ -135,27 +135,72 @@ Se detiene **una sola vez**, con dos recuadros en la misma pantalla:
 
 ## 3. SIMCE Panguipulli (ensayos Aptus)
 
-**Nombre del proceso en Ejecución:** `EMN Aptus (IA)`
+**Nombre del proceso en Ejecución:** `SIMCE Panguipulli (Aptus)`
 
 Son los ensayos SIMCE que aplica Aptus en Panguipulli. **En cada ejecución cargas un solo
 mes.** Si tienes que cargar abril y mayo, ejecutas el proceso dos veces.
 
-### Te pide tres archivos, de a uno
+### Te pide dos archivos, de a uno
 
 Este proceso **no te pregunta ningún dato**: el mes, la asignatura y el curso los saca de
 los propios archivos, y el establecimiento queda siempre como *Panguipulli*. Se detiene
-tres veces seguidas y en cada pausa va **un solo archivo**, el del mes que estás cargando:
+**dos veces**, una por archivo, y en cada pausa va **un solo archivo**, el del mes que
+estás cargando:
 
 | Recuadro en pantalla | Qué archivo es | Formato | ¿Obligatorio? |
 |---|---|---|---|
-| **Informe Estudiante (1 archivo del mes)** | `Informe_logro_por_estudiante MAYO.xlsx` | Excel | Sí |
-| **Informe OA (1 archivo del mes)** | `Informe_logro_por_OA MAYO.xlsx` | Excel | Sí |
-| **Informe Habilidad (1 archivo del mes)** | `Informe_logro_por_habilidad MAYO.xlsx` | Excel | Sí |
+| **Informe de logros por Estudiante** | `Informe_logro_por_estudiante MAYO.xlsx` | Excel | Sí |
+| **Informe de logros por Habilidad** | `Informe_logro_por_habilidad MAYO.xlsx` | Excel | Sí |
 
-![Ventana de ejecución del proceso EMN Aptus pidiendo el informe por estudiante](img/carga_panguipulli_modal.png)
+![Ventana de ejecución del proceso de SIMCE Panguipulli pidiendo el informe por estudiante](img/carga_panguipulli_modal.png)
 
-### ⚠️ COMPLETAR POR MIGUEL ###
-### (cómo se obtienen estos tres informes: ¿los descarga el colegio desde la plataforma Aptus, los envía Aptus por correo? Nombre del menú o del reporte, para escribir el paso a paso) ###
+### De dónde salen estos archivos
+
+Los descarga el propio colegio desde la plataforma Aptus (no llegan por correo). Necesitas
+una cuenta de Aptus con acceso a los resultados del establecimiento.
+
+1. Entra a <https://web.aptus.org> e inicia sesión.
+2. En el menú de arriba, **Recursos Pedagógicos → Ver Resultados** (o el enlace
+   **Evaluaciones** de las migas de pan). Se abre la pantalla **Resultados**, con cuatro
+   pestañas; queda seleccionada **Ver Resultados**, que es la que sirve.
+3. En la fila de filtros de arriba elige:
+   - **Periodo**: el año de la evaluación (`2025`, `2026`…).
+   - **Colegio**: `016843 - Liceo Bicentenario De Exelencia Tecnico Profesional People Help People De Panguipulli`.
+   - **Proyectos** y **Sostenedor** se dejan vacíos, no son obligatorios.
+4. En la columna de la izquierda deja marcado **Evaluaciones** (no *Seguimiento*) y completa:
+   - **Tipo de proceso**: `EMN`.
+   - **Proceso**: el mes, tal como lo nombra Aptus — `EMN Abril`, `EMN Mayo`, `EMN agosto`,
+     `EMN Septiembre`.
+   - **Nivel** y **Asignatura**: puedes dejarlos como están. Solo sirven para filtrar la
+     tabla que se ve en pantalla; **no cambian los Excel que vas a descargar**.
+
+   > **Los Excel traen siempre el mes completo.** Aunque filtres por nivel o por
+   > asignatura, el archivo que baja Aptus incluye **todos los niveles y todas las
+   > asignaturas** de ese mes. Así que **con una descarga por mes y por tipo de informe
+   > tienes todo**: no hay que repetirla por curso ni por asignatura.
+   >
+   > (Comprobado sobre los 66 archivos del histórico ya descargado: los que están guardados
+   > en carpetas distintas de nivel y de asignatura tienen exactamente el mismo contenido.
+   > En total hay solo 7 archivos distintos por tipo de informe, uno por cada mes de 2024 y
+   > 2025.)
+
+5. Sobre la tabla de resultados hay un panel gris plegado que dice **Informes**. Haz clic en
+   él para desplegarlo. Aparecen cuatro enlaces:
+
+   | Enlace | Qué baja | ¿Lo usa el sistema? |
+   |---|---|---|
+   | Descargar informe (comparación muestra de colegios) | PDF de comparación con otros colegios | No |
+   | Descargar informe de logros por OA | Excel — no se usa | No |
+   | **Descargar informe de logros por Habilidad** | Excel — es el `Informe_logro_por_habilidad` | Sí |
+   | **Descargar informe de logros por Estudiante** | Excel — es el `Informe_logro_por_estudiante` | Sí |
+
+   Solo esos dos Excel se suben. Ni el PDF de comparación ni el informe por OA se usan.
+
+> **Ojo con el nombre del archivo descargado.** Aptus lo entrega como
+> `Informe_logro_por_estudiante (dd-mm-aaaa).xlsx`, con la fecha de descarga y **sin el
+> mes**. Renómbralo poniéndole el mes (`Informe_logro_por_estudiante MAYO.xlsx`) para no
+> confundirte al subirlo: el sistema no lee el mes del nombre del archivo — lo saca de la
+> columna `NOMBRE PROCESO` de adentro — pero tú sí necesitas distinguirlos.
 
 ### Qué NO hacer con los archivos
 
