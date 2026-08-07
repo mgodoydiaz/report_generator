@@ -17,10 +17,6 @@ from backend.auditing import client_ip, make_metric_data
 from backend.http_utils import content_disposition
 from backend.logging_config import get_logger
 from backend.models import User, Metric, MetricDimension, MetricData, Dimension
-from backend.rgenerator.core.pares_nombre import (
-    completar_pares_nombre,
-    pares_nombre_normalizado,
-)
 from backend.routers.tables import invalidate_metric_df_cache
 
 logger = get_logger(__name__)
@@ -108,15 +104,10 @@ def _dim_name_to_id(db: Session, metric_id: int) -> Dict[str, int]:
     return {d.name: d.id_dimension for d in dims}
 
 
-def _pares_nombre_de_metrica(db: Session, metric_id: int):
-    """Pares X/X_Norm entre las dimensiones asociadas a la métrica.
-
-    Se calcula una sola vez por request y se pasa a
-    `completar_pares_nombre` por cada fila, para que toda carga por /values
-    (import de archivo o alta manual) deje pobladas ambas columnas del par
-    igual que lo hace el pipeline (`SaveToMetric`).
-    """
-    return pares_nombre_normalizado(_dim_name_to_id(db, metric_id))
+# NOTA (retiro de `Nombre_Norm`, 2026-08-07): los caminos de escritura de
+# este router ya NO generan el par X/X_Norm. La identidad de lectura se
+# calcula al vuelo con `normalizar_nombre`; solo se guardan las dimensiones
+# que el archivo/payload trae explícitas.
 
 
 # ── Filtrado server-side de metric_data ──────────────────────────────────
@@ -518,11 +509,7 @@ def add_metric_data_point(
         else:
             final_val = str(final_val) if final_val is not None else None
 
-        # Toda carga debe dejar el nombre en AMBAS columnas del par X/X_Norm.
         dims_json = dict(point.dimensions_json or {})
-        pares_nombre = _pares_nombre_de_metrica(db, metric_id)
-        if pares_nombre:
-            completar_pares_nombre(dims_json, pares_nombre)
 
         new_dp = make_metric_data(
             metric_id=metric_id,
@@ -903,10 +890,6 @@ async def import_metric_data(
 
         # Build dim_name -> id map
         dim_name_to_id = _dim_name_to_id(db, metric_id)
-        # Pares X/X_Norm de la métrica: si el archivo trae solo una de las
-        # dos columnas, la otra se completa antes de insertar (misma red de
-        # seguridad que aplica `SaveToMetric` en el camino de pipelines).
-        pares_nombre = pares_nombre_normalizado(dim_name_to_id)
 
         new_data_points = []
 
@@ -937,9 +920,6 @@ async def import_metric_data(
                         val = row[dim_name]
                         if not _is_empty_like(val):
                             dims_json[str(dim_id)] = str(val)
-
-                if pares_nombre:
-                    completar_pares_nombre(dims_json, pares_nombre)
 
                 final_value = None
                 if metric.data_type == "object":

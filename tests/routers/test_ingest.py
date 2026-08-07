@@ -358,12 +358,11 @@ class TestAuditoria:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Pares X / X_Norm
+# Retiro del par X / X_Norm (2026-08-07)
 #
-# La red de seguridad "toda carga deja el nombre en AMBAS columnas" vivía
-# solo en el camino de pipelines (`SaveToMetric`). La ingesta por API la
-# aplica con el mismo helper compartido
-# (`backend/rgenerator/core/pares_nombre.py`).
+# La ingesta por API ya NO genera el par: se guarda exactamente lo que el
+# integrador manda. La identidad de lectura se calcula al vuelo con
+# `normalizar_nombre` (RUT → nombre normalizado en memoria).
 # ─────────────────────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -403,8 +402,8 @@ def _dims_guardadas(db, metric):
     return [json.loads(f.dimensions_json) for f in filas]
 
 
-class TestParesNombreNormalizado:
-    def test_solo_nombre_completa_la_normalizada(
+class TestIngestaNoGeneraParesNombre:
+    def test_solo_nombre_no_inventa_la_normalizada(
         self, client, db_session, write_key, metric_con_par_nombre
     ):
         metric, dims = metric_con_par_nombre
@@ -423,11 +422,13 @@ class TestParesNombreNormalizado:
         id_norm = str(dims["Nombre_Norm"].id_dimension)
         guardadas = _dims_guardadas(db_session, metric)
         assert [d[id_nom] for d in guardadas] == ["Pérez Juan", "Ana Soto"]
-        assert [d[id_norm] for d in guardadas] == ["JUAN PEREZ", "ANA SOTO"]
+        assert all(id_norm not in d for d in guardadas)
 
-    def test_solo_normalizada_copia_el_nombre(
+    def test_solo_normalizada_no_copia_el_nombre(
         self, client, db_session, write_key, metric_con_par_nombre
     ):
+        """Un integrador legacy que mande `Nombre_Norm` no fabrica `Nombre`:
+        mientras la dimensión siga asociada se guarda tal cual y nada más."""
         metric, dims = metric_con_par_nombre
         resp = client.post(
             f"/api/ingest/metrics/{metric.id_metric}/data",
@@ -440,12 +441,11 @@ class TestParesNombreNormalizado:
         id_norm = str(dims["Nombre_Norm"].id_dimension)
         (guardada,) = _dims_guardadas(db_session, metric)
         assert guardada[id_norm] == "JUAN PEREZ"
-        assert guardada[id_nom] == "JUAN PEREZ"
+        assert id_nom not in guardada
 
-    def test_ambas_presentes_quedan_intactas(
+    def test_payload_se_guarda_tal_cual(
         self, client, db_session, write_key, metric_con_par_nombre
     ):
-        """Guard de no-sobrescritura: si vienen las dos, ninguna se toca."""
         metric, dims = metric_con_par_nombre
         resp = client.post(
             f"/api/ingest/metrics/{metric.id_metric}/data",
@@ -493,7 +493,7 @@ class TestParesNombreNormalizado:
     def test_dry_run_no_inserta_nada(
         self, client, db_session, write_key, metric_con_par_nombre
     ):
-        """El completado no altera la semántica de dry_run."""
+        """dry_run valida sin insertar, también con dimensiones de nombre."""
         metric, _ = metric_con_par_nombre
         resp = client.post(
             f"/api/ingest/metrics/{metric.id_metric}/data",

@@ -1,16 +1,18 @@
-"""Tests del fix "toda carga deja el nombre en AMBAS columnas".
+"""Tests del retiro del par `Nombre` / `Nombre_Norm` en el guardado.
 
-Cubre las dos mitades del arreglo:
+Historia: primero existió la red de seguridad "toda carga deja el nombre en
+AMBAS columnas". El 2026-08-07 el dueño retiró `Nombre_Norm` como dato
+persistido: la identidad se calcula al vuelo en lectura
+(`normalizar_nombre`) y `Nombre` es la única fuente de verdad visible.
 
-1. `SaveToMetric` — red de seguridad al guardar: si la métrica tiene el par
-   de dimensiones `Nombre` / `Nombre_Norm` y el DataFrame solo trae una,
-   la otra se completa.
-2. `scripts/backfill_nombre_columnas.py` — repara los datos ya cargados.
+Cubre las dos mitades del estado actual:
 
-Contexto del bug: el XLS de la Agencia DIA trae la columna "Nombre del
-Estudiante"; `SaveToMetric` mapea columnas a dimensiones por nombre EXACTO,
-así que la dimensión `Nombre` quedó nula en el 100% de las cargas 2026,
-mientras que las cargas 2025 quedaron sin `Nombre_Norm`.
+1. `SaveToMetric` — ya NO completa el par: guarda `Nombre` tal cual,
+   DESCARTA cualquier columna `X_Norm` entrante (pipelines viejos) y
+   excluye las dimensiones `X_Norm` aún asociadas a la métrica.
+2. `scripts/backfill_nombre_columnas.py` — script HISTÓRICO de reparación
+   de datos ya cargados con la convención vieja; sigue funcionando para
+   los datos que la traen (sus tests se conservan tal cual).
 """
 from __future__ import annotations
 
@@ -65,46 +67,53 @@ class _CtxFalso:
 # 1) SaveToMetric
 # ─────────────────────────────────────────────────────────────────────────
 
-class TestSaveToMetricCompletaParDeNombres:
+class TestSaveToMetricNoPersisteNombreNorm:
 
     def _guardar(self, db, org, metric, df):
         from backend.rgenerator.core.metric_steps import SaveToMetric
         from backend.models import MetricData
 
         ctx = _CtxFalso(db, org.id, {"datos": df})
-        SaveToMetric(metric_id=metric.id_metric, input_key="datos").run(ctx)
-        return db.query(MetricData).filter(
+        step = SaveToMetric(metric_id=metric.id_metric, input_key="datos")
+        step.run(ctx)
+        filas = db.query(MetricData).filter(
             MetricData.id_metric == metric.id_metric
         ).all()
+        return filas, step
 
-    def test_norm_se_deriva_cuando_solo_viene_nombre(self, db_session):
-        """Caso cargas 2025: el pipeline puebla `Nombre` y no `Nombre_Norm`."""
+    def test_solo_nombre_no_inventa_la_normalizada(self, db_session):
+        """El par ya no se completa: `Nombre` se guarda tal cual y la
+        dimensión `Nombre_Norm` (aunque siga asociada) queda fuera."""
         org = make_org(db_session)
         metric, _, dim_nombre, dim_norm = _montar_metrica_con_nombres(db_session, org)
         df = pd.DataFrame([{"Curso": "I A", "Nombre": "José Pérez", "Logro": 0.5}])
 
-        filas = self._guardar(db_session, org, metric, df)
+        filas, _ = self._guardar(db_session, org, metric, df)
 
         dims = _dims_de(filas[0])
         assert dims[str(dim_nombre.id_dimension)] == "José Pérez"
-        # Normalizado con la función canónica: sin tildes, ordenado, mayúsculas.
-        assert dims[str(dim_norm.id_dimension)] == "JOSE PEREZ"
+        assert str(dim_norm.id_dimension) not in dims
 
-    def test_nombre_se_copia_cuando_solo_viene_norm(self, db_session):
-        """Caso cargas 2026: solo existe la columna normalizada."""
+    def test_columna_nombre_norm_entrante_se_descarta_con_warning(self, db_session):
+        """(c) Un DataFrame de un pipeline viejo trae `Nombre_Norm`: la
+        columna se DESCARTA (no se persiste) y se emite warning informativo."""
         org = make_org(db_session)
-        metric, _, dim_nombre, dim_norm = _montar_metrica_con_nombres(db_session, org)
+        metric, dim_curso, dim_nombre, dim_norm = _montar_metrica_con_nombres(
+            db_session, org
+        )
         df = pd.DataFrame([
             {"Curso": "I A", "Nombre_Norm": "JOSE PEREZ", "Logro": 0.5},
         ])
 
-        filas = self._guardar(db_session, org, metric, df)
+        filas, step = self._guardar(db_session, org, metric, df)
 
         dims = _dims_de(filas[0])
-        assert dims[str(dim_nombre.id_dimension)] == "JOSE PEREZ"
-        assert dims[str(dim_norm.id_dimension)] == "JOSE PEREZ"
+        assert dims == {str(dim_curso.id_dimension): "I A"}
+        assert str(dim_norm.id_dimension) not in dims
+        assert str(dim_nombre.id_dimension) not in dims  # no se copia nada
+        assert any("Nombre_Norm" in log and "descartan" in log for log in step.logs)
 
-    def test_no_altera_filas_que_ya_traen_ambas(self, db_session):
+    def test_nombre_se_guarda_y_norm_entrante_se_ignora(self, db_session):
         org = make_org(db_session)
         metric, _, dim_nombre, dim_norm = _montar_metrica_con_nombres(db_session, org)
         df = pd.DataFrame([{
@@ -112,32 +121,32 @@ class TestSaveToMetricCompletaParDeNombres:
             "Nombre_Norm": "CLAVE PROPIA", "Logro": 0.5,
         }])
 
-        filas = self._guardar(db_session, org, metric, df)
+        filas, _ = self._guardar(db_session, org, metric, df)
 
         dims = _dims_de(filas[0])
         assert dims[str(dim_nombre.id_dimension)] == "José Pérez"
-        assert dims[str(dim_norm.id_dimension)] == "CLAVE PROPIA"
+        assert str(dim_norm.id_dimension) not in dims
 
     def test_fila_sin_ninguna_columna_queda_intacta(self, db_session):
         org = make_org(db_session)
         metric, _, dim_nombre, dim_norm = _montar_metrica_con_nombres(db_session, org)
         df = pd.DataFrame([{"Curso": "7 A", "Logro": 0.5}])
 
-        filas = self._guardar(db_session, org, metric, df)
+        filas, _ = self._guardar(db_session, org, metric, df)
 
         dims = _dims_de(filas[0])
         assert str(dim_nombre.id_dimension) not in dims
         assert str(dim_norm.id_dimension) not in dims
 
     def test_metrica_sin_dimension_norm_no_rompe(self, db_session):
-        """Métricas que no tienen el par no deben verse afectadas."""
+        """Métricas sin la dimensión legacy funcionan idéntico que siempre."""
         org = make_org(db_session)
         metric, _, dim_nombre, _ = _montar_metrica_con_nombres(
             db_session, org, con_norm=False
         )
         df = pd.DataFrame([{"Curso": "I A", "Nombre": "José Pérez", "Logro": 0.5}])
 
-        filas = self._guardar(db_session, org, metric, df)
+        filas, _ = self._guardar(db_session, org, metric, df)
 
         dims = _dims_de(filas[0])
         assert dims[str(dim_nombre.id_dimension)] == "José Pérez"

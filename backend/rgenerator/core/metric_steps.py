@@ -3,12 +3,25 @@ import pandas as pd
 import json
 from typing import Optional, Dict, Any
 from .step import Step
-from .pares_nombre import completar_pares_nombre, pares_nombre_normalizado
 from backend.auditing import make_metric_data
 from backend.logging_config import get_logger
 from backend.models import Metric, MetricDimension, MetricData, Dimension
 
 logger = get_logger(__name__)
+
+#: Sufijos de la convención DEPRECADA de dimensión normalizada `X_Norm`
+#: (retiro de `Nombre_Norm`, 2026-08-07). El par ya no se genera ni se
+#: persiste: la identidad de lectura se calcula al vuelo con
+#: `normalizar_nombre`. Los sufijos quedan solo para DESCARTAR columnas y
+#: dimensiones heredadas de pipelines viejos.
+SUFIJOS_NORM = ("_Norm", "_norm", "_NORM")
+
+
+def _es_nombre_norm(nombre) -> bool:
+    """True si `nombre` sigue la convención deprecada `X_Norm`."""
+    return isinstance(nombre, str) and any(
+        nombre.endswith(s) and len(nombre) > len(s) for s in SUFIJOS_NORM
+    )
 
 
 def _parse_meta_json(raw):
@@ -152,9 +165,36 @@ class SaveToMetric(Step):
 
         meta = _parse_meta_json(metric.meta_json)
 
-        # 3. Construir mapa de dimensiones: nombre → id_dimension
+        # 3. Construir mapa de dimensiones: nombre → id_dimension.
+        # Las dimensiones de la convención deprecada `X_Norm` se excluyen del
+        # mapeo: no se persisten ni cuentan para la cobertura (la identidad
+        # se calcula al vuelo en lectura; los valores históricos en
+        # dimensions_json quedan inertes).
         dim_name_to_id = _build_dim_name_to_id(ctx.db, self.metric_id)
-        pares_nombre = pares_nombre_normalizado(dim_name_to_id)
+        dims_norm = sorted(n for n in dim_name_to_id if _es_nombre_norm(n))
+        if dims_norm:
+            dim_name_to_id = {
+                n: i for n, i in dim_name_to_id.items() if not _es_nombre_norm(n)
+            }
+            logger.info(
+                f"[{self.name}] Dimensiones {dims_norm} excluidas del guardado: "
+                f"la convención X_Norm está deprecada (identidad al vuelo)."
+            )
+        # Columnas `X_Norm` que traiga el DataFrame (pipelines viejos) se
+        # DESCARTAN: no deben persistirse. Warning informativo, la carga sigue.
+        cols_norm = sorted(c for c in df_input.columns if _es_nombre_norm(c))
+        if cols_norm:
+            msg = (
+                f"[{self.name}] El DataFrame trae columnas {cols_norm} de la "
+                f"convención deprecada X_Norm: se descartan (no se persisten). "
+                f"La identidad se calcula al vuelo con normalizar_nombre; "
+                f"revisá el pipeline (scripts/quitar_normalize_name_pipelines.py)."
+            )
+            logger.warning(msg)
+            self._append_log(msg)
+            add_warning = getattr(ctx, "add_warning", None)
+            if callable(add_warning):
+                add_warning(msg)
         logger.info(f"[{self.name}] Dimensiones inferidas: {list(dim_name_to_id.keys())}")
         logger.info(f"[{self.name}] Tipo de dato: {metric.data_type}, Nombre métrica: {metric.name}")
 
@@ -181,10 +221,6 @@ class SaveToMetric(Step):
                     val = row[dim_name]
                     if pd.notna(val):
                         dims_json[str(dim_id)] = str(val)
-
-            # Toda carga debe dejar el nombre en AMBAS columnas.
-            if pares_nombre:
-                completar_pares_nombre(dims_json, pares_nombre)
 
             # Extraer valor según tipo de métrica
             final_value = None

@@ -517,13 +517,12 @@ class TestGetTemplate:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# Pares X / X_Norm — POST /{id}/import y POST /{id}/data
+# Retiro del par X / X_Norm — POST /{id}/import y POST /{id}/data
 #
-# La red de seguridad "toda carga deja el nombre en AMBAS columnas" vivía
-# solo en el camino de pipelines (`SaveToMetric`). Estos tests cubren los
-# dos caminos de escritura de /values: el import de archivo y el alta
-# manual de una fila. Helper compartido en
-# `backend/rgenerator/core/pares_nombre.py`.
+# Desde el retiro de `Nombre_Norm` (2026-08-07) los caminos de escritura de
+# /values ya NO generan el par: se guarda exactamente lo que el archivo o
+# el payload traen. La identidad de lectura se calcula al vuelo con
+# `normalizar_nombre` (RUT → nombre normalizado en memoria).
 # ─────────────────────────────────────────────────────────────────────────
 
 
@@ -570,10 +569,12 @@ def _dims_guardadas(db_session, metric):
 
 
 @pytest.mark.integration
-class TestImportCompletaParesNombre:
-    def test_solo_nombre_completa_la_normalizada(
+class TestImportNoGeneraParesNombre:
+    def test_solo_nombre_no_inventa_la_normalizada(
         self, client_auth, db_session, metric_con_par_nombre
     ):
+        """Se guarda exactamente lo que trae el archivo: `Nombre` tal cual,
+        sin fabricar `Nombre_Norm` (la identidad se calcula en lectura)."""
         metric, dims = metric_con_par_nombre
         r = client_auth.post(
             f"/api/metrics/{metric.id_metric}/import",
@@ -586,12 +587,14 @@ class TestImportCompletaParesNombre:
         id_norm = str(dims["Nombre_Norm"].id_dimension)
         guardadas = _dims_guardadas(db_session, metric)
         assert [d[id_nom] for d in guardadas] == ["Pérez Juan", "Ana Soto"]
-        # normalizar_nombre: sin tildes, palabras ordenadas, mayúsculas.
-        assert [d[id_norm] for d in guardadas] == ["JUAN PEREZ", "ANA SOTO"]
+        assert all(id_norm not in d for d in guardadas)
 
-    def test_solo_normalizada_copia_el_nombre(
+    def test_solo_normalizada_no_copia_el_nombre(
         self, client_auth, db_session, metric_con_par_nombre
     ):
+        """Un archivo legacy con `Nombre_Norm` no fabrica `Nombre`: mientras
+        la dimensión siga asociada, el valor se guarda tal cual y nada más
+        (retirar la asociación es tarea de scripts/retirar_nombre_norm.py)."""
         metric, dims = metric_con_par_nombre
         r = client_auth.post(
             f"/api/metrics/{metric.id_metric}/import",
@@ -603,34 +606,18 @@ class TestImportCompletaParesNombre:
         id_norm = str(dims["Nombre_Norm"].id_dimension)
         (guardada,) = _dims_guardadas(db_session, metric)
         assert guardada[id_norm] == "JUAN PEREZ"
-        assert guardada[id_nom] == "JUAN PEREZ"  # se copia tal cual
+        assert id_nom not in guardada
 
-    def test_ambas_presentes_quedan_intactas(
-        self, client_auth, db_session, metric_con_par_nombre
-    ):
-        """Guard de no-sobrescritura: si las dos vienen, no se toca ninguna,
-        aunque la normalizada no coincida con normalizar_nombre(original)."""
-        metric, dims = metric_con_par_nombre
-        r = client_auth.post(
-            f"/api/metrics/{metric.id_metric}/import",
-            files=_csv("Nombre;Nombre_Norm;Logro\nPérez Juan;valor raro;0.5\n"),
-        )
-        assert r.status_code == 200, r.text
-
-        id_nom = str(dims["Nombre"].id_dimension)
-        id_norm = str(dims["Nombre_Norm"].id_dimension)
-        (guardada,) = _dims_guardadas(db_session, metric)
-        assert guardada[id_nom] == "Pérez Juan"
-        assert guardada[id_norm] == "valor raro"
-
-    def test_sin_par_asociado_no_cambia_nada(
+    def test_dimension_desasociada_no_se_guarda(
         self, client_auth, db_session, metric_sin_par_nombre
     ):
-        """La métrica solo tiene 'Nombre': no hay par, no se inventan claves."""
+        """Tras retirar la asociación (estado final), una columna
+        `Nombre_Norm` del archivo no matchea ninguna dimensión y se pierde
+        en silencio — que es exactamente lo que se quiere."""
         metric, dims = metric_sin_par_nombre
         r = client_auth.post(
             f"/api/metrics/{metric.id_metric}/import",
-            files=_csv("Curso;Nombre;Logro\nII A;Pérez Juan;0.5\n"),
+            files=_csv("Curso;Nombre;Nombre_Norm;Logro\nII A;Pérez Juan;PEREZ JUAN;0.5\n"),
         )
         assert r.status_code == 200, r.text
 
@@ -643,7 +630,7 @@ class TestImportCompletaParesNombre:
     def test_fila_sin_nombre_no_inventa_columnas(
         self, client_auth, db_session, metric_con_par_nombre
     ):
-        """Sin ninguna de las dos, la fila no tiene identidad: se deja igual."""
+        """Sin nombre en el archivo, la fila queda sin identidad persistida."""
         metric, dims = metric_con_par_nombre
         r = client_auth.post(
             f"/api/metrics/{metric.id_metric}/import",
@@ -656,8 +643,8 @@ class TestImportCompletaParesNombre:
 
 
 @pytest.mark.integration
-class TestAltaManualCompletaParesNombre:
-    def test_solo_nombre_completa_la_normalizada(
+class TestAltaManualNoGeneraParesNombre:
+    def test_solo_nombre_no_inventa_la_normalizada(
         self, client_auth, db_session, metric_con_par_nombre
     ):
         metric, dims = metric_con_par_nombre
@@ -669,11 +656,11 @@ class TestAltaManualCompletaParesNombre:
             "dimensions_json": {id_nom: "Pérez Juan"},
         })
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["dimensions_json"][id_norm] == "JUAN PEREZ"
+        assert id_norm not in r.json()["data"]["dimensions_json"]
         (guardada,) = _dims_guardadas(db_session, metric)
-        assert guardada == {id_nom: "Pérez Juan", id_norm: "JUAN PEREZ"}
+        assert guardada == {id_nom: "Pérez Juan"}
 
-    def test_solo_normalizada_copia_el_nombre(self, client_auth, metric_con_par_nombre):
+    def test_solo_normalizada_no_copia_el_nombre(self, client_auth, metric_con_par_nombre):
         metric, dims = metric_con_par_nombre
         id_nom = str(dims["Nombre"].id_dimension)
         id_norm = str(dims["Nombre_Norm"].id_dimension)
@@ -683,9 +670,11 @@ class TestAltaManualCompletaParesNombre:
             "dimensions_json": {id_norm: "JUAN PEREZ"},
         })
         assert r.status_code == 200, r.text
-        assert r.json()["data"]["dimensions_json"][id_nom] == "JUAN PEREZ"
+        dims_out = r.json()["data"]["dimensions_json"]
+        assert dims_out == {id_norm: "JUAN PEREZ"}
+        assert id_nom not in dims_out
 
-    def test_ambas_presentes_quedan_intactas(self, client_auth, metric_con_par_nombre):
+    def test_payload_se_guarda_tal_cual(self, client_auth, metric_con_par_nombre):
         metric, dims = metric_con_par_nombre
         id_nom = str(dims["Nombre"].id_dimension)
         id_norm = str(dims["Nombre_Norm"].id_dimension)
