@@ -7,7 +7,8 @@ Este módulo agrupa utilidades pandas-based usadas por:
 
 El motor `derived_fields_engine` ya cubre:
     agg, slope, delta, row_threshold, row_mean_dynamic, lookup_range,
-    lookup_dict, normalize_name, piecewise_linear.
+    lookup_dict, copy, piecewise_linear, temporal_value_at
+    (normalize_name existe pero está deprecado — usar entity_normalize).
 
 Acá se agregan funciones que no encajan en el patrón "una columna a la vez":
     - student_risk_flag      : etiqueta de riesgo binaria por umbral

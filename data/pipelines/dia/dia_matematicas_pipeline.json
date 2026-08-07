@@ -1,7 +1,7 @@
 {
   "pipeline_metadata": {
     "name": "DIA Matemáticas (IA)",
-    "description": "Procesa XLS por curso (Agencia DIA) + PDFs por curso (preguntas con respuesta correcta detectada por píxeles). Calcula Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel medio/básico, normaliza nombres para join entre hitos. Migra script_consolidar_DIA.py artesanal. (IA)",
+    "description": "Procesa XLS por curso (Agencia DIA) + PDFs por curso (preguntas con respuesta correcta detectada por píxeles). Calcula Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel medio/básico, y produce la columna Nombre con el texto original del XLS (la clave de agrupación se normaliza al vuelo con entity_normalize; Nombre_Norm retirado 2026-08-07). Migra script_consolidar_DIA.py artesanal. (IA)",
     "input": "EXCEL+PDF",
     "output": "DB"
   },
@@ -111,7 +111,7 @@
     },
     {
       "step": "ApplyDerivedFields",
-      "description": "Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel, Nombre_Norm, Logro Promedio del estudiante.",
+      "description": "Logro horizontal, Nivel Logro por umbral, Nivel por lookup curso→nivel, columna Nombre (copia del texto original), Logro Promedio del estudiante.",
       "params": {
         "input_key": "estudiantes_enriched",
         "output_key": "estudiantes_derived",
@@ -145,8 +145,8 @@
             "mapping_id": 36
           },
           {
-            "kind": "normalize_name",
-            "name": "Nombre_Norm",
+            "kind": "copy",
+            "name": "Nombre",
             "value_field": "Nombre del Estudiante"
           },
           {
@@ -154,8 +154,12 @@
             "name": "Logro Promedio",
             "value_field": "Logro",
             "entity_field": [
+              "Año",
               "Curso",
-              "Nombre_Norm"
+              "Nombre"
+            ],
+            "entity_normalize": [
+              "Nombre"
             ],
             "agg": "mean",
             "min_points": 1

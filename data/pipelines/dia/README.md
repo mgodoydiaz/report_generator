@@ -13,14 +13,14 @@ referencia: [`docs/desarrollo/script_dia_artesanal_referencia.md`](../../../docs
 - ✅ Lectura de XLS por curso con metadata pre-header (B5 = Establecimiento, B6 = Curso) vía el nuevo parámetro `metadata_cells` de `RunExcelETL`.
 - ✅ Cálculo de `Logro` como mean horizontal de las preguntas (todas las columnas excepto las de metadata) vía `ApplyDerivedFields` con kind `row_mean_dynamic`. Reemplaza coma decimal y aplica `scale=0.01` (DIA viene 0-100).
 - ✅ Asignación de `Nivel Logro` por umbral (≤0.4 Inicial, ≤0.6 Intermedio, resto Avanzado) vía kind `row_threshold`.
-- ✅ Generación de `Nombre_Norm` (apellidos+nombre ordenados alfabéticamente) vía kind `normalize_name`. Resuelve el bug de matching entre hitos (DIAGNOSTICO viene "Nombre Apellido", INTERMEDIO viene "Apellido Nombre").
+- ✅ ~~Generación de `Nombre_Norm` vía kind `normalize_name`~~ **Retirado 2026-08-07**: el pipeline produce la columna `Nombre` (kind `copy`, texto original del XLS) y el matching entre hitos ("Nombre Apellido" vs "Apellido Nombre") se resuelve al vuelo con `entity_normalize: ["Nombre"]` en las agregaciones — la clave normalizada no se persiste ni se muestra.
 - ✅ Limpieza de prefijos en `Curso` ("1° básico A" → "1A").
 - ✅ Pausa interactiva para que el usuario indique el `Hito` por archivo (DIAGNOSTICO / INTERMEDIO / FINAL).
 
 ## Estado tras cierre B6b (2026-05-04)
 
 - ✅ **Step `RunDIAPDFExtraction`**: portado del script artesanal con las 5 funciones helper (camelot+fitz+análisis de píxeles para detectar bold). Validado contra PDF real (Panguipulli 7°A): 28 preguntas extraídas, Logro [0.20-0.80], Curso "7 A" detectado.
-- ✅ **`Avance` y `Mejora_vs_Inicio`** activados en `backend/rgenerator/reports/dia/esquema.json` con `entity_field=["Curso","Nombre_Norm"]` y `time_field=Hito` ordinal. Funcionarán con ≥2 hitos cargados.
+- ✅ **`Avance` y `Mejora_vs_Inicio`** activados en `backend/rgenerator/reports/dia/esquema.json` — desde 2026-08-07 con `entity_field=["Año","Curso","Nombre"]` + `entity_normalize=["Nombre"]` y `time_field=Hito` ordinal. Funcionarán con ≥2 hitos cargados.
 - ✅ **`metric_id`** resueltos (6 = estudiantes, 7 = preguntas).
 - ✅ Pipelines DIA Matemáticas (id=19) y DIA Lenguaje (id=21) publicados en la DB.
 
@@ -70,5 +70,5 @@ Tras la primera ejecución verificar:
 1. `RequestUserFiles` pausa pidiendo XLS (`status: NEEDS_REVIEW`).
 2. `EnrichWithUserInput` pausa pidiendo `Hito` por archivo.
 3. `RunExcelETL` produce `df_estudiantes_raw` con columnas `Establecimiento`, `Curso` correctas (las leyó de B5/B6).
-4. `ApplyDerivedFields` produce `Logro` (0-1), `Nivel Logro` (string), `Nombre_Norm`.
+4. `ApplyDerivedFields` produce `Logro` (0-1), `Nivel Logro` (string), `Nombre` (texto original).
 5. `SaveToMetric` carga las filas a la métrica destino.

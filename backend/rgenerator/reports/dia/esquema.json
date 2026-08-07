@@ -1,5 +1,5 @@
 {
-  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje). Avance y Mejora_vs_Inicio activos desde B6b: usan Nombre_Norm (clave estable entre hitos) que el pipeline DIA produce con kind normalize_name y guarda como dimensión en metric_data. Requiere ≥2 hitos cargados para que ambas devuelvan valor; con 1 solo hito quedan NaN sin romper el render. on_missing_entity=null: si los datos se cargaron con un pipeline anterior a normalize_name y no existe la columna Nombre_Norm, las tres derived_fields degradan a NaN en vez de romper el informe.",
+  "_comment": "Esquema declarativo del informe DIA. Reusa charts.py / tables.py de SIMCE — solo cambian los parámetros (lista_niveles ['Avanzado','Intermedio','Inicial'], columna 'Logro' en lugar de 'Rend', sin SIMCE puntaje). Identidad (retiro de Nombre_Norm, 2026-08-07): entity_field usa ['Año','Curso','Nombre'] con entity_normalize ['Nombre'] — la clave se normaliza AL VUELO con normalizar_nombre y nunca se persiste ni se muestra. Incluir 'Año' es un fix deliberado: sin él, estudiantes que conservan el rótulo de curso entre años recibían el promedio mezclado 2025+2026 (fuga documentada en docs/reportes/qa_informes_2026-08-03/dia.md P1-1). Avance y Mejora_vs_Inicio requieren ≥2 hitos cargados; con 1 solo hito quedan NaN sin romper el render. on_missing_entity=null: si falta alguna columna del entity (datos de pipelines viejos), las tres derived_fields degradan a NaN en vez de romper el informe. Una columna Nombre_Norm heredada en los datos se ignora.",
   "derived_fields": [
     {
       "df_input": "estudiantes",
@@ -8,7 +8,8 @@
           "kind": "agg",
           "name": "Logro_Promedio_Estudiante",
           "value_field": "Logro",
-          "entity_field": ["Curso", "Nombre_Norm"],
+          "entity_field": ["Año", "Curso", "Nombre"],
+          "entity_normalize": ["Nombre"],
           "agg": "mean",
           "min_points": 1,
           "on_missing_entity": "null"
@@ -17,7 +18,8 @@
           "kind": "slope",
           "name": "Avance",
           "value_field": "Logro",
-          "entity_field": ["Curso", "Nombre_Norm"],
+          "entity_field": ["Año", "Curso", "Nombre"],
+          "entity_normalize": ["Nombre"],
           "time_field": "Hito",
           "time_type": "ordinal",
           "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],
@@ -28,7 +30,8 @@
           "kind": "delta",
           "name": "Mejora_vs_Inicio",
           "value_field": "Logro",
-          "entity_field": ["Curso", "Nombre_Norm"],
+          "entity_field": ["Año", "Curso", "Nombre"],
+          "entity_normalize": ["Nombre"],
           "time_field": "Hito",
           "time_type": "ordinal",
           "time_ordinal_levels": ["DIAGNOSTICO", "INTERMEDIO", "CIERRE"],

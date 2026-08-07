@@ -19,6 +19,7 @@ import pytest
 from backend.rgenerator.core.derived_fields_engine import (
     KIND_REGISTRY,
     apply_agg,
+    apply_copy,
     apply_delta,
     apply_derived_fields,
     apply_lookup_dict,
@@ -959,9 +960,18 @@ class TestRegistry:
         assert set(KIND_REGISTRY.keys()) == {
             "agg", "slope", "delta",
             "row_mean_dynamic", "row_threshold", "normalize_name",
-            "lookup_range", "lookup_dict", "piecewise_linear",
+            "copy", "lookup_range", "lookup_dict", "piecewise_linear",
             "temporal_value_at",
         }
+
+    def test_normalize_name_declarado_deprecado(self):
+        """El kind sigue registrado por compat, pero su metadata lo dice."""
+        assert "DEPRECADO" in KIND_REGISTRY["normalize_name"]["description"]
+
+    def test_entity_normalize_en_optional_args(self):
+        """Los kinds que agrupan por entity aceptan entity_normalize."""
+        for kind in ("agg", "slope", "delta", "temporal_value_at"):
+            assert "entity_normalize" in KIND_REGISTRY[kind]["optional_args"], kind
 
     def test_metadata_introspection_first_check(self):
         """Sentinel para detectar si el iter del registry pasa los kinds."""
@@ -1182,7 +1192,9 @@ class TestOnMissingEntity:
 class TestEsquemaDIADerivedFields:
     """Aplica las derived_fields declaradas en el esquema DIA real
     (`backend/rgenerator/reports/dia/esquema.json`) sobre DataFrames
-    sintéticos, verificando el flujo end-to-end del fix on_missing_entity.
+    sintéticos. Desde el retiro de `Nombre_Norm` (2026-08-07) el esquema
+    agrupa por ["Año", "Curso", "Nombre"] con entity_normalize ["Nombre"]:
+    la clave se normaliza al vuelo y el DF de salida no cambia.
     """
 
     def _configs_estudiantes(self):
@@ -1193,21 +1205,27 @@ class TestEsquemaDIADerivedFields:
         est = [b for b in bloques if b.get("df_input") == "estudiantes"][0]
         return est["configs"]
 
-    def test_configs_declaran_on_missing_entity_null(self):
-        """Sanity: las 3 derived_fields del esquema deben traer el flag null."""
+    def test_configs_declaran_identidad_sin_nombre_norm(self):
+        """Sanity: las 3 derived_fields agrupan por Año+Curso+Nombre con
+        normalización al vuelo, degradan con on_missing_entity=null y
+        ninguna referencia `Nombre_Norm`."""
         configs = self._configs_estudiantes()
         nombres = {c["name"] for c in configs}
         assert nombres == {"Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"}
         for c in configs:
+            assert c["entity_field"] == ["Año", "Curso", "Nombre"], c["name"]
+            assert c.get("entity_normalize") == ["Nombre"], c["name"]
             assert c.get("on_missing_entity") == "null", c["name"]
+            assert c.get("kind") != "normalize_name"
 
-    def test_sin_nombre_norm_no_rompe_y_deriva_nan(self):
-        """DF sin Nombre_Norm (pipeline antiguo): las 3 columnas existen como NaN."""
+    def test_sin_columna_nombre_no_rompe_y_deriva_nan(self):
+        """DF sin `Nombre` (datos de pipelines viejos): las 3 columnas
+        existen como NaN gracias a on_missing_entity=null."""
         configs = self._configs_estudiantes()
         df = pd.DataFrame([
-            {"Curso": "1A", "Hito": "DIAGNOSTICO", "Logro": 0.40},
-            {"Curso": "1A", "Hito": "CIERRE", "Logro": 0.60},
-            {"Curso": "1B", "Hito": "DIAGNOSTICO", "Logro": 0.55},
+            {"Año": "2026", "Curso": "1A", "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Año": "2026", "Curso": "1A", "Hito": "CIERRE", "Logro": 0.60},
+            {"Año": "2026", "Curso": "1B", "Hito": "DIAGNOSTICO", "Logro": 0.55},
         ])
         out = apply_derived_fields(df, configs)  # no debe lanzar
         for col in ("Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"):
@@ -1215,34 +1233,169 @@ class TestEsquemaDIADerivedFields:
             assert out[col].isna().all(), col
         assert len(out) == len(df)
 
-    def test_con_nombre_norm_y_dos_hitos_calcula(self):
-        """DF con Nombre_Norm y 2 hitos: Avance y Mejora con valores no-NaN
-        para el estudiante presente en ambos hitos; el de 1 solo hito queda NaN."""
+    def test_nombre_permutado_entre_hitos_calcula_y_dos_hitos(self):
+        """El mismo estudiante viene "Ana Soto" en DIAGNOSTICO y "Soto Ana"
+        en CIERRE (bug DIA histórico): la normalización al vuelo los junta.
+        El DF de salida conserva los nombres ORIGINALES, sin columna extra."""
         configs = self._configs_estudiantes()
         df = pd.DataFrame([
-            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "DIAGNOSTICO", "Logro": 0.40},
-            {"Curso": "1A", "Nombre_Norm": "ANA", "Hito": "CIERRE", "Logro": 0.60},
+            {"Año": "2026", "Curso": "1A", "Nombre": "Ana Soto",
+             "Hito": "DIAGNOSTICO", "Logro": 0.40},
+            {"Año": "2026", "Curso": "1A", "Nombre": "Soto Ana",
+             "Hito": "CIERRE", "Logro": 0.60},
             # BETO solo tiene 1 hito → Avance / Mejora quedan NaN (min_points=2).
-            {"Curso": "1A", "Nombre_Norm": "BETO", "Hito": "DIAGNOSTICO", "Logro": 0.50},
+            {"Año": "2026", "Curso": "1A", "Nombre": "Beto Pérez",
+             "Hito": "DIAGNOSTICO", "Logro": 0.50},
         ])
         out = apply_derived_fields(df, configs)
 
-        ana = out[out["Nombre_Norm"] == "ANA"]
-        # Logro_Promedio_Estudiante y Mejora_vs_Inicio (delta) hacen broadcast
-        # a todas las filas del estudiante → no-NaN en ambos hitos.
+        # Sin columnas nuevas de identidad: solo las 3 derivadas.
+        assert set(out.columns) - set(df.columns) == {
+            "Logro_Promedio_Estudiante", "Avance", "Mejora_vs_Inicio"
+        }
+        # Los nombres originales quedan intactos (nunca se reordena).
+        assert out["Nombre"].tolist() == ["Ana Soto", "Soto Ana", "Beto Pérez"]
+
+        ana = out[out["Nombre"].isin(["Ana Soto", "Soto Ana"])]
         assert ana["Logro_Promedio_Estudiante"].notna().all()
-        assert ana["Mejora_vs_Inicio"].notna().all()
-        # Logro_Promedio_Estudiante ANA = (0.40 + 0.60)/2 = 0.50
+        # Promedio ANA = (0.40 + 0.60)/2 = 0.50 → colapsó las permutaciones.
         assert ana["Logro_Promedio_Estudiante"].iloc[0] == pytest.approx(0.50)
-        # Mejora ANA = 0.60 - 0.40 = 0.20
         assert ana["Mejora_vs_Inicio"].iloc[0] == pytest.approx(0.20, abs=1e-9)
-        # Avance (slope expansivo): NaN en el primer hito (1 punto), 0.10 en
-        # CIERRE, donde x=(1,3) y=(0.40,0.60) → slope = 0.20/2 = 0.10.
+        # Avance (slope expansivo): 0.10 en CIERRE, x=(1,3) y=(0.40,0.60).
         avance_cierre = ana[ana["Hito"] == "CIERRE"]["Avance"].iloc[0]
         assert avance_cierre == pytest.approx(0.10, abs=1e-9)
 
-        beto = out[out["Nombre_Norm"] == "BETO"]
+        beto = out[out["Nombre"] == "Beto Pérez"]
         assert pd.isna(beto["Avance"].iloc[0])
         assert pd.isna(beto["Mejora_vs_Inicio"].iloc[0])
-        # El promedio con min_points=1 sí calcula para BETO (1 hito).
         assert beto["Logro_Promedio_Estudiante"].iloc[0] == pytest.approx(0.50)
+
+    def test_anio_separa_cohortes(self):
+        """(b) Fix de la fuga 2025→2026 (QA DIA P1-1): el mismo estudiante
+        con el mismo rótulo de curso en dos años NO mezcla sus promedios."""
+        configs = self._configs_estudiantes()
+        df = pd.DataFrame([
+            {"Año": "2025", "Curso": "I C", "Nombre": "Benjamín Ilamante",
+             "Hito": "CIERRE", "Logro": 0.90},
+            {"Año": "2026", "Curso": "I C", "Nombre": "Ilamante Benjamín",
+             "Hito": "DIAGNOSTICO", "Logro": 0.23},
+        ])
+        out = apply_derived_fields(df, configs)
+
+        prom_2025 = out[out["Año"] == "2025"]["Logro_Promedio_Estudiante"].iloc[0]
+        prom_2026 = out[out["Año"] == "2026"]["Logro_Promedio_Estudiante"].iloc[0]
+        # Sin `Año` en el entity, ambos darían (0.90+0.23)/2 = 0.565.
+        assert prom_2025 == pytest.approx(0.90)
+        assert prom_2026 == pytest.approx(0.23)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# entity_normalize (normalización de la clave al vuelo) + kind copy
+# ─────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.unit
+class TestEntityNormalize:
+    """`entity_normalize`: la clave de agrupación pasa por normalizar_nombre
+    SOLO en memoria — el DataFrame de salida no cambia."""
+
+    def _df(self):
+        return pd.DataFrame([
+            {"Curso": "1A", "Nombre": "Juan Pérez Soto", "Hito": 1, "Logro": 0.40},
+            {"Curso": "1A", "Nombre": "Pérez Soto Juan", "Hito": 2, "Logro": 0.60},
+            {"Curso": "1A", "Nombre": "Ana Díaz", "Hito": 1, "Logro": 0.50},
+        ])
+
+    def test_agg_colapsa_permutaciones(self):
+        out = apply_agg(self._df(), {
+            "name": "Prom", "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"], "entity_normalize": ["Nombre"],
+            "agg": "mean",
+        })
+        juan = out[out["Nombre"].str.contains("Juan")]
+        assert juan["Prom"].tolist() == pytest.approx([0.50, 0.50])
+        ana = out[out["Nombre"] == "Ana Díaz"]
+        assert ana["Prom"].iloc[0] == pytest.approx(0.50)
+        # El df de salida no trae columnas sombra ni altera Nombre.
+        assert set(out.columns) == {"Curso", "Nombre", "Hito", "Logro", "Prom"}
+        assert out["Nombre"].tolist() == [
+            "Juan Pérez Soto", "Pérez Soto Juan", "Ana Díaz",
+        ]
+
+    def test_agg_entity_una_sola_columna(self):
+        out = apply_agg(self._df(), {
+            "name": "Prom", "value_field": "Logro",
+            "entity_field": "Nombre", "entity_normalize": ["Nombre"],
+            "agg": "mean",
+        })
+        assert out[out["Nombre"] == "Juan Pérez Soto"]["Prom"].iloc[0] == \
+            pytest.approx(0.50)
+        assert set(out.columns) == {"Curso", "Nombre", "Hito", "Logro", "Prom"}
+
+    def test_delta_colapsa_permutaciones(self):
+        out = apply_delta(self._df(), {
+            "name": "Mejora", "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"], "entity_normalize": ["Nombre"],
+            "time_field": "Hito", "min_points": 2,
+        })
+        juan = out[out["Nombre"].str.contains("Juan")]
+        assert juan["Mejora"].tolist() == pytest.approx([0.20, 0.20])
+        assert pd.isna(out[out["Nombre"] == "Ana Díaz"]["Mejora"].iloc[0])
+
+    def test_slope_colapsa_permutaciones(self):
+        out = apply_slope(self._df(), {
+            "name": "Avance", "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"], "entity_normalize": ["Nombre"],
+            "time_field": "Hito", "min_points": 2,
+        })
+        fila_h2 = out[out["Hito"] == 2]
+        # x=(1,2), y=(0.40,0.60) → slope 0.20.
+        assert fila_h2["Avance"].iloc[0] == pytest.approx(0.20, abs=1e-9)
+
+    def test_sin_entity_normalize_no_cambia_nada(self):
+        """Guard de retrocompat: sin el parámetro, permutaciones separadas."""
+        out = apply_agg(self._df(), {
+            "name": "Prom", "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"], "agg": "mean",
+        })
+        assert out[out["Nombre"] == "Juan Pérez Soto"]["Prom"].iloc[0] == \
+            pytest.approx(0.40)
+
+    def test_columna_fuera_del_entity_explota(self):
+        with pytest.raises(ValueError, match="entity_normalize"):
+            apply_agg(self._df(), {
+                "name": "Prom", "value_field": "Logro",
+                "entity_field": ["Curso"], "entity_normalize": ["Nombre"],
+                "agg": "mean",
+            })
+
+    def test_no_muta_el_df_original(self):
+        df = self._df()
+        columnas = df.columns.tolist()
+        apply_agg(df, {
+            "name": "Prom", "value_field": "Logro",
+            "entity_field": ["Curso", "Nombre"], "entity_normalize": ["Nombre"],
+            "agg": "mean",
+        })
+        assert df.columns.tolist() == columnas
+
+
+@pytest.mark.unit
+class TestCopy:
+    def test_copia_texto_original(self):
+        df = pd.DataFrame({"Nombre del Estudiante": ["José Pérez", None]})
+        out = apply_copy(df, {"name": "Nombre", "value_field": "Nombre del Estudiante"})
+        assert out["Nombre"].tolist()[0] == "José Pérez"  # tal cual, con tilde
+        assert pd.isna(out["Nombre"].tolist()[1])
+        # No muta el original.
+        assert "Nombre" not in df.columns
+
+    def test_value_field_inexistente_explota(self):
+        with pytest.raises(KeyError, match="NoExiste"):
+            apply_copy(pd.DataFrame({"A": [1]}), {"name": "B", "value_field": "NoExiste"})
+
+    def test_via_apply_derived_fields(self):
+        df = pd.DataFrame({"Nombre del Estudiante": ["Ana Soto"]})
+        out = apply_derived_fields(df, [
+            {"kind": "copy", "name": "Nombre", "value_field": "Nombre del Estudiante"},
+        ])
+        assert out["Nombre"].tolist() == ["Ana Soto"]

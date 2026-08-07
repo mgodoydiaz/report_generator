@@ -24,10 +24,16 @@ Kinds soportados:
 - `row_threshold`: clasifica el valor de una columna según umbrales
   ordenados ASC. Ej: Logro ≤0.4 → Inicial, ≤0.6 → Intermedio, resto →
   Avanzado.
-- `normalize_name`: ordena alfabéticamente las palabras de un campo
-  nombre para producir una clave estable. Resuelve el bug DIA donde el
-  mismo estudiante aparece como "Nombre Apellido" en un hito y
-  "Apellido Nombre" en otro, dando 0 matches al hacer join.
+- `copy`: copia una columna a otro nombre, sin transformar valores.
+  Caso DIA: el XLS trae "Nombre del Estudiante" y la métrica declara la
+  dimensión "Nombre" — la copia deja el texto ORIGINAL en la columna que
+  SaveToMetric mapea por nombre exacto.
+- `normalize_name`: **DEPRECADO** (decisión del dueño 2026-08-07: el
+  nombre reordenado no debe persistirse ni mostrarse). Sigue registrado
+  por compatibilidad con configs guardados, pero ningún pipeline debe
+  usarlo: la clave de agrupación se normaliza al vuelo con el parámetro
+  `entity_normalize` (ver abajo) y la identidad de lectura la calculan
+  los informes en memoria con `normalizar_nombre`.
 - `lookup_range`: BUSCARV con tramos (Excel "rango verdadero"). Para
   cada valor numérico, devuelve la label cuyo rango {min, max} lo
   contiene. Útil para asignar Nivel a partir de Logro cuando los
@@ -45,6 +51,15 @@ Soporta `value_type: ordinal`: si los valores son cualitativos
 (ej: Insuficiente, Elemental, Adecuado), se mapean a 1..N usando
 `ordinal_levels` antes de calcular, y la columna resultante queda en
 formato numérico (no se revierte porque la salida típicamente es numérica).
+
+Los kinds que agrupan por `entity_field` (agg, slope, delta,
+temporal_value_at) aceptan además `entity_normalize`: lista de columnas de
+`entity_field` cuyos valores se pasan por `normalizar_nombre` SOLO para
+construir la clave de agrupación. El DataFrame de salida no cambia — la
+normalización vive en columnas sombra temporales que se eliminan antes de
+devolver. Es el reemplazo del kind deprecado `normalize_name`: permite que
+"Juan Pérez" y "Pérez Juan" caigan en la misma entidad sin persistir ni
+mostrar jamás el nombre reordenado.
 """
 from __future__ import annotations
 
@@ -162,6 +177,48 @@ def _entity_keys_or_degrade(df: pd.DataFrame, config: dict, label: str):
     return keys, []
 
 
+def _claves_entidad_efectivas(
+    df: pd.DataFrame, entity_keys: list, config: dict, label: str
+) -> tuple:
+    """Aplica `entity_normalize` a las claves de agrupación, en memoria.
+
+    `entity_normalize` es una lista (o string) de columnas de `entity_field`
+    cuyos valores se pasan por `normalizar_nombre` SOLO para construir la
+    clave de agrupación. Se crean columnas sombra sobre el `df` recibido —
+    que debe ser la copia de trabajo del kind, nunca el DataFrame del
+    caller — y el kind debe eliminarlas antes de devolver, de modo que el
+    DataFrame de salida no cambia.
+
+    Retorna `(claves, sombras)`: las claves efectivas (mezcla de columnas
+    originales y sombra, en el orden de entity_field) y la lista de
+    columnas sombra a eliminar al final.
+    """
+    normalize = config.get("entity_normalize") or []
+    if isinstance(normalize, str):
+        normalize = [normalize]
+    if not isinstance(normalize, (list, tuple)):
+        raise ValueError(f"{label}: entity_normalize debe ser una lista de columnas")
+    if not normalize:
+        return list(entity_keys), []
+    fuera = [c for c in normalize if c not in entity_keys]
+    if fuera:
+        raise ValueError(
+            f"{label}: entity_normalize referencia columnas fuera de entity_field: {fuera}"
+        )
+    claves, sombras = [], []
+    for k in entity_keys:
+        if k in normalize:
+            sombra = f"__entnorm_{k}"
+            while sombra in df.columns:
+                sombra = f"_{sombra}"
+            df[sombra] = df[k].map(normalizar_nombre)
+            claves.append(sombra)
+            sombras.append(sombra)
+        else:
+            claves.append(k)
+    return claves, sombras
+
+
 def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     """Agregación por entity broadcast a todas las filas del grupo.
 
@@ -170,6 +227,9 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         value_field: columna numérica (o ordinal con ordinal_levels)
         entity_field: columna o lista de columnas por las que agrupar.
             Ej "Rut" (1 columna) o ["Curso", "Nombre"] (compuesto).
+        entity_normalize: lista opcional de columnas de entity_field que se
+            normalizan con `normalizar_nombre` SOLO para agrupar (el df de
+            salida no cambia). Ej ["Nombre"].
         agg: 'mean' | 'sum' | 'min' | 'max' | 'std' | 'count' | 'nunique'
         value_type: 'numeric' (default) | 'ordinal'
         ordinal_levels: lista (requerido si ordinal)
@@ -194,6 +254,7 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         raise KeyError(f"agg '{name}': value_field '{value_field}' no existe en el DataFrame")
 
     df = df.copy()
+    claves, sombras = _claves_entidad_efectivas(df, entity_keys, config, f"agg '{name}'")
     # Para nunique/count sobre valores categóricos (ej "v1","v2","v3" o
     # niveles "Crítico"/"Bajo Riesgo") no tiene sentido pasar por _as_numeric:
     # convertiría todo a NaN. Solo se exige numérico cuando el agg lo requiere
@@ -204,7 +265,7 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         series_for_agg = _as_numeric(df[value_field], value_type, ordinal_levels)
 
     # Calcular agregación + count por entity (uno o varios campos)
-    group_keys = [df[k] for k in entity_keys]
+    group_keys = [df[k] for k in claves]
     grouped = series_for_agg.groupby(group_keys)
     agg_series = grouped.agg(agg_fn)
     counts = grouped.count()
@@ -214,19 +275,21 @@ def apply_agg(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         agg_series = agg_series.where(counts >= min_points, other=np.nan)
 
     # Broadcast a cada fila usando merge (soporta multi-key)
-    if len(entity_keys) == 1:
-        df[name] = df[entity_keys[0]].map(agg_series)
+    if len(claves) == 1:
+        df[name] = df[claves[0]].map(agg_series)
     else:
         agg_df = agg_series.reset_index().rename(columns={agg_series.name or 0: name})
         # Si la serie no tiene name, queda en columna 0 tras reset_index
         if name not in agg_df.columns:
-            cols_no_keys = [c for c in agg_df.columns if c not in entity_keys]
+            cols_no_keys = [c for c in agg_df.columns if c not in claves]
             agg_df = agg_df.rename(columns={cols_no_keys[0]: name})
         # Si la columna `name` ya existía en df (re-aplicación), drop antes
         # del merge para evitar sufijos _x/_y de pandas.
         if name in df.columns:
             df = df.drop(columns=[name])
-        df = df.merge(agg_df[entity_keys + [name]], on=entity_keys, how="left")
+        df = df.merge(agg_df[claves + [name]], on=claves, how="left")
+    if sombras:
+        df = df.drop(columns=sombras)
     return df
 
 
@@ -246,6 +309,7 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
     Config esperado:
         name, value_field, entity_field, time_field
+        entity_normalize (idem agg)
         value_type, ordinal_levels (idem agg)
         min_points (default 2)
 
@@ -271,6 +335,9 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     time_ordinal_levels = config.get("time_ordinal_levels")
 
     df = df.copy()
+    entity_keys, sombras = _claves_entidad_efectivas(
+        df, entity_keys, config, f"slope '{name}'"
+    )
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
     df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
@@ -332,7 +399,7 @@ def apply_slope(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         df[name] = np.nan
     else:
         df[name] = df.apply(_lookup, axis=1)
-    df.drop(columns=["_value_num", "_time_num"], inplace=True)
+    df.drop(columns=["_value_num", "_time_num"] + sombras, inplace=True)
     return df
 
 
@@ -345,6 +412,7 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
 
     Config esperado:
         name, value_field, entity_field, time_field
+        entity_normalize (idem agg)
         value_type, ordinal_levels (idem agg)
         min_points (default 2)
 
@@ -370,6 +438,9 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     time_ordinal_levels = config.get("time_ordinal_levels")
 
     df = df.copy()
+    entity_keys, sombras = _claves_entidad_efectivas(
+        df, entity_keys, config, f"delta '{name}'"
+    )
     df["_value_num"] = _as_numeric(df[value_field], value_type, ordinal_levels)
     df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
@@ -412,7 +483,7 @@ def apply_delta(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     else:
         deltas_df = pd.DataFrame(delta_records)
         df = df.merge(deltas_df, on=entity_keys, how="left")
-    df.drop(columns=["_value_num", "_time_num"], inplace=True)
+    df.drop(columns=["_value_num", "_time_num"] + sombras, inplace=True)
     return df
 
 
@@ -565,12 +636,17 @@ def _strip_accents(s: str) -> str:
 def normalizar_nombre(valor, case: str = "upper", strip_accents: bool = True):
     """Normalización canónica de un nombre (escalar).
 
-    Función ÚNICA de normalización de nombres del sistema: la usan el
-    kind `normalize_name`, el step `SaveToMetric` (para completar la
-    columna par que falte) y `scripts/backfill_nombre_columnas.py`.
+    Función ÚNICA de normalización de nombres del sistema, y desde el
+    retiro de `Nombre_Norm` (2026-08-07) una función INTERNA DE LECTURA:
+    el resultado se usa en memoria como clave de agrupación/dedup/conteo
+    y JAMÁS se persiste ni se muestra. La usan `entity_normalize` (este
+    módulo), la identidad de lectura de los informes
+    (`reports/helpers.serie_identidad_estudiante`, `report_steps`), el
+    kind deprecado `normalize_name` y los scripts de reparación
+    (`backfill_nombre_columnas.py`, `restaurar_nombres_legibles.py`).
     Cualquier otro punto que necesite normalizar debe importarla en vez
     de reimplementar la lógica — si las implementaciones divergen, las
-    claves de join entre hitos dejan de coincidir.
+    claves de agrupación dejan de coincidir.
 
     Ordena alfabéticamente las palabras del nombre para que
     "Nombre Apellido" y "Apellido Nombre" colapsen a la misma clave.
@@ -614,13 +690,23 @@ def _columna_original_por_convencion(name: str):
 
 
 def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
-    """Ordena alfabéticamente las palabras de un campo nombre.
+    """**DEPRECADO** — Ordena alfabéticamente las palabras de un campo nombre.
 
-    Resuelve el bug DIA donde el mismo estudiante aparece como
-    "Nombre Apellido" en un hito y "Apellido Nombre" en otro: ordenando
-    sus palabras, ambas versiones colapsan a la misma clave estable.
-    Pierde la separación nombre/apellido pero permite el join entre
-    hitos cuando no hay RUT.
+    Decisión del dueño (2026-08-07): el nombre reordenado ("PEREZ JUAN
+    SOTO") no sirve en Chile y no debe persistirse ni mostrarse. Este
+    kind queda registrado solo por compatibilidad con configs guardados;
+    ningún pipeline debe usarlo. Reemplazo: la clave de agrupación se
+    normaliza al vuelo con `entity_normalize` en agg/slope/delta/
+    temporal_value_at, y la columna visible se produce con el kind
+    `copy` (texto original tal cual). Ver
+    `scripts/quitar_normalize_name_pipelines.py` para la migración de
+    pipelines vivos.
+
+    Comportamiento histórico: resuelve el bug DIA donde el mismo
+    estudiante aparece como "Nombre Apellido" en un hito y
+    "Apellido Nombre" en otro: ordenando sus palabras, ambas versiones
+    colapsan a la misma clave estable. Pierde la separación
+    nombre/apellido pero permite el join entre hitos cuando no hay RUT.
 
     Además PRESERVA el nombre original en una columna hermana. El bug de
     las cargas DIA 2026 fue que el XLS de la Agencia trae la columna
@@ -672,6 +758,38 @@ def apply_normalize_name(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     ):
         df[original_name] = df[value_field]
 
+    return df
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Kind: copy (copia de columna, sin transformar)
+# ─────────────────────────────────────────────────────────────────────────
+
+def apply_copy(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    """Copia `value_field` en la columna `name`, valores tal cual.
+
+    Caso de uso (retiro de `normalize_name`, 2026-08-07): el XLS de la
+    Agencia DIA trae la columna "Nombre del Estudiante" y la métrica
+    declara la dimensión "Nombre"; `SaveToMetric` mapea columnas a
+    dimensiones por nombre EXACTO, así que sin esta copia la dimensión
+    quedaría nula. Antes esa copia era un efecto secundario de
+    `normalize_name`; ahora es explícita y el texto queda ORIGINAL (sin
+    reordenar ni quitar tildes).
+
+    Config esperado:
+        name: columna destino (si ya existe, se sobrescribe).
+        value_field: columna fuente.
+
+    Retorna df con la columna `name` agregada.
+    """
+    name = config["name"]
+    value_field = config["value_field"]
+    if value_field not in df.columns:
+        raise KeyError(
+            f"copy '{name}': value_field '{value_field}' no existe en el DataFrame"
+        )
+    df = df.copy()
+    df[name] = df[value_field]
     return df
 
 
@@ -961,6 +1079,8 @@ def apply_temporal_value_at(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         name: nombre de la columna nueva
         value_field: columna a extraer (puede ser categórica/string)
         entity_field: columna o lista (ej ["Nombre", "Subprueba"])
+        entity_normalize: lista opcional de columnas de entity_field
+            normalizadas con `normalizar_nombre` solo para agrupar
         time_field: columna que define el orden temporal
         when: "first" | "last"  (default "last")
         time_type: 'numeric' (default) | 'ordinal'
@@ -993,6 +1113,9 @@ def apply_temporal_value_at(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             raise KeyError(f"temporal_value_at '{name}': columna '{f}' no existe en el DataFrame")
 
     df = df.copy()
+    entity_keys, sombras = _claves_entidad_efectivas(
+        df, entity_keys, config, f"temporal_value_at '{name}'"
+    )
     # Numerizamos solo el time_field (no el value); soporta ordinales.
     df["_time_num"] = _as_numeric(df[time_field], time_type, time_ordinal_levels)
 
@@ -1013,7 +1136,7 @@ def apply_temporal_value_at(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     if name in df.columns:
         df = df.drop(columns=[name])
     df = df.merge(out_df, on=entity_keys, how="left")
-    df.drop(columns=["_time_num"], inplace=True)
+    df.drop(columns=["_time_num"] + sombras, inplace=True)
     return df
 
 
@@ -1027,21 +1150,21 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "display_name": "Agregación por entidad",
         "description": "Agrupa por entity y agrega (mean, sum, min, max, std, count, nunique). Broadcast a todas las filas del grupo.",
         "required_args": ["name", "value_field", "entity_field"],
-        "optional_args": ["agg", "value_type", "ordinal_levels", "min_points", "on_missing_entity"],
+        "optional_args": ["agg", "value_type", "ordinal_levels", "min_points", "on_missing_entity", "entity_normalize"],
     },
     "slope": {
         "fn": apply_slope,
         "display_name": "Pendiente lineal expansiva",
         "description": "Para cada fila, regresión lineal sobre (time_field, value_field) usando los puntos hasta esa fila del mismo entity. Útil para Avance del estudiante.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity", "entity_normalize"],
     },
     "delta": {
         "fn": apply_delta,
         "display_name": "Último menos primero",
         "description": "Diferencia entre el último valor y el primero por entity, broadcast a todas las filas.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity"],
+        "optional_args": ["value_type", "ordinal_levels", "time_type", "time_ordinal_levels", "min_points", "on_missing_entity", "entity_normalize"],
     },
     "row_mean_dynamic": {
         "fn": apply_row_mean_dynamic,
@@ -1059,10 +1182,17 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "normalize_name": {
         "fn": apply_normalize_name,
-        "display_name": "Normalizar nombre",
-        "description": "Ordena alfabéticamente las palabras de un nombre para producir clave estable. Resuelve el bug DIA de 'Nombre Apellido' vs 'Apellido Nombre' entre hitos.",
+        "display_name": "Normalizar nombre (deprecado)",
+        "description": "DEPRECADO (2026-08-07): el nombre reordenado no se persiste ni se muestra. Usar entity_normalize en agg/slope/delta y el kind copy para producir la columna visible. Queda registrado solo por compatibilidad con configs guardados.",
         "required_args": ["name", "value_field"],
         "optional_args": ["case", "strip_accents"],
+    },
+    "copy": {
+        "fn": apply_copy,
+        "display_name": "Copiar columna",
+        "description": "Copia value_field en la columna name, valores tal cual. Caso DIA: 'Nombre del Estudiante' → 'Nombre' para que SaveToMetric mapee la dimensión por nombre exacto, con el texto original.",
+        "required_args": ["name", "value_field"],
+        "optional_args": [],
     },
     "lookup_range": {
         "fn": apply_lookup_range,
@@ -1090,7 +1220,7 @@ KIND_REGISTRY: dict[str, dict[str, Any]] = {
         "display_name": "Valor en primer/último hito",
         "description": "Devuelve el valor de value_field en la fila más temprana ('first') o tardía ('last') por entity. Broadcast a todas las filas. Soporta categóricos. Caso IDEL: nivel de riesgo en v1 y en la última versión para matrices de transición.",
         "required_args": ["name", "value_field", "entity_field", "time_field"],
-        "optional_args": ["when", "time_type", "time_ordinal_levels", "min_points"],
+        "optional_args": ["when", "time_type", "time_ordinal_levels", "min_points", "entity_normalize"],
     },
 }
 
