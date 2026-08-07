@@ -96,6 +96,10 @@ docs/pdf_examples/
 # específicos del entorno; no son parte del producto versionado.
 scripts/_oneshot/
 
+# Respaldos CSV de scripts de reparación de datos (contienen PII:
+# nombres de estudiantes) — ver scripts/restaurar_nombres_legibles.py
+scripts/_respaldos/
+
 # Datos de entrada del cliente (Panguipulli y otros establecimientos):
 # planillas Excel con PII (nombres, RUTs, notas).
 data/input/emn_panguipulli/
