@@ -36,6 +36,11 @@ from typing import Any, Iterable, Sequence
 
 import pandas as pd
 
+# Normalización canónica de nombres — función interna de LECTURA: la clave
+# de identidad por nombre se calcula al vuelo y jamás se persiste ni se
+# muestra (retiro de `Nombre_Norm`, 2026-08-07).
+from ..core.derived_fields_engine import normalizar_nombre
+
 # `periodos` es la fuente de verdad de la semántica temporal del proyecto
 # (MESES_A_NUMERO, HITO_A_MES, VERSION_A_MES). Solo se lee.
 from .periodos import a_numero_mes
@@ -46,7 +51,7 @@ from .periodos import a_numero_mes
 # ─────────────────────────────────────────────────────────────────────────
 
 def _norm(nombre: Any) -> str:
-    """'Nombre_Norm' → 'nombre norm'. Sin tildes, minúsculas, tokens por espacio."""
+    """'Eje Temático' → 'eje tematico'. Sin tildes, minúsculas, tokens por espacio."""
     s = unicodedata.normalize("NFKD", str(nombre)).encode("ascii", "ignore").decode("ascii")
     return re.sub(r"[^a-z0-9]+", " ", s.lower()).strip()
 
@@ -137,18 +142,18 @@ def formatear_serie(serie: pd.Series, formato: str = "number",
 
 # Prioridad de columnas para identificar a un estudiante. Un grupo = un
 # nivel de prioridad; dentro del grupo gana el primer patrón que exista.
-# Las cargas del indicador DIA traen `Nombre` en 2025 y `Nombre_Norm` en
-# 2026 (ninguna trae ambas), así que la identidad se resuelve por coalesce
-# entre grupos, no eligiendo una sola columna (P0-3 del QA 2026-07-30).
+# Regla de identidad de lectura (retiro de `Nombre_Norm`, 2026-08-07):
+# RUT si existe y no está vacío; si no, `normalizar_nombre(Nombre)`
+# calculado EN MEMORIA. Una columna `Nombre_Norm` heredada de datos
+# históricos se IGNORA: no matchea ningún grupo, no rompe nada y no se usa.
 _GRUPOS_IDENTIDAD: tuple[tuple[str, ...], ...] = (
     ("rut", "run", "rut alumno", "rut estudiante", "rut del estudiante"),
-    ("nombre norm", "nombre normalizado"),
     ("nombre", "estudiante", "alumno", "nombre alumno", "nombre estudiante",
      "nombre completo"),
 )
 
 # Grupos que sirven como NOMBRE visible (el RUT no se muestra en la columna
-# "Estudiante").
+# "Estudiante"). La presentación usa siempre el nombre tal cual viene.
 _GRUPOS_NOMBRE: tuple[tuple[str, ...], ...] = _GRUPOS_IDENTIDAD[1:]
 
 _PATRONES_LISTA = ("n lista", "no lista", "nro lista", "num lista", "numero lista",
@@ -174,14 +179,31 @@ def _columnas_de_grupos(df: pd.DataFrame,
 def columnas_identidad_estudiante(df: pd.DataFrame) -> list[str]:
     """Columnas que identifican al estudiante, de mayor a menor prioridad.
 
-    Orden: RUT → Nombre_Norm → Nombre/Estudiante/Alumno.
+    Orden: RUT → Nombre/Estudiante/Alumno. El valor de la columna de nombre
+    se normaliza EN MEMORIA (`normalizar_nombre`) al construir la clave —
+    ver `serie_identidad_estudiante`. `Nombre_Norm` ya no participa.
     """
     return _columnas_de_grupos(df, _GRUPOS_IDENTIDAD)
 
 
 def columnas_nombre_estudiante(df: pd.DataFrame) -> list[str]:
-    """Columnas usables como NOMBRE visible del estudiante (sin RUT)."""
-    return _columnas_de_grupos(df, _GRUPOS_NOMBRE)
+    """Columnas usables como NOMBRE visible del estudiante (sin RUT).
+
+    Devuelve TODAS las columnas de nombre presentes, en orden de prioridad
+    de patrón (Nombre → Estudiante → Alumno → …): el coalesce de
+    presentación necesita las alternativas, no solo la primera. La clave
+    normalizada heredada (`Nombre_Norm`) nunca entra — no es presentación.
+    """
+    por_norm: dict[str, str] = {}
+    for c in df.columns:
+        por_norm.setdefault(_norm(c), c)
+    out: list[str] = []
+    for grupo in _GRUPOS_NOMBRE:
+        for patron in grupo:
+            col = por_norm.get(patron)
+            if col is not None and col not in out:
+                out.append(col)
+    return out
 
 
 def _columnas_lista_curso(df: pd.DataFrame) -> tuple[str, str] | None:
@@ -201,6 +223,32 @@ def _serie_texto(serie: pd.Series) -> pd.Series:
     return serie.map(lambda v: pd.NA if es_sin_dato(v) else str(v).strip())
 
 
+_PATRONES_NOMBRE = frozenset(p for grupo in _GRUPOS_NOMBRE for p in grupo)
+
+
+def _es_columna_nombre(col: Any) -> bool:
+    """True si `col` es una columna de nombre de estudiante (no RUT)."""
+    return _norm(col) in _PATRONES_NOMBRE
+
+
+def _serie_clave_identidad(df: pd.DataFrame, col: str) -> pd.Series:
+    """Clave INTERNA de identidad derivada de la columna `col`.
+
+    - Columna de nombre → `normalizar_nombre` calculado en memoria, para
+      que "Juan Pérez Soto" y "Pérez Soto Juan" colapsen a la misma clave.
+    - Cualquier otra (RUT, clave compuesta) → texto limpio tal cual.
+
+    La clave resultante NUNCA se muestra ni se persiste: solo alimenta
+    agrupaciones, conteos y dedups de lectura.
+    """
+    serie = _serie_texto(df[col])
+    if _es_columna_nombre(col):
+        serie = serie.map(
+            lambda v: pd.NA if pd.isna(v) else (normalizar_nombre(v) or pd.NA)
+        )
+    return serie
+
+
 def _rellenar_faltantes(ident: pd.Series, index: pd.Index) -> pd.Series:
     """Asigna un valor único a las filas sin identidad.
 
@@ -217,9 +265,12 @@ def _rellenar_faltantes(ident: pd.Series, index: pd.Index) -> pd.Series:
 def serie_identidad_estudiante(df: pd.DataFrame) -> pd.Series | None:
     """Serie con la mejor identidad disponible por fila (coalesce).
 
-    Recorre las columnas de identidad en orden de prioridad rellenando los
-    nulos con la siguiente; si nada aplica prueba con (Curso, N° Lista).
-    Las filas sin ninguna clave reciben un identificador único.
+    Regla de identidad de lectura (2026-08-07): RUT si existe y no está
+    vacío; si no, `normalizar_nombre(Nombre)` calculado EN MEMORIA (la
+    clave normalizada jamás se muestra ni se persiste — la presentación
+    usa siempre `Nombre` tal cual). Si nada aplica prueba con
+    (Curso, N° Lista). Las filas sin ninguna clave reciben un
+    identificador único. Una columna `Nombre_Norm` heredada se ignora.
 
     Returns:
         Series alineada al índice del df, o None si el df no tiene ninguna
@@ -232,7 +283,7 @@ def serie_identidad_estudiante(df: pd.DataFrame) -> pd.Series | None:
 
     ident = pd.Series(pd.NA, index=df.index, dtype="object")
     for col in cols:
-        ident = ident.where(ident.notna(), _serie_texto(df[col]))
+        ident = ident.where(ident.notna(), _serie_clave_identidad(df, col))
     if compuesta:
         col_lista, col_curso = compuesta
         lista = _serie_texto(df[col_lista])
@@ -262,7 +313,9 @@ def contar_estudiantes(
         agrupar_por: columna (o lista de columnas) por la que agrupar. None
             devuelve el total.
         columna_identidad: fuerza la columna de identidad. Si no se pasa se
-            autodetecta con `serie_identidad_estudiante`.
+            autodetecta con `serie_identidad_estudiante`. Si la columna
+            forzada es de nombre, la clave se normaliza en memoria
+            (`normalizar_nombre`) igual que en la autodetección.
 
     Returns:
         `int` si `agrupar_por` es None; si no, `pd.Series` indexada por el
@@ -271,7 +324,9 @@ def contar_estudiantes(
         hay una fila por estudiante.
     """
     if columna_identidad and columna_identidad in df.columns:
-        ident = _rellenar_faltantes(_serie_texto(df[columna_identidad]), df.index)
+        ident = _rellenar_faltantes(
+            _serie_clave_identidad(df, columna_identidad), df.index
+        )
     else:
         ident = serie_identidad_estudiante(df)
 
@@ -291,12 +346,12 @@ def contar_estudiantes(
 
 
 def coalescer_nombre_estudiante(df: pd.DataFrame, columna: str) -> pd.DataFrame:
-    """Rellena los nulos de `columna` con las otras columnas de nombre.
+    """Rellena los nulos de `columna` con las otras columnas de NOMBRE.
 
-    Mitigación de PRESENTACIÓN para el informe DIA: la carga 2026 dejó
-    `Nombre` nulo con `Nombre_Norm` poblado y la de 2025 al revés, así que
-    la columna "Estudiante" salía `nan` en ~60 de 67 páginas (P0-3 del QA
-    2026-07-30). El problema de datos de fondo no se arregla acá.
+    Solo usa columnas de nombre legible (Estudiante/Alumno/…): desde el
+    retiro de `Nombre_Norm` (2026-08-07) la clave normalizada no es una
+    alternativa de presentación — el nombre visible es siempre el texto
+    original. Una columna `Nombre_Norm` heredada se ignora.
 
     Returns:
         El mismo df si no había nada que rellenar; una copia si sí.

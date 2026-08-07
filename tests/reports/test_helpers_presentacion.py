@@ -77,10 +77,15 @@ def test_df_a_html_table_alinea_a_derecha_columna_numerica_con_faltantes():
 
 
 # ── Identidad del estudiante ─────────────────────────────────────────────
+#
+# Regla desde el retiro de `Nombre_Norm` (2026-08-07): RUT si existe y no
+# está vacío; si no, `normalizar_nombre(Nombre)` calculado en memoria. Una
+# columna `Nombre_Norm` heredada se IGNORA sin error y jamás se muestra.
 
 def test_columnas_identidad_respeta_prioridad():
     df = pd.DataFrame(columns=["Curso", "Nombre", "Nombre_Norm", "Rut", "Logro"])
-    assert columnas_identidad_estudiante(df) == ["Rut", "Nombre_Norm", "Nombre"]
+    # `Nombre_Norm` heredada NO participa de la identidad.
+    assert columnas_identidad_estudiante(df) == ["Rut", "Nombre"]
 
 
 def test_contar_estudiantes_deduplica_filas_por_subprueba():
@@ -107,14 +112,35 @@ def test_contar_estudiantes_no_altera_una_fila_por_alumno():
     assert conteo["IV°A"] == 2
 
 
-def test_contar_estudiantes_coalesce_entre_cargas_distintas():
-    """DIA: unas filas traen Nombre y otras Nombre_Norm, nunca las dos."""
+def test_contar_estudiantes_colapsa_permutaciones_del_nombre():
+    """DIA entre hitos: "Juan Pérez Soto" y "Pérez Soto Juan" son la misma
+    persona — la clave se normaliza EN MEMORIA, sin columna persistida."""
     df = pd.DataFrame({
         "Curso": ["7 A"] * 4,
-        "Nombre": ["Ana", "Ana", None, None],
-        "Nombre_Norm": [None, None, "BETO PEREZ", "BETO PEREZ"],
+        "Nombre": ["Juan Pérez Soto", "Pérez Soto Juan", "Ana Díaz", "Ana Diaz"],
     })
     assert contar_estudiantes(df) == 2
+
+
+def test_contar_estudiantes_ignora_columna_nombre_norm_heredada():
+    """Datos históricos traen `Nombre_Norm` (dim 22): no rompe ni se usa —
+    aunque contradiga al Nombre, manda `normalizar_nombre(Nombre)`."""
+    df = pd.DataFrame({
+        "Curso": ["7 A"] * 3,
+        "Nombre": ["Ana Soto", "Soto Ana", "Beto Pérez"],
+        "Nombre_Norm": ["CLAVE X", "CLAVE Y", "CLAVE Z"],
+    })
+    assert contar_estudiantes(df) == 2
+
+
+def test_contar_estudiantes_fila_solo_rut_cuenta_por_rut():
+    """Filas sin nombre pero con RUT cuentan por RUT (prioridad 1)."""
+    df = pd.DataFrame({
+        "Curso": ["7 A"] * 4,
+        "Rut": ["1-9", "1-9", "2-7", None],
+        "Nombre": [None, None, None, "Ana Soto"],
+    })
+    assert contar_estudiantes(df) == 3
 
 
 def test_contar_estudiantes_degrada_a_filas_sin_identidad():
@@ -132,15 +158,27 @@ def test_contar_estudiantes_usa_lista_y_curso_como_clave_compuesta():
     assert contar_estudiantes(df) == 2
 
 
-def test_coalescer_nombre_estudiante_rellena_desde_nombre_norm():
+def test_coalescer_nombre_estudiante_rellena_desde_otra_columna_de_nombre():
+    df = pd.DataFrame({
+        "Nombre": ["Ana", None],
+        "Estudiante": [None, "Beto Pérez"],
+    })
+    out = coalescer_nombre_estudiante(df, "Nombre")
+    assert out["Nombre"].tolist() == ["Ana", "Beto Pérez"]
+    # No muta el original
+    assert df["Nombre"].isna().sum() == 1
+
+
+def test_coalescer_nombre_estudiante_no_usa_nombre_norm():
+    """La clave normalizada no es presentación: un `Nombre` nulo NO se
+    rellena desde `Nombre_Norm` (el nombre visible es el texto original)."""
     df = pd.DataFrame({
         "Nombre": ["Ana", None],
         "Nombre_Norm": [None, "BETO PEREZ"],
     })
     out = coalescer_nombre_estudiante(df, "Nombre")
-    assert out["Nombre"].tolist() == ["Ana", "BETO PEREZ"]
-    # No muta el original
-    assert df["Nombre"].isna().sum() == 1
+    assert out["Nombre"].tolist()[0] == "Ana"
+    assert pd.isna(out["Nombre"].tolist()[1])
 
 
 # ── Orden temporal ───────────────────────────────────────────────────────

@@ -55,8 +55,8 @@ def resumen_estadistico_basico(
             (entero sin decimales).
         agrupar_por: columna categórica (default "Curso").
         columna_identidad: columna que identifica al estudiante. Si no se
-            pasa se autodetecta (RUT → Nombre_Norm → Nombre → Curso+N°
-            Lista); sin ninguna se cuentan filas.
+            pasa se autodetecta (RUT → Nombre normalizado en memoria →
+            Curso+N° Lista); sin ninguna se cuentan filas.
         **parametros: filtros adicionales aplicados antes de agrupar
             (ej Asignatura="LENGUAJE").
 

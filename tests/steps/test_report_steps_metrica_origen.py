@@ -247,14 +247,36 @@ class TestNAlumnosSinIdentidadFantasma:
         out = _table_section(self._item(), records, indicator=self._indicador())
         assert out["rows"][0][1] == "3"
 
-    def test_nombre_norm_cierra_la_cadena_de_identidad(self):
-        """DIA trae filas con `Nombre` nulo y `Nombre_Norm` poblado."""
+    def test_nombre_se_normaliza_al_vuelo_y_nombre_norm_se_ignora(self):
+        """Retiro de `Nombre_Norm` (2026-08-07): la identidad es RUT →
+        `normalizar_nombre(_nombre)` calculado en memoria. Las permutaciones
+        del mismo nombre colapsan a 1 alumno y un `_nombre_norm` heredado
+        (aunque contradiga al nombre) se ignora sin error."""
         records = [
             {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
-             "_nombre": "Alumno A", "_nombre_norm": "ALUMNO A",
+             "_nombre": "Juan Pérez Soto", "_nombre_norm": "CLAVE X",
              "_nivel_logro": "Inicial", "_logro": 0.5},
             {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
-             "_nombre": None, "_nombre_norm": "ALUMNO B",
+             "_nombre": "Pérez Soto Juan", "_nombre_norm": "CLAVE Y",
+             "_nivel_logro": "Inicial", "_logro": 0.5},
+            {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
+             "_nombre": "Ana Díaz", "_nombre_norm": None,
+             "_nivel_logro": "Inicial", "_logro": 0.5},
+        ]
+        out = _table_section(self._item(), records, indicator=self._indicador())
+        assert out["rows"][0][1] == "2"
+
+    def test_fila_solo_rut_cuenta_por_rut(self):
+        """Sin nombre pero con RUT, la fila cuenta por el RUT (prioridad 1)."""
+        records = [
+            {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
+             "_rut": "1-9", "_nombre": None,
+             "_nivel_logro": "Inicial", "_logro": 0.5},
+            {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
+             "_rut": "1-9", "_nombre": None,
+             "_nivel_logro": "Inicial", "_logro": 0.6},
+            {METRIC_ID_KEY: 6, "_curso": "1 A", "_hito": "H1",
+             "_rut": None, "_nombre": "Ana Díaz",
              "_nivel_logro": "Inicial", "_logro": 0.5},
         ]
         out = _table_section(self._item(), records, indicator=self._indicador())

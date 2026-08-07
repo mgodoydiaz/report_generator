@@ -100,13 +100,15 @@ def test_resumen_ordena_grupo_no_temporal_alfabeticamente():
 
 # ── tabla_logro_por_alumno ───────────────────────────────────────────────
 
-def test_logro_por_alumno_coalesce_nombre_norm():
-    """DIA 2026: `Nombre` nulo con `Nombre_Norm` poblado → salía `nan`."""
+def test_logro_por_alumno_ignora_nombre_norm_heredada():
+    """Retiro de `Nombre_Norm` (2026-08-07): la columna heredada no rompe
+    nada y NUNCA se muestra — la columna Estudiante imprime `Nombre` tal
+    cual, aunque la clave normalizada contradiga al nombre."""
     df = pd.DataFrame({
         "Curso": ["7 A", "7 A"],
-        "Numero Lista": [None, 2],
-        "Nombre": [None, "Beto"],
-        "Nombre_Norm": ["ANA PEREZ", None],
+        "Numero Lista": [1, 2],
+        "Nombre": ["Ana María Pérez", "Beto"],
+        "Nombre_Norm": ["CLAVE REORDENADA", None],
         "Logro": [0.8, 0.4],
     })
     out = tables.tabla_logro_por_alumno(
@@ -117,7 +119,8 @@ def test_logro_por_alumno_coalesce_nombre_norm():
         columnas=["Numero Lista", "Nombre", "Logro"],
         columnas_renombrar={"Numero Lista": "N° Lista", "Nombre": "Estudiante"},
     )
-    assert out["Estudiante"].tolist() == ["ANA PEREZ", "Beto"]
+    assert out["Estudiante"].tolist() == ["Ana María Pérez", "Beto"]
+    assert "Nombre_Norm" not in out.columns
 
 
 def test_logro_por_alumno_faltantes_no_salen_como_nan_porcentaje():

@@ -575,8 +575,8 @@ def alumnos_por_nivel_cualitativo(
         titulo_grafico, titulo_leyenda, ylabel: texto.
         nombre_grafico: path PNG.
         columna_identidad: columna que identifica al estudiante. Si no se
-            pasa se autodetecta (RUT → Nombre_Norm → Nombre → Curso+N°
-            Lista) y, sin ninguna, se cuentan filas.
+            pasa se autodetecta (RUT → Nombre normalizado en memoria →
+            Curso+N° Lista) y, sin ninguna, se cuentan filas.
 
     Equivalente LaTeX: SIMCE.alumnos_por_nivel_cualitativo,
         DIA.alumnos_por_nivel.
@@ -715,7 +715,7 @@ def composicion_por_nivel(
         titulo_grafico, titulo_leyenda: texto.
         etiqueta_barra: rótulo del eje Y (a qué se refiere la barra única).
         columna_identidad: columna que identifica al estudiante. Sin ella se
-            autodetecta (RUT → Nombre_Norm → Nombre → Curso+N° Lista).
+            autodetecta (RUT → Nombre normalizado en memoria → Curso+N° Lista).
         nombre_grafico: path PNG.
 
     Returns:

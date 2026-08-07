@@ -386,8 +386,10 @@ def riesgo_persistente(
     `sin_evaluacion_reciente`, con la columna de hasta cuándo hay datos.
 
     La identidad sale de `helpers.serie_identidad_estudiante` (RUT →
-    Nombre_Norm → Nombre → Curso+N° Lista), que es lo que hace funcionar
-    esto también donde el RUT viene vacío (Cálculo Veloz).
+    `normalizar_nombre(Nombre)` calculado en memoria → Curso+N° Lista), que
+    es lo que hace funcionar esto también donde el RUT viene vacío (Cálculo
+    Veloz). La clave normalizada nunca se muestra: la columna Estudiante
+    imprime `Nombre` tal cual.
 
     Args:
         df: DataFrame del período, con todas sus evaluaciones.

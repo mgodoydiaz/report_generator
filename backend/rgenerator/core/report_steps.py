@@ -24,6 +24,7 @@ from typing import Optional, Dict, List
 
 # Importaciones internas de RGenerator
 from .step import Step
+from .derived_fields_engine import normalizar_nombre
 from ..reports.filtering import matches
 from backend.config import REPORTS_TEMPLATES_DIR
 
@@ -1388,12 +1389,13 @@ def _table_section(item: dict, records: list[dict], indicator=None) -> dict:
                 actual_records = [r for r in records_nivel if str(r.get(gf, '')) == g]
             # Identidades distintas descartando vacíos: un `None` (fila sin
             # ninguna clave de identidad) sumaba un alumno fantasma al set.
-            # `_nombre_norm` cierra la cadena porque es la clave estable de
-            # identidad del estudiante (DIA trae filas con `Nombre` nulo y
-            # `Nombre_Norm` poblado; los derived_fields ya la usan como
-            # entity_field).
+            # Regla de identidad de lectura (retiro de `Nombre_Norm`,
+            # 2026-08-07): RUT si existe; si no, `normalizar_nombre(Nombre)`
+            # calculado al vuelo — colapsa "Juan Pérez" / "Pérez Juan" sin
+            # persistir ni mostrar jamás la clave. `_nombre_norm` heredado
+            # en los records se IGNORA.
             identidades = {
-                r.get('_rut') or r.get('_nombre') or r.get('_nombre_norm')
+                r.get('_rut') or normalizar_nombre(r.get('_nombre'))
                 for r in actual_records
             }
             identidades.discard(None)

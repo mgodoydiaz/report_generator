@@ -66,11 +66,12 @@ _COLUMN_NAME_OVERRIDES = {
     "_numero_pregunta": "N° Pregunta",
     "_nombre_del_estudiante": "Estudiante",
     "_nombre": "Nombre",
-    # Dimensión clave-estable producida por el step normalize_name del
-    # pipeline DIA. Debe conservar el guion bajo: el esquema DIA la usa como
-    # entity_field "Nombre_Norm". Sin este override, _humanize_column la
-    # convertiría en "Nombre Norm" (con espacio) y las derived_fields
-    # Avance / Mejora_vs_Inicio fallarían con KeyError.
+    # Dimensión HISTÓRICA (dim 22): los datos cargados antes del retiro de
+    # `Nombre_Norm` (2026-08-07) siguen trayendo la clave en dimensions_json.
+    # El override conserva el rótulo exacto para que la columna heredada sea
+    # reconocible y los lectores la IGNOREN de forma estable (la identidad se
+    # calcula al vuelo con normalizar_nombre; ningún esquema la usa ya como
+    # entity_field).
     "_nombre_norm": "Nombre_Norm",
     "_anio": "Año",
     "_ano": "Año",
