@@ -268,6 +268,7 @@ class TestPdfV2Pivot:
 
     def test_construir_pdf_bytes(self, tmp_path):
         """Genera bytes PDF reales de un esquema con secciones pivote."""
+        pytest.importorskip("weasyprint", reason="weasyprint no instalado en este entorno")
         from backend.rgenerator.reports import runtime
         # Crear un report_type temporal dentro de REPORTS_DIR con esquema pivote.
         rt_dir = runtime.REPORTS_DIR / "_pivot_test_tmp"

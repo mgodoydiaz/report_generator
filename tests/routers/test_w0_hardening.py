@@ -7,6 +7,7 @@ tests/steps/test_safe_eval.py.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import time
@@ -111,10 +112,17 @@ def test_backend_auth_no_importa_sin_jwt_secret(tmp_path):
         "os.environ['DATABASE_URL'] = 'sqlite:///:memory:';"
         "import backend.auth"
     )
+    # Entorno minimo pero FUNCIONAL: en Windows, un PATH vacio rompe winsock
+    # (WinError 10106 al cargar _overlapped) antes de llegar al chequeo de
+    # JWT_SECRET. PATH y SYSTEMROOT no afectan lo que el test valida: que no
+    # haya JWT_SECRET heredado.
+    env_min = {"PATH": os.environ.get("PATH", ""), "PYTHONPATH": str(repo_root)}
+    if os.environ.get("SYSTEMROOT"):
+        env_min["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
     proc = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True, text=True,
-        env={"PATH": "", "PYTHONPATH": str(repo_root)},
+        env=env_min,
         cwd=str(tmp_path),
     )
     assert proc.returncode != 0
