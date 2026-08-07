@@ -184,10 +184,15 @@ export const STEP_DEFAULT_PARAMS = {
   "output_key": "nombre_output", // Clave del artifact resultante
   "derived_fields": [
     // Kinds disponibles: agg | slope | delta | row_mean_dynamic | row_threshold |
-    //                    normalize_name | lookup_range | lookup_dict
+    //                    copy | lookup_range | lookup_dict
+    //                    (normalize_name existe pero está DEPRECADO: la clave se
+    //                     normaliza al vuelo con entity_normalize y no se persiste)
     // Ejemplos:
     // {"kind": "agg",   "name": "Logro_Promedio_Estudiante",
     //  "value_field": "Logro", "entity_field": "Rut", "agg": "mean"},
+    // {"kind": "agg",   "name": "Logro Promedio", "value_field": "Logro",
+    //  "entity_field": ["Año", "Curso", "Nombre"], "entity_normalize": ["Nombre"],
+    //  "agg": "mean"}, // "Juan Pérez" y "Pérez Juan" agrupan juntos, sin columna extra
     // {"kind": "slope", "name": "Avance",
     //  "value_field": "Logro", "entity_field": "Rut",
     //  "time_field": "Numero_Prueba", "min_points": 2},
@@ -201,6 +206,8 @@ export const STEP_DEFAULT_PARAMS = {
     //    {"max": 0.6,  "label": "Intermedio"},
     //    {"max": null, "label": "Avanzado"}
     //  ]},
+    // {"kind": "copy", "name": "Nombre", "value_field": "Nombre del Estudiante"},
+    // DEPRECADO (no usar en pipelines nuevos):
     // {"kind": "normalize_name", "name": "Nombre_Norm", "value_field": "Nombre"},
     // {"kind": "lookup_range", "name": "Nivel Establecimiento",
     //  "value_field": "Logro",
