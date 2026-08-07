@@ -165,6 +165,27 @@ def _detectar_paginas_tabla_preguntas(pdf_path: str) -> str:
     return f"{start}-{end}"
 
 
+_PAT_HEADER_PREGUNTA = re.compile(r"n\s*[°ºo]?\s*\n?\s*pregunta", re.IGNORECASE)
+
+
+def _es_tabla_preguntas(df: pd.DataFrame) -> bool:
+    """¿Esta tabla de camelot es el cuadro 'Resultados por pregunta'?
+
+    Se detecta por CONTENIDO de la fila de encabezado (que el informe
+    repite en cada página): debe traer la columna 'N° pregunta' y la
+    columna '% respuestas'. Así distinguimos la tabla de datos de
+    cualquier otro rectángulo que camelot detecte como tabla (marcos de
+    página, cajas de ayuda, etc.), cuyo número y orden cambian entre
+    formatos de informe y entre versiones de camelot.
+    """
+    if df.shape[0] < 2 or df.shape[1] not in (6, 8):
+        return False
+    header = " ".join(str(x) for x in df.iloc[0].tolist())
+    if not _PAT_HEADER_PREGUNTA.search(header):
+        return False
+    return "respuestas" in header.lower()
+
+
 def _extraer_establecimiento_y_curso(pdf_path: str) -> tuple[str, str, dict]:
     """Extrae establecimiento, curso y mapa completo de etiquetas de la
     primera página del informe DIA.
@@ -226,7 +247,8 @@ class RunDIAPDFExtraction(Step):
     Para cada PDF en `ctx.inputs[input_key]`:
         1. Detecta automáticamente el rango de páginas de la sección.
         2. Extrae establecimiento y curso de la portada.
-        3. Lee las tablas con camelot lattice (filtra impares).
+        3. Lee las tablas con camelot lattice y se queda con las que
+           traen el encabezado 'N° pregunta' + '% respuestas'.
         4. Normaliza columnas (Matemáticas trae 8, Lectura trae 6).
         5. Para preguntas de alternativas, detecta la respuesta correcta
            por análisis de píxeles (texto en negrita) y extrae el % de
@@ -276,13 +298,39 @@ class RunDIAPDFExtraction(Step):
         self._log(f"  {pdf_path}: páginas {pages}")
 
         tablas = camelot.read_pdf(pdf_path, pages=pages, flavor="lattice")
-        tablas_impares = [t for i, t in enumerate(tablas) if i % 2 == 1]
+
+        # Selección por CONTENIDO, no por posición. El código original
+        # asumía que camelot emitía exactamente 2 tablas por página (una
+        # espuria + la real) y se quedaba con las de índice impar. Esa
+        # asunción no la garantiza ni el formato del PDF ni la versión de
+        # camelot: con camelot 2.x sale 1 tabla por página, así que el
+        # filtro por paridad descartaba la mitad de las preguntas SIN
+        # error y desalineaba el stream de negritas (→ Logro incorrecto).
+        tablas_datos = [t for t in tablas if _es_tabla_preguntas(t.df)]
+        if not tablas_datos:
+            raise ValueError(
+                f"{pdf_path}: camelot no encontró ninguna tabla "
+                f"'Resultados por pregunta' en las páginas {pages} "
+                f"({len(tablas)} tablas detectadas)."
+            )
 
         establecimiento, curso, _ = _extraer_establecimiento_y_curso(pdf_path)
 
         df_intermedio = pd.concat(
-            [t.df.iloc[1:] for t in tablas_impares], ignore_index=True
+            [t.df.iloc[1:] for t in tablas_datos], ignore_index=True
         )
+        # Blindaje: si alguna versión de camelot devolviera la misma tabla
+        # dos veces, el N° de pregunta repetido rompería el pareo con el
+        # stream de tokens A:/B:/C:. El N° de pregunta es único por informe.
+        n_antes = len(df_intermedio)
+        df_intermedio = df_intermedio.drop_duplicates(
+            subset=[0], keep="first"
+        ).reset_index(drop=True)
+        if len(df_intermedio) != n_antes:
+            self._log(
+                f"  {pdf_path}: {n_antes - len(df_intermedio)} filas duplicadas "
+                f"descartadas (tablas repetidas por camelot)."
+            )
 
         # Matemáticas trae 8 columnas (con N° OA, Nivel OA y N° OA del
         # grado actual) → drop 1, 2, 6. Lectura trae 6 (sin las dos extras

@@ -30,7 +30,7 @@ openpyxl
 requests
 
 # PDF / documentos
-camelot-py
+camelot-py==2.0.0
 pymupdf
 docxtpl
 docx2pdf
