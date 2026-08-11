@@ -11,8 +11,11 @@ Convenciones (heredadas de SIMCE/funciones.py):
 - DPI = 300 en todos los savefig.
 - Paleta categórica: `plt.cm.Set2.colors` (8 pasteles).
 - Paleta boxplot: `plt.cm.tab10` cicled.
-- Paleta semáforo (niveles ordinales): {Adecuado/Avanzado=#1f9e89, Elemental/
-  Intermedio=#f1a340, Insuficiente/Inicial=#e64b35}.
+- Paleta semáforo (niveles de logro): SEMÁNTICA por nombre de nivel, no por
+  posición. Vive en `reports/colores.py` (rojo #e57373 → amarillo #f6d55c →
+  verde #81c784, pastel para impresión). Reemplaza a la paleta posicional
+  heredada del LaTeX ({#1f9e89, #f1a340, #e64b35}), que dejaba el mismo
+  nivel de dos colores según el informe (P1-5 del QA 2026-08-03).
 - Bordes: edgecolor='black', linewidth=1.2 (barras simples) o 'gray', 0.8
   (barras agrupadas).
 - Grid Y: linestyle='--', linewidth=0.9, zorder=0.
@@ -33,6 +36,7 @@ import matplotlib.transforms as mtransforms
 from matplotlib.colors import to_rgb
 from matplotlib.ticker import PercentFormatter, MaxNLocator
 
+from .colores import colores_para_niveles
 from .helpers import (
     contar_estudiantes,
     es_columna_temporal,
@@ -551,10 +555,12 @@ def alumnos_por_nivel_cualitativo(
     """Stacked bars: cantidad de alumnos por nivel cualitativo y categoría.
 
     Display name: Cantidad por nivel (stacked semáforo)
-    Paleta semáforo fija: nivel[0]=verde (#1f9e89), nivel[1]=naranja
-    (#f1a340), nivel[2]=rojo (#e64b35). El orden de `lista_niveles` define
-    el mapping (de mejor a peor: Adecuado, Elemental, Insuficiente para
-    SIMCE; Avanzado, Intermedio, Inicial para DIA).
+    Semáforo pastel SEMÁNTICO: el color sale del NOMBRE del nivel vía
+    `reports/colores.py` (Inicial/Insuficiente/No Logrado → rojo #e57373;
+    Intermedio/Elemental → amarillo #f6d55c; Avanzado/Adecuado/Logrado →
+    verde #81c784). Invertir `lista_niveles` ya no invierte el semáforo;
+    el orden solo decide el apilado y la leyenda. Un nombre desconocido cae
+    a la escala pastel por posición.
 
     Cada celda cuenta ESTUDIANTES DISTINTOS, no filas: cuando el df trae
     varias filas por estudiante (una por asignatura, habilidad o subprueba)
@@ -605,14 +611,14 @@ def alumnos_por_nivel_cualitativo(
         )
         return None
 
-    # Paleta semáforo: si no la pasan, default por cantidad de niveles
-    # (mejor → peor). Soporta 3, 4 o 5 niveles.
-    if lista_paleta is None:
-        lista_paleta = PALETAS_SEMAFORO.get(len(lista_niveles), PALETAS_SEMAFORO[3])
-    colores = {nivel: lista_paleta[i % len(lista_paleta)] for i, nivel in enumerate(lista_niveles)}
-    for nivel, color in (color_overrides or {}).items():
-        if nivel in colores and color:
-            colores[nivel] = color
+    # Color por NOMBRE de nivel (rojo/amarillo/verde pastel), no por
+    # posición. `color_overrides` y `lista_paleta` mantienen su precedencia.
+    colores = colores_para_niveles(
+        list(lista_niveles),
+        lista_paleta=lista_paleta,
+        color_overrides=color_overrides,
+        mejor_primero=True,
+    )
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -665,9 +671,11 @@ def alumnos_por_nivel_cualitativo(
 # Composición global por nivel (barra apilada 100% horizontal)
 # ─────────────────────────────────────────────────────────────────────────
 
-#: Paletas semáforo por cantidad de niveles (mejor → peor). Misma tabla que
-#: usa `alumnos_por_nivel_cualitativo`: los dos gráficos van en la misma
-#: página y deben leerse con el mismo código de color.
+#: LEGACY — paleta semáforo posicional heredada del LaTeX (mejor → peor).
+#: Ya no la usa ningún gráfico: el color de un nivel se decide por su
+#: nombre en `reports/colores.py`. Se conserva solo como referencia de la
+#: estética anterior y para quien quiera reproducirla pasando
+#: `lista_paleta=PALETAS_SEMAFORO[3]` explícitamente.
 PALETAS_SEMAFORO: dict[int, list[str]] = {
     3: ["#1f9e89", "#f1a340", "#e64b35"],
     4: ["#1f9e89", "#f1ce63", "#f1a340", "#e64b35"],
@@ -708,7 +716,8 @@ def composicion_por_nivel(
         lista_niveles: niveles ordenados de MEJOR a PEOR. Define el orden de
             los segmentos y el mapeo de la paleta por defecto.
         lista_paleta: colores en el mismo orden que `lista_niveles`. Sin
-            esto se usa la paleta semáforo por cantidad de niveles.
+            esto, el color de cada nivel sale de su NOMBRE (semáforo pastel
+            de `reports/colores.py`), no de su posición.
         color_overrides: `{nivel: "#rrggbb"}` que pisa la paleta nivel por
             nivel. Es la vía por la que un módulo inyecta los colores de
             `achievement_levels` sin tener que reordenar la paleta.
@@ -746,12 +755,12 @@ def composicion_por_nivel(
         )
         return None
 
-    if lista_paleta is None:
-        lista_paleta = PALETAS_SEMAFORO.get(len(niveles), PALETAS_SEMAFORO[3])
-    colores = {n: lista_paleta[i % len(lista_paleta)] for i, n in enumerate(niveles)}
-    for nivel, color in (color_overrides or {}).items():
-        if nivel in colores and color:
-            colores[nivel] = color
+    colores = colores_para_niveles(
+        niveles,
+        lista_paleta=lista_paleta,
+        color_overrides=color_overrides,
+        mejor_primero=True,
+    )
 
     fig, ax = plt.subplots(figsize=(10, 2.6))
 
@@ -837,7 +846,8 @@ def alumnos_por_nivel_curso_y_mes(
         lista_niveles: 3 niveles ordenados de PEOR a MEJOR para que el peor
             quede en la base del stack.
         lista_paleta: colores en el mismo orden que `lista_niveles`. Sin
-            esto se usa la paleta SIMCE original (tierra/azul/verde).
+            esto, cada nivel toma su color por NOMBRE del semáforo pastel
+            de `reports/colores.py` (antes: paleta SIMCE tierra/azul/verde).
         color_overrides: `{nivel: "#rrggbb"}` que pisa la paleta nivel por
             nivel (colores de `Indicator.achievement_levels`).
         orden_cursos: lista para fijar el orden del eje X.
@@ -902,21 +912,17 @@ def alumnos_por_nivel_curso_y_mes(
     # 3) Colores por nivel. `lista_paleta` se declaraba pero se ignoraba: el
     # gráfico quedaba SIEMPRE con la paleta SIMCE original (tierra/azul/
     # verde), incompatible con el semáforo del resto del informe cuando los
-    # dos gráficos de niveles conviven en el mismo PDF.
-    if lista_paleta:
-        colores = {
-            n: lista_paleta[i % len(lista_paleta)] for i, n in enumerate(lista_niveles)
-        }
-    else:
-        paleta = {
-            "Insuficiente": "#C2A47A",
-            "Elemental": "#2196F3",
-            "Adecuado": "#5FA59E",
-        }
-        colores = {n: paleta.get(n, "#888888") for n in lista_niveles}
-    for nivel, color in (color_overrides or {}).items():
-        if nivel in colores and color:
-            colores[nivel] = color
+    # dos gráficos de niveles conviven en el mismo PDF. Ahora comparte el
+    # semáforo pastel semántico de `reports/colores.py` con
+    # `alumnos_por_nivel_cualitativo` y `composicion_por_nivel`.
+    # Ojo: acá `lista_niveles` va de PEOR a MEJOR (al revés que en los otros
+    # dos), lo que solo importa para el fallback posicional.
+    colores = colores_para_niveles(
+        list(lista_niveles),
+        lista_paleta=lista_paleta,
+        color_overrides=color_overrides,
+        mejor_primero=False,
+    )
 
     # 4) Plot
     fig, ax = plt.subplots(figsize=(12, 7))
@@ -1118,7 +1124,7 @@ CHART_REGISTRY = {
     "alumnos_por_nivel_cualitativo": {
         "fn": alumnos_por_nivel_cualitativo,
         "display_name": "Cantidad por nivel (stacked semáforo)",
-        "description": "Barras apiladas con paleta semáforo fija (verde/naranja/rojo). El orden de `lista_niveles` mapea los colores. Cuenta estudiantes distintos, no filas.",
+        "description": "Barras apiladas con semáforo pastel: el color sale del NOMBRE del nivel (rojo el más bajo, amarillo el medio, verde el más alto), no de su posición en `lista_niveles`. Cuenta estudiantes distintos, no filas.",
         "required_params": ["columna_nivel", "agrupar_por", "lista_niveles"],
         "optional_params": ["lista_paleta", "color_overrides", "titulo_grafico", "titulo_leyenda", "ylabel", "columna_identidad"],
         "input_dataframes": ["df_estudiantes"],
