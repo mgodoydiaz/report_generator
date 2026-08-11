@@ -45,6 +45,10 @@ from ..core.derived_fields_engine import normalizar_nombre
 # (MESES_A_NUMERO, HITO_A_MES, VERSION_A_MES). Solo se lee.
 from .periodos import a_numero_mes
 
+# Orden canónico de cursos chilenos (romanos, arábigos y paralelo). La ruta
+# corta `rgenerator.*` está bloqueada por diseño: import absoluto.
+from backend.rgenerator.tooling.curso_order import curso_sort_key
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # Normalización de nombres de columna
@@ -393,6 +397,7 @@ _TOKENS_TEMPORALES = frozenset({
 _RE_ANIO = re.compile(r"(?<!\d)(?:19|20)\d{2}(?!\d)")
 _RE_ENTERO = re.compile(r"\d+")
 _SEPARADORES = " \t\r\n/-_.,;:·|()[]"
+_RE_PARENTESIS = re.compile(r"\([^)]*\)")
 
 
 def es_columna_temporal(nombre: Any) -> bool:
@@ -467,7 +472,13 @@ def valores_parecen_temporales(valores: Iterable[Any]) -> bool:
             return False
         if not _es_numero(texto):
             hay_texto = True
-        anio, posicion, _ = clave_orden_temporal(texto)
+        # Un entero que solo vive dentro de un sufijo entre paréntesis es un
+        # código de prueba, no una posición temporal: "I A (TPI-510)" es un
+        # curso. Si al quitar los paréntesis no queda nada, el paréntesis
+        # ERA el valor ("(2025)") y se evalúa el texto completo.
+        anio, posicion, _ = clave_orden_temporal(
+            _RE_PARENTESIS.sub(" ", texto).strip() or texto
+        )
         if anio == 0 and posicion == 0:
             return False
     return hay_texto
@@ -552,6 +563,27 @@ def ordenar_valores_naturales(valores: Iterable[Any]) -> list:
     return sorted(valores, key=clave_orden_natural)
 
 
+_TOKENS_CURSO = frozenset({"curso", "cursos"})
+
+
+def es_columna_curso(nombre: Any) -> bool:
+    """True si el nombre de columna denota el curso (nivel + paralelo)."""
+    if nombre is None:
+        return False
+    return any(t in _TOKENS_CURSO for t in _norm(nombre).split())
+
+
+def clave_orden_curso(valor: Any) -> tuple:
+    """Clave de orden de un curso, ignorando el sufijo de código de prueba.
+
+    El sufijo entre paréntesis ("I A (TPI-510)") identifica la prueba
+    rendida, no el curso: se descarta para ordenar, pero la etiqueta que se
+    muestra nunca se modifica. El texto original rompe empates.
+    """
+    texto = "" if valor is None else str(valor).strip()
+    return (curso_sort_key(format_curso_corto(texto)), texto)
+
+
 def ordenar_valores_categoricos(
     valores: Iterable[Any],
     nombre_columna: Any = None,
@@ -571,7 +603,8 @@ def ordenar_valores_categoricos(
         valores: valores únicos del eje, ya en el orden que el caller
             considera por defecto.
         nombre_columna: nombre de la columna de origen; si denota tiempo
-            (Mes, Hito, Versión, N° Prueba, Año…) manda el orden cronológico.
+            (Mes, Hito, Versión, N° Prueba, Año…) manda el orden cronológico,
+            y si denota curso manda el orden de nivel + paralelo.
 
     Returns:
         Lista ordenada, o la original si el eje no es temporal ni numerado.
@@ -579,6 +612,8 @@ def ordenar_valores_categoricos(
     vals = list(valores)
     if len(vals) < 2:
         return vals
+    if es_columna_curso(nombre_columna):
+        return sorted(vals, key=clave_orden_curso)
     if es_columna_temporal(nombre_columna) or valores_parecen_temporales(vals):
         return sorted(vals, key=clave_orden_temporal)
     if not any(_RE_ENTERO.search(str(v)) for v in vals):

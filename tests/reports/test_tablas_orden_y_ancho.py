@@ -23,6 +23,7 @@ from backend.rgenerator.reports.helpers import (
     ordenar_valores_categoricos,
     ordenar_valores_naturales,
     redondear_decimales_para_ancho,
+    valores_parecen_temporales,
 )
 from backend.rgenerator.reports.tables import (
     crear_tabla_estadistica_por_pregunta,
@@ -82,6 +83,25 @@ def test_orden_categorico_numera_cursos():
     assert ordenar_valores_categoricos(["10 A", "9 A", "2 B"], "Curso") == [
         "2 B", "9 A", "10 A",
     ]
+
+
+def test_orden_categorico_cursos_romanos_ignora_el_codigo_de_prueba():
+    # El sufijo "(TPI-510)" es el código de la prueba rendida: antes se leía
+    # como posición temporal (510 < 710) y el eje X salía agrupado por
+    # prueba en vez de por curso.
+    etiquetas = [
+        "I A (TPI-510)", "I D (TPI-510)", "II A (TPI-510)", "II D (TPI-510)",
+        "I B (TPA-710)", "I C (TPA-710)", "II B (TPA-710)", "II C (TPA-710)",
+    ]
+    assert ordenar_valores_categoricos(etiquetas, "Curso") == [
+        "I A (TPI-510)", "I B (TPA-710)", "I C (TPA-710)", "I D (TPI-510)",
+        "II A (TPI-510)", "II B (TPA-710)", "II C (TPA-710)", "II D (TPI-510)",
+    ]
+
+
+def test_valores_con_codigo_entre_parentesis_no_parecen_temporales():
+    # Mismo falso positivo, pero por el fallback sin nombre de columna.
+    assert valores_parecen_temporales(["I A (TPI-510)", "II B (TPA-710)"]) is False
 
 
 def test_ordenar_df_por_columna_de_texto_es_numerico():
