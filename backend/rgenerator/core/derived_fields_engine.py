@@ -512,6 +512,13 @@ def apply_row_mean_dynamic(df: pd.DataFrame, config: dict) -> pd.DataFrame:
             ',' por '.' antes de castear a numérico (Excel es-CL).
         min_columns: mínimo de columnas no-NaN por fila para calcular.
             Si la fila tiene menos, NaN. Default 1.
+        value_map: dict opcional {texto: número} para columnas categóricas
+            (case-insensitive, strip de espacios). Se aplica ANTES del
+            cast numérico, en la MISMA escala que el resto de columnas
+            (para que `scale` siga aplicando parejo a todas). Caso DIA:
+            1° básico Lectura reporta "L"/"NL" (Logrado/No Logrado) en
+            vez de porcentaje — sin mapeo, pd.to_numeric las vuelve NaN
+            y la fila completa queda sin `Logro`. Ej: {"L": 100, "NL": 0}.
 
     Retorna df con la columna `name` agregada.
     """
@@ -521,6 +528,11 @@ def apply_row_mean_dynamic(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     scale = float(config.get("scale", 1.0))
     replace_comma = bool(config.get("replace_decimal_comma", False))
     min_cols = int(config.get("min_columns", 1))
+    value_map = config.get("value_map")
+    if value_map:
+        value_map_norm = {str(k).strip().lower(): v for k, v in value_map.items()}
+    else:
+        value_map_norm = None
 
     if include and exclude:
         raise ValueError(
@@ -545,6 +557,16 @@ def apply_row_mean_dynamic(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         return df
 
     sub = df[score_cols].copy()
+    if value_map_norm:
+        def _mapear(v):
+            if isinstance(v, str):
+                clave = v.strip().lower()
+                if clave in value_map_norm:
+                    return value_map_norm[clave]
+            return v
+        for c in score_cols:
+            if not pd.api.types.is_numeric_dtype(sub[c]):
+                sub[c] = sub[c].map(_mapear)
     if replace_comma:
         for c in score_cols:
             # En pandas <3 strings vienen como object; en pandas 3.x como

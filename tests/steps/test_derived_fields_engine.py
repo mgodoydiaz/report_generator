@@ -489,6 +489,56 @@ class TestRowMeanDynamic:
         })
         assert list(df_dia_xls.columns) == cols_originales
 
+    def test_value_map_columnas_categoricas(self):
+        """Caso DIA 1° básico Lectura: ejes reportados como 'L'/'NL'
+        (Logrado/No Logrado) en vez de porcentaje. Sin value_map,
+        pd.to_numeric vuelve NaN toda la fila y Logro queda vacío
+        (bug real detectado en BÁSICA/.../LECTURA_1_A_*.xls)."""
+        df = pd.DataFrame([
+            {"Curso": "1A", "Sílaba inicial": "L", "Sílaba final": "NL",
+             "Sonido inicial": "L", "Sonido final": "L"},
+            {"Curso": "1A", "Sílaba inicial": "NL", "Sílaba final": "NL",
+             "Sonido inicial": "NL", "Sonido final": "L"},
+        ])
+        out = apply_row_mean_dynamic(df, {
+            "name": "Logro",
+            "exclude_columns": ["Curso"],
+            "scale": 0.01,
+            "value_map": {"L": 100, "NL": 0},
+        })
+        # Fila 1: 3 L, 1 NL -> (100+0+100+100)/4 = 75, *0.01 = 0.75
+        assert out.loc[0, "Logro"] == pytest.approx(0.75)
+        # Fila 2: 1 L, 3 NL -> (0+0+0+100)/4 = 25, *0.01 = 0.25
+        assert out.loc[1, "Logro"] == pytest.approx(0.25)
+
+    def test_value_map_case_insensitive_y_no_pisa_numeros(self):
+        """value_map matchea sin importar mayúsculas/espacios, y las
+        columnas ya numéricas (o los valores que no matchean el mapa)
+        siguen su curso normal por pd.to_numeric."""
+        df = pd.DataFrame([
+            {"Curso": "1A", "Eje1": " l ", "Eje2": 80},
+            {"Curso": "1A", "Eje1": "nl", "Eje2": 40},
+        ])
+        out = apply_row_mean_dynamic(df, {
+            "name": "Logro",
+            "exclude_columns": ["Curso"],
+            "value_map": {"L": 100, "NL": 0},
+        })
+        assert out.loc[0, "Logro"] == pytest.approx(90.0)  # (100+80)/2
+        assert out.loc[1, "Logro"] == pytest.approx(20.0)  # (0+40)/2
+
+    def test_sin_value_map_columnas_categoricas_quedan_nan(self, ):
+        """Regresión inversa: sin value_map, el comportamiento previo se
+        mantiene (columna categórica se vuelve NaN, no crashea)."""
+        df = pd.DataFrame([
+            {"Curso": "1A", "Eje1": "L", "Eje2": "NL"},
+        ])
+        out = apply_row_mean_dynamic(df, {
+            "name": "Logro",
+            "exclude_columns": ["Curso"],
+        })
+        assert pd.isna(out.loc[0, "Logro"])
+
 
 class TestRowThreshold:
     """Etiqueta por umbral (caso DIA: Nivel de Logro)."""

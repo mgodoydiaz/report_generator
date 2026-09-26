@@ -127,10 +127,16 @@
               "Curso",
               "Asignatura",
               "Año",
-              "Hito"
+              "Hito",
+              "NIVEL DE LOGRO",
+              "Porcentaje total de respuestas correctas"
             ],
             "scale": 0.01,
-            "replace_decimal_comma": true
+            "replace_decimal_comma": true,
+            "value_map": {
+              "L": 100,
+              "NL": 0
+            }
           },
           {
             "kind": "lookup_range",

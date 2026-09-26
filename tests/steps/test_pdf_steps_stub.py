@@ -1,7 +1,9 @@
 """Tests del step RunDIAPDFExtraction.
 
 Cobertura:
-- Helpers puros: `_get_correct_percent`.
+- Helpers puros: `_get_correct_percent`, `_es_tabla_preguntas`.
+- Detección de sección con PDFs sintéticos (formatos Cierre/Matemática
+  con encabezados no numerados o abreviados — ver fix de sept-2026).
 - Registro en STEP_MAPPING.
 - Helpers con PDF real (skip si no hay PDFs DIA disponibles localmente).
 - Step completo con PDF real (skip si no hay).
@@ -20,6 +22,7 @@ import pytest
 from backend.rgenerator.core.pdf_steps import (
     RunDIAPDFExtraction,
     _detectar_paginas_tabla_preguntas,
+    _es_tabla_preguntas,
     _extraer_establecimiento_y_curso,
     _get_correct_percent,
 )
@@ -87,6 +90,147 @@ class TestGetCorrectPercent:
 
     def test_celda_vacia(self):
         assert _get_correct_percent("", "A") == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _es_tabla_preguntas — regresión del bug "Matemática Diagnóstico nunca
+# carga" (sept-2026): camelot funde el encabezado de la columna N° de
+# pregunta con el de la columna N° OA en las tablas de Matemática, y el
+# texto resultante queda abreviado "N° \npreg." en vez de "N° \npregunta"
+# (que sí trae Lectura). El patrón viejo solo aceptaba la forma completa.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+class TestEsTablaPreguntas:
+    def test_header_lectura_forma_completa(self):
+        df = pd.DataFrame(
+            [
+                ["N° \npregunta", "N° OA\n(1º básico)", "Tipo de texto", "Eje", "Indicador", "% respuestas"],
+                ["1", "2", "Narración", "Interpretar", "Infieren", "A: 10%"],
+            ]
+        )
+        assert _es_tabla_preguntas(df) is True
+
+    def test_header_matematica_abreviado_preg(self):
+        """Antes del fix, esta tabla (formato real de Matemática) NO se
+        reconocía como la tabla de preguntas y el step fallaba con
+        'camelot no encontró ninguna tabla...' en el 100% de los PDF de
+        Matemática."""
+        df = pd.DataFrame(
+            [
+                [
+                    "N° \nN° \nNivel \nEje temático\npreg.\nOA\nOA", "", "", "",
+                    "Habilidad", "Indicador de \nevaluación",
+                    "N° OA basales \n% respuestas\n3° básico", "",
+                ],
+                ["1", "2", "3", "Números", "Contar", "Cuenta hasta 10", "1", "A: 10%"],
+            ]
+        )
+        assert _es_tabla_preguntas(df) is True
+
+    def test_header_sin_columna_pregunta_no_matchea(self):
+        df = pd.DataFrame(
+            [
+                ["Nivel", "Logro", "Curso", "", "", "% respuestas"],
+                ["1", "2", "3", "4", "5", "6"],
+            ]
+        )
+        assert _es_tabla_preguntas(df) is False
+
+    def test_shape_invalida_no_matchea(self):
+        df = pd.DataFrame([["N° \npregunta", "% respuestas"]])
+        assert _es_tabla_preguntas(df) is False
+
+    def test_header_sin_respuestas_no_matchea(self):
+        df = pd.DataFrame(
+            [
+                ["N° \npregunta", "N° OA", "Tipo", "Eje", "Habilidad", "Indicador"],
+                ["1", "2", "3", "4", "5", "6"],
+            ]
+        )
+        assert _es_tabla_preguntas(df) is False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# _detectar_paginas_tabla_preguntas — regresión del bug "hito Cierre
+# nunca carga" (sept-2026): los informes de Cierre no siempre numeran la
+# sección "N. Resultados por pregunta" como Diagnóstico/Intermedio.
+# Se usan PDF sintéticos (fitz.open() en blanco, sin datos reales) para
+# no depender de archivos del cliente.
+# ─────────────────────────────────────────────────────────────────────────
+
+
+def _crear_pdf_sintetico(tmp_path, paginas: list[str]) -> str:
+    """Crea un PDF mínimo con una página de texto por entrada de `paginas`."""
+    import fitz
+
+    doc = fitz.open()
+    for texto in paginas:
+        page = doc.new_page()
+        page.insert_text((50, 50), texto, fontsize=10)
+    out = tmp_path / "sintetico.pdf"
+    doc.save(str(out))
+    doc.close()
+    return str(out)
+
+
+needs_fitz = pytest.mark.skipif(
+    not _fitz_disponible(), reason="fitz/PyMuPDF no instalado"
+)
+
+
+@needs_fitz
+class TestDetectarPaginasSintetico:
+    def test_formato_numerado_diagnostico(self, tmp_path):
+        """Formato clásico Diagnóstico/Intermedio: sección numerada."""
+        paginas = [
+            "1\nEn este informe encontrará:\n1. Resultados del curso\n2. Resultados por pregunta",
+            "2\nResultados del curso",
+            "3\n3. Resultados por pregunta\nN° \npregunta\n...",
+            "4\n...continúa tabla...",
+            "5\n4. Resultados por estudiante\n...",
+        ]
+        pdf = _crear_pdf_sintetico(tmp_path, paginas)
+        rango = _detectar_paginas_tabla_preguntas(pdf)
+        assert rango == "3-4"
+
+    def test_formato_cierre_matematica_sin_numero(self, tmp_path):
+        """Cierre Matemática: encabezado 'Resultados por pregunta' SIN el
+        número de sección delante (antes del fix no matcheaba nada)."""
+        paginas = [
+            "1\nEvaluación de Cierre",
+            "2\nGráfico eje temático",
+            "3\nResultados por pregunta\nLa Tabla 1 muestra...\nN° \npreg.\n...",
+            "4\n...continúa tabla...",
+            "5\nResultados por estudiante\n...",
+        ]
+        pdf = _crear_pdf_sintetico(tmp_path, paginas)
+        rango = _detectar_paginas_tabla_preguntas(pdf)
+        assert rango == "3-4"
+
+    def test_formato_cierre_lectura_solo_titulo_tabla(self, tmp_path):
+        """Cierre Lectura (1° básico): no hay encabezado de sección
+        dedicado, solo el título de la tabla ('Tabla N. Resultados del
+        curso en cada pregunta...'). Además el cuerpo del informe la
+        menciona antes, a mitad de oración ('consulte la Tabla 1...'):
+        esa mención NO debe disparar el inicio (por eso el ancla exige
+        salto de línea justo antes de 'Tabla')."""
+        paginas = [
+            "1\nEvaluación de Cierre",
+            "2\nPara profundizar consulte la Tabla 1. Resultados del curso en cada pregunta de Comprensión lectora más adelante.",
+            "3\nTabla 1. Resultados del curso en cada pregunta de Comprensión lectora\nN° \npregunta\n...",
+            "4\n...continúa tabla...",
+            "5\n2. Resultados por estudiante\n...",
+        ]
+        pdf = _crear_pdf_sintetico(tmp_path, paginas)
+        rango = _detectar_paginas_tabla_preguntas(pdf)
+        assert rango == "3-4"
+
+    def test_sin_seccion_lanza_valueerror(self, tmp_path):
+        paginas = ["1\nPortada", "2\nSin la sección que buscamos"]
+        pdf = _crear_pdf_sintetico(tmp_path, paginas)
+        with pytest.raises(ValueError, match="Resultados por pregunta"):
+            _detectar_paginas_tabla_preguntas(pdf)
 
 
 # ─────────────────────────────────────────────────────────────────────────

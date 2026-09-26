@@ -141,6 +141,16 @@ def _detectar_paginas_tabla_preguntas(pdf_path: str) -> str:
     Saltamos la página 1 porque contiene el índice ("En este informe
     encontrará: 1. ... N. Resultados por pregunta ...") que daría falso
     match.
+
+    Los informes de hito "Cierre" no siempre numeran esta sección como
+    los de Diagnóstico/Intermedio:
+        - Matemática Cierre: encabezado "Resultados por pregunta" SIN el
+          número de sección delante (ídem "Resultados por estudiante").
+        - Lectura Cierre (1° básico): no hay encabezado de sección
+          dedicado; la tabla aparece directo bajo el título de tabla
+          "Tabla N. Resultados del curso en cada pregunta de ...".
+    Por eso el número de sección es opcional y agregamos ese segundo
+    patrón como ancla de inicio alternativa.
     """
     import fitz
 
@@ -148,8 +158,20 @@ def _detectar_paginas_tabla_preguntas(pdf_path: str) -> str:
     n = len(doc)
     start = None
     end = None
-    pat_start = re.compile(r"\d+\.\s*Resultados\s+por\s+pregunta", re.IGNORECASE)
-    pat_end = re.compile(r"\d+\.\s*Resultados\s+por\s+estudiante", re.IGNORECASE)
+    # El segundo término (con \n obligatorio delante de "Tabla") ancla la
+    # coincidencia al INICIO de línea: la leyenda real de la tabla siempre
+    # abre línea ("...Lectura\nTabla 1. Resultados del curso..."), mientras
+    # que el cuerpo del informe también menciona "la Tabla 1. Resultados
+    # del curso en cada pregunta..." como referencia cruzada a mitad de
+    # oración ("...consulte la Tabla 1. Resultados...") en la página previa
+    # — sin el \n eso producía un falso positivo y ensanchaba el rango de
+    # páginas innecesariamente.
+    pat_start = re.compile(
+        r"(?:\d+\.\s*)?Resultados\s+por\s+pregunta"
+        r"|\nTabla\s*\d*\.?\s*Resultados\s+del\s+curso\s+en\s+cada\s+pregunta",
+        re.IGNORECASE,
+    )
+    pat_end = re.compile(r"(?:\d+\.\s*)?Resultados\s+por\s+estudiante", re.IGNORECASE)
     for i in range(1, n):
         text = doc[i].get_text()
         if start is None and pat_start.search(text):
@@ -165,7 +187,7 @@ def _detectar_paginas_tabla_preguntas(pdf_path: str) -> str:
     return f"{start}-{end}"
 
 
-_PAT_HEADER_PREGUNTA = re.compile(r"n\s*[°ºo]?\s*\n?\s*pregunta", re.IGNORECASE)
+_PAT_HEADER_PREGUNTA = re.compile(r"preg(?:unta|\.)", re.IGNORECASE)
 
 
 def _es_tabla_preguntas(df: pd.DataFrame) -> bool:
@@ -177,6 +199,19 @@ def _es_tabla_preguntas(df: pd.DataFrame) -> bool:
     cualquier otro rectángulo que camelot detecte como tabla (marcos de
     página, cajas de ayuda, etc.), cuyo número y orden cambian entre
     formatos de informe y entre versiones de camelot.
+
+    En Matemática, camelot funde el encabezado de la columna "N°
+    pregunta" con el de columnas vecinas ("N° OA", "Nivel OA", "Eje
+    temático") en una sola celda de la grilla lattice, y el texto queda
+    abreviado a "...\\npreg.\\n..." en vez de "N° \\npregunta" (forma
+    íntegra que sí trae Lectura). Además esa fusión NO es igual en la
+    página inicial de la tabla que en sus páginas de continuación (cada
+    una gatilla un layout de grilla distinto en camelot), así que "N°"
+    no siempre queda pegado a "preg." — por eso el patrón matchea solo
+    "preg."/"pregunta" en cualquier parte del header, sin exigirle un
+    "N°" inmediatamente antes. La combinación con el requisito de shape
+    (6 u 8 columnas) + "respuestas" en el header alcanza para no
+    confundirla con otra tabla del informe.
     """
     if df.shape[0] < 2 or df.shape[1] not in (6, 8):
         return False
