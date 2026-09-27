@@ -25,12 +25,30 @@ con la convención vigente del repo (sept 2026). Tres cambios, todos idempotente
    básico → 'Colegio Básico'; 7°, 8° y media → 'Liceo PHP Panguipulli'. Es la
    misma partición que tiene hoy la data de prod.
 
+   v2 (2026-09-26, QA de `tests/steps/test_dia_regla_establecimiento.py`):
+   el corte por curso pasó de "primer carácter ∈ {1..6}" (que aceptaba "01 A"
+   y confundía "1 Medio A"/"1° Medio A" con básica) a una regex ancorada al
+   inicio que exige dígito 1-6 + separador, y excluye explícitamente cualquier
+   curso con "MEDIO" en el texto. Además: (i) un Establecimiento ya canónico
+   ('Colegio Básico', 'Liceo PHP Panguipulli', 'Liceo PHP Pullinque') se deja
+   intacto sin reevaluar contra el Curso — antes, re-aplicar la regla sobre
+   'Liceo PHP Panguipulli' con un Curso básica lo degradaba a 'Colegio
+   Básico', rompiendo la idempotencia; (ii) NaN/None ya no se convierten en el
+   string literal "nan"/"None", se preservan tal cual. Sigue sin resolver
+   cursos en formato deletreado ("Primero Básico A") ni la abreviatura
+   ambigua "1M A" (¿1° Medio o sección "M"?) — quedan documentados como
+   riesgo conocido, no como bug de esta versión.
+
 Reemplaza a `dia_establecimiento_canonico.py`, cuya regla solo por substring
 habría mandado el Colegio Básico al Liceo.
 
 Uso:
     DATABASE_URL=... PYTHONPATH=. python scripts/dia_normalizar_pipeline_21.py --dry-run
     DATABASE_URL=... PYTHONPATH=. python scripts/dia_normalizar_pipeline_21.py [--respaldo archivo.json]
+
+    # Si el pipeline 21 ya tiene la v1 de la canonización (misma MARCA en la
+    # description), el script la detecta y ACTUALIZA sus `transformations` a
+    # esta v2 en vez de saltarla (no duplica el paso).
 """
 from __future__ import annotations
 
@@ -46,14 +64,35 @@ MARCA = "canoniza Establecimiento"   # llave de idempotencia (en la description)
 EXCLUIR_EXTRA = ["NIVEL DE LOGRO", "Porcentaje total de respuestas correctas"]
 VALUE_MAP = {"L": 100, "NL": 0}
 
-# Primer carácter del curso: "1 A".."6 A" = básica del Colegio Básico. "7 A",
-# "8 A" y los romanos de media ("I A (TPT-610)", "II B ...") son del Liceo.
-_ES_BASICA = "str(row['Curso']).strip()[:1] in ('1', '2', '3', '4', '5', '6')"
+# v2: dígito 1-6 (con o sin "0" a la izquierda: "01 A") anclado al INICIO del
+# curso, seguido de espacio/°/º/letra o fin de string — y sin "MEDIO" en el
+# texto (cubre "1 Medio A", "1° Medio A"). Los romanos de media ("I A
+# (TPT-610)", "II B...") nunca matchean porque no arrancan con dígito, así
+# que no hace falta excluirlos aparte. `re` disponible en el sandbox de
+# `evaluar_expresion` vía el shim `_ReSeguro` (backend/rgenerator/tooling/safe_eval.py).
+_ES_BASICA = (
+    "bool(re.match('^0?[1-6]([ °ºA-Z]|$)', str(row['Curso']).strip().upper()))"
+    " and 'MEDIO' not in str(row['Curso']).upper()"
+)
+
+# Establecimiento ya canónico: no reevaluar contra Curso (idempotencia — ver
+# nota v2 en el docstring del módulo).
+_YA_CANONICO = (
+    "row['Establecimiento'] in "
+    "('Colegio Básico', 'Liceo PHP Panguipulli', 'Liceo PHP Pullinque')"
+)
+# NaN (float) o None: no estringificar a "nan"/"None", se preservan tal cual.
+_ES_NULO = "row['Establecimiento'] is None or row['Establecimiento'] != row['Establecimiento']"
+
 TRANSFORMACION = {
     "columna": "Establecimiento",
     "operacion": "math",
     "usa_fila": True,
     "valores": [
+        {"condicion": _YA_CANONICO,
+         "expresion": "row['Establecimiento']"},
+        {"condicion": _ES_NULO,
+         "expresion": "row['Establecimiento']"},
         {"condicion": "'PULLINQUE' in str(row['Establecimiento']).upper()",
          "expresion": "'Liceo PHP Pullinque'"},
         {"condicion": f"'PANGUIPULLI' in str(row['Establecimiento']).upper() and {_ES_BASICA}",
@@ -123,18 +162,28 @@ def transformar(cfg: dict) -> tuple[dict, list[str]]:
             s["description"] = s["description"].replace("Nombre_Norm", "Nombre (texto original)")
 
     # 3. Establecimiento canónico
-    ya = {s["params"]["input_key"] for s in pasos
+    # Pasos de canonización que ya existen (por MARCA), indexados por
+    # input_key. Si su regla quedó desactualizada (ej. viene de la v1), se
+    # ACTUALIZA en el mismo lugar en vez de duplicar o saltar el paso.
+    ya = {s["params"]["input_key"]: s for s in pasos
           if s["step"] == "ModifyColumnValues" and MARCA in (s.get("description") or "")}
     resultado = []
     for s in pasos:
+        if s is ya.get(s.get("params", {}).get("input_key")):
+            artifact = s["params"]["input_key"]
+            nuevas_transf = [copy.deepcopy(TRANSFORMACION)]
+            if s["params"].get("transformations") != nuevas_transf:
+                s["params"]["transformations"] = nuevas_transf
+                notas.append(f"{artifact}: canonización actualizada a la versión vigente de la regla")
+            else:
+                notas.append(f"{artifact}: canonización ya estaba en la versión vigente")
+            resultado.append(s)
+            continue
         resultado.append(s)
         out = (s.get("params") or {}).get("output_key")
-        if out in OBJETIVOS and s["step"] == OBJETIVOS[out]:
-            if out in ya:
-                notas.append(f"{out}: canonización ya existía, no se duplica")
-            else:
-                resultado.append(paso_canonico(out))
-                notas.append(f"{out}: insertado ModifyColumnValues tras {s['step']}")
+        if out in OBJETIVOS and s["step"] == OBJETIVOS[out] and out not in ya:
+            resultado.append(paso_canonico(out))
+            notas.append(f"{out}: insertado ModifyColumnValues tras {s['step']}")
     cfg["pipeline"] = resultado
     return cfg, notas
 
