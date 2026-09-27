@@ -9,7 +9,7 @@ python-multipart
 python-dotenv
 
 # Base de datos
-sqlalchemy
+sqlalchemy>=2.0,<2.1  # 2.1 usa psycopg (v3) por defecto para postgresql:// y el deploy usa psycopg2
 psycopg2-binary
 alembic
 
