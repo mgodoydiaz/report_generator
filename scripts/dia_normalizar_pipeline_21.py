@@ -3,7 +3,7 @@
 dia_normalizar_pipeline_21.py
 =============================
 Alinea el pipeline DIA de producción (id 21, Lectura + Matemática unificados)
-con la convención vigente del repo (sept 2026). Tres cambios, todos idempotentes:
+con la convención vigente del repo (sept 2026). Cuatro cambios, todos idempotentes:
 
 1. Logro de estudiantes (`row_mean_dynamic`):
    - `value_map {"L": 100, "NL": 0}`: 1° básico Lectura reporta Logrado / No
@@ -39,6 +39,9 @@ con la convención vigente del repo (sept 2026). Tres cambios, todos idempotente
    ambigua "1M A" (¿1° Medio o sección "M"?) — quedan documentados como
    riesgo conocido, no como bug de esta versión.
 
+4. Lectura del XLS con `start_marker: "Nombre del Estudiante"` + `header_offset: 0`
+   en vez de `header_row: 12` (ver START_MARKER), y "% de Logro" excluido del mean.
+
 Reemplaza a `dia_establecimiento_canonico.py`, cuya regla solo por substring
 habría mandado el Colegio Básico al Liceo.
 
@@ -61,8 +64,15 @@ PIPELINE_ID = 21
 ORG = 1
 MARCA = "canoniza Establecimiento"   # llave de idempotencia (en la description)
 
-EXCLUIR_EXTRA = ["NIVEL DE LOGRO", "Porcentaje total de respuestas correctas"]
+EXCLUIR_EXTRA = ["NIVEL DE LOGRO", "Porcentaje total de respuestas correctas", "% de Logro"]
 VALUE_MAP = {"L": 100, "NL": 0}
+# El XLS se lee ubicando la fila de encabezado por su texto en vez de la fila 13
+# fija. Con start_marker, RunExcelETL además descarta las filas cuyo N° de lista
+# no es numérico: los .xlsx de Panguipulli 2024 Intermedio traen al final una
+# fila de promedio del curso agregada a mano (sin nombre ni N° de lista) que
+# entraba como un estudiante más. Probado sobre los 290 XLS reales: 266 se leen
+# idénticos y 24 solo pierden esa fila.
+START_MARKER = "Nombre del Estudiante"
 
 # v2: dígito 1-6 (con o sin "0" a la izquierda: "01 A") anclado al INICIO del
 # curso, seguido de espacio/°/º/letra o fin de string — y sin "MEDIO" en el
@@ -185,6 +195,16 @@ def transformar(cfg: dict) -> tuple[dict, list[str]]:
             resultado.append(paso_canonico(out))
             notas.append(f"{out}: insertado ModifyColumnValues tras {s['step']}")
     cfg["pipeline"] = resultado
+
+    # 4. Lectura del XLS por marcador de encabezado (no por fila fija)
+    for s in resultado:
+        if s["step"] == "RunExcelETL" and (s.get("params") or {}).get("output_key") == "estudiantes_raw":
+            p = s["params"]
+            if p.get("start_marker") != START_MARKER or p.get("header_offset") != 0:
+                p["start_marker"] = START_MARKER
+                p["header_offset"] = 0
+                p.pop("header_row", None)
+                notas.append(f"RunExcelETL: header por start_marker '{START_MARKER}' (descarta filas sin N° de lista)")
     return cfg, notas
 
 
@@ -204,6 +224,8 @@ def verificar(cfg: dict) -> None:
     assert logro.get("value_map") == VALUE_MAP
     assert all(c in logro["exclude_columns"] for c in EXCLUIR_EXTRA)
     assert "Nombre_Norm" not in json.dumps(cfg), "quedó una referencia a Nombre_Norm"
+    xls = next(s["params"] for s in pasos if s["step"] == "RunExcelETL")
+    assert xls.get("start_marker") == START_MARKER and xls.get("header_offset") == 0, "RunExcelETL sin start_marker"
     metricas = sorted(s["params"]["metric_id"] for s in pasos if s["step"] == "SaveToMetric")
     assert metricas == [6, 7], f"métricas destino: {metricas}"
 

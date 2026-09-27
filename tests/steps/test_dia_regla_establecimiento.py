@@ -39,6 +39,7 @@ if str(SCRIPTS_DIR) not in sys.path:
 
 from dia_normalizar_pipeline_21 import (  # noqa: E402
     MARCA,
+    START_MARKER,
     TRANSFORMACION,
     paso_canonico,
     transformar,
@@ -345,3 +346,19 @@ def test_transformar_no_toca_paso_ya_en_version_vigente():
     nuevo, notas = transformar(cfg)
     verificar(nuevo)
     assert any("estudiantes_raw: canonización ya estaba en la versión vigente" in n for n in notas)
+
+
+def test_transformar_lee_xls_por_start_marker():
+    """El XLS se lee por el texto del encabezado y no por fila fija: RunExcelETL
+    descarta así la fila de promedio sin N° de lista de los .xlsx de Panguipulli
+    2024. Idempotente: una segunda pasada no reporta ese cambio."""
+    cfg = _cfg_minimo()
+    cfg["pipeline"][0]["params"]["header_row"] = 12
+    out, notas = transformar(cfg)
+    p = next(s["params"] for s in out["pipeline"] if s["step"] == "RunExcelETL")
+    assert p["start_marker"] == START_MARKER
+    assert p["header_offset"] == 0
+    assert "header_row" not in p
+    assert any("start_marker" in n for n in notas)
+    _, notas2 = transformar(out)
+    assert not any("start_marker" in n for n in notas2)
